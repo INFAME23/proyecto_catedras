@@ -10,6 +10,15 @@
 //  Ejecutar (desde la carpeta api_catedras):
 //      dotnet run --project pruebas
 //  Sale con código 0 si todo pasa; 1 si algo falla.
+//
+//  [SOLID · L] Este archivo ES la demostración de la Sustitución de Liskov:
+//  se le pasa a ServicioSede un 'RepositorioSedeFalso' en lugar del de
+//  Postgres y TODAS las pruebas pasan igual. El servicio no distingue una
+//  implementación de la otra porque ambas respetan el contrato
+//  IRepositorioSede.
+//  [SOLID · D] Solo es posible porque ServicioSede depende de la interfaz,
+//  no de RepositorioSedePostgres (si dependiera de la clase concreta, esta
+//  prueba necesitaría PostgreSQL).
 // ==========================================================================
 
 using ApiCatedras.Excepciones;

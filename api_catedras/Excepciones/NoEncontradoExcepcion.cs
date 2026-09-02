@@ -12,6 +12,12 @@
 //  Se usa 'ArgumentException' (que ya existe en .NET) para el 400 y esta
 //  excepción propia para el 404. Así el servicio no sabe nada de HTTP:
 //  solo lanza; el controlador decide el número.
+//
+//  [SOLID · S] Tipo con una sola razón de existir: señalar "el recurso no
+//  existe". [SOLID · D] Es parte del "lenguaje" abstracto con el que la
+//  capa de negocio se comunica hacia arriba, sin acoplarse a HTTP.
+//  [FLUJO 7->8] Es el canal por el que el "0 filas" del repositorio se
+//  convierte, ya en el controlador, en un 404.
 // ==========================================================================
 
 namespace ApiCatedras.Excepciones;

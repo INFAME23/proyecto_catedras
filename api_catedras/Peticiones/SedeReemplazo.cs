@@ -12,6 +12,10 @@
 //  'nombre'...
 //     · en PUT   -> 422 (falta un campo obligatorio del reemplazo)
 //     · en PATCH -> 200 (PATCH es parcial: lo que no llega, no se toca)
+//
+//  [SOLID · S / I] Contrato propio del PUT. Que PUT y PATCH tengan clases
+//  distintas es lo que permite que la MISMA entrada dé 422 en uno y 200 en
+//  el otro sin un solo 'if' de por medio.
 // ==========================================================================
 
 namespace ApiCatedras.Peticiones;

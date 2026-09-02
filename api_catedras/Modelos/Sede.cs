@@ -14,6 +14,14 @@
 //
 //  IMPORTANTE (Artículo 1, YAGNI): la v1 SOLO puede nombrar la tabla 'sede'.
 //  Las otras 36 tablas del esquema existen pero son territorio de v2+.
+//
+//  [SOLID · S] Esta clase SOLO representa la fila. No se valida, no se
+//  persiste a sí misma, no sabe de HTTP. Los DTO de entrada viven aparte en
+//  'Peticiones/' (un contrato por verbo) -> el modelo no se infla con
+//  campos que solo sirven a un verbo.
+//  [ACID · C] Los valores por defecto (EsVirtual=false, Activo=true) y el
+//  'required' reflejan las reglas de la tabla, pero la Consistencia REAL la
+//  impone PostgreSQL, no este objeto.
 // ==========================================================================
 
 // 'namespace' agrupa el código; el punto marca la carpeta.

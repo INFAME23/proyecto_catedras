@@ -12,6 +12,39 @@
 //
 //  Una conexión por operación, con 'await using' (se abre, se usa, se
 //  cierra sola). El código de la v1 SOLO nombra la tabla 'catedras.sede'.
+//
+// --------------------------------------------------------------------------
+//  PRINCIPIOS EN ESTE ARCHIVO:
+//   · SOLID · S (Responsabilidad única): SOLO acceso a datos. No valida
+//     reglas de negocio ni conoce HTTP. Traduce método -> SQL -> objeto.
+//   · SOLID · L (Sustitución de Liskov): cumple IRepositorioSede al pie de
+//     la letra (null si no hay fila; nº de filas afectadas), así que el
+//     servicio no nota la diferencia con el repo falso de 'pruebas/'.
+//   · SOLID · O (Abierto/Cerrado): esta clase ES la unidad que se
+//     reemplaza/añade para otro motor; el resto del sistema no cambia.
+//
+//  ACID — DÓNDE VIVE CADA LETRA EN LA v1:
+//   · A (Atomicidad): cada 'ExecuteAsync' manda UNA sentencia. PostgreSQL en
+//     autocommit la envuelve en su propia transacción implícita: se aplica
+//     completa o no se aplica. El UPDATE de varias columnas es un solo
+//     comando -> todas las columnas cambian juntas.
+//   · C (Consistencia): la ponen las RESTRICCIONES de la tabla (pk_sede,
+//     uq_sede_nombre, NOT NULL, FK fk_sesion_sede ON DELETE RESTRICT) MÁS
+//     la lista blanca 'ColumnasActualizables' de aquí abajo. Si algo las
+//     viola, el motor lanza NpgsqlException y NO cambia nada.
+//   · I (Aislamiento): 'await using' abre una conexión propia por operación;
+//     PostgreSQL usa READ COMMITTED por defecto, así una petición no ve los
+//     cambios a medio confirmar de otra.
+//   · D (Durabilidad): cuando 'ExecuteAsync' regresa sin excepción, el COMMIT
+//     implícito ya está en el WAL en disco: sobrevive a un reinicio.
+//   · RNF3 (parámetros @) también protege la Consistencia: el valor del
+//     cliente nunca se concatena en el texto SQL.
+//
+//  FLUJO DE UNA PETICIÓN — PASOS 6 y 7:
+//   [FLUJO 6] Abre conexión, ejecuta el SQL parametrizado con Dapper y mapea
+//             fila -> Sede (o cuenta filas afectadas).
+//   [FLUJO 7] Devuelve el resultado hacia el servicio; si el motor falla,
+//             sube NpgsqlException sin capturarla.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -26,8 +59,9 @@ public class RepositorioSedePostgres : IRepositorioSede
     // 'readonly': se asigna una vez en el constructor y no cambia más.
     private readonly string _cadenaConexion;
 
-    // Columnas que el UPDATE puede tocar. LISTA BLANCA: aunque el
-    // diccionario venga del servicio, nunca se arma SQL con claves ajenas.
+    // [ACID · C] Columnas que el UPDATE puede tocar. LISTA BLANCA: aunque el
+    // diccionario venga del servicio, nunca se arma SQL con claves ajenas
+    // -> ninguna escritura puede salirse de estas 4 columnas conocidas.
     private static readonly HashSet<string> ColumnasActualizables =
         new() { "nombre", "direccion", "es_virtual", "activo" };
 
@@ -52,11 +86,13 @@ public class RepositorioSedePostgres : IRepositorioSede
             ORDER BY id_sede
             LIMIT @limite;";
 
+        // [FLUJO 6][ACID · I] Conexión propia de esta operación; se cierra
+        // sola al salir del bloque ('await using').
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
         // QueryAsync<Sede> ejecuta el SELECT y devuelve un Sede por fila.
         var filas = await conexion.QueryAsync<Sede>(sql, new { limite });
-        return filas.ToList();
+        return filas.ToList(); // [FLUJO 7] vuelve al servicio
     }
 
     // ----------------------------------------------------------------------
@@ -87,9 +123,11 @@ public class RepositorioSedePostgres : IRepositorioSede
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
         // Dapper toma cada @parametro de la propiedad del objeto 'sede' con
-        // el mismo nombre. Si el id_sede o el nombre ya existen, PostgreSQL
-        // lanza NpgsqlException (viola pk_sede o uq_sede_nombre) y sube tal
-        // cual hasta el controlador, que responde 500.
+        // el mismo nombre. [ACID · C] Si el id_sede o el nombre ya existen,
+        // PostgreSQL lanza NpgsqlException (viola pk_sede o uq_sede_nombre)
+        // y [ACID · A] no inserta nada; la excepción sube tal cual hasta el
+        // controlador, que responde 500. [ACID · D] Si NO hay excepción, el
+        // INSERT quedó confirmado y en disco.
         await conexion.ExecuteAsync(sql, sede);
     }
 
@@ -106,11 +144,13 @@ public class RepositorioSedePostgres : IRepositorioSede
 
         foreach (var (columna, valor) in datos)
         {
+            // [ACID · C] Filtro por lista blanca: una clave no permitida se
+            // ignora, nunca llega al texto SQL.
             if (!ColumnasActualizables.Contains(columna))
-                continue; // se ignora cualquier clave no permitida
+                continue;
 
             asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
+            parametros.Add(columna, valor); // [RNF3] valor como @parametro
         }
 
         // Sin columnas válidas no hay nada que ejecutar.
@@ -125,9 +165,10 @@ public class RepositorioSedePostgres : IRepositorioSede
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        // ExecuteAsync devuelve el número de filas afectadas. En PostgreSQL
-        // cuenta las filas que CUMPLIERON el WHERE (aunque el valor nuevo
-        // sea igual al viejo): 0 significa "esa sede no existe".
+        // [ACID · A] Un solo UPDATE: todas las asignaciones del SET se
+        // aplican juntas o ninguna. ExecuteAsync devuelve el número de filas
+        // afectadas; en PostgreSQL cuenta las que CUMPLIERON el WHERE (aunque
+        // el valor nuevo sea igual al viejo): 0 = "esa sede no existe".
         return await conexion.ExecuteAsync(sql, parametros);
     }
 

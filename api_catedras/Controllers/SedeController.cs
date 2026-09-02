@@ -22,6 +22,30 @@
 //    cualquier otra         -> 500
 //  (El 422 por body mal formado lo genera el framework antes de entrar aquí,
 //   con el formato definido en Program.cs.)
+//
+// --------------------------------------------------------------------------
+//  PRINCIPIOS EN ESTE ARCHIVO:
+//   · SOLID · S (Responsabilidad única): SOLO traduce HTTP <-> negocio.
+//     Ni SQL ni reglas. Si mañana se agrega gRPC, esta clase no se reusa:
+//     se escribe otra fachada que también llama a IServicioSede.
+//   · SOLID · D (Inversión de dependencias): depende de la INTERFAZ
+//     IServicioSede, jamás de la clase ServicioSede. La instancia entra por
+//     el constructor (la pone el contenedor de Program.cs).
+//   · SOLID · I (Segregación de interfaces): el controlador solo "ve"
+//     IServicioSede (6 métodos cohesionados); no conoce IRepositorioSede.
+//   · ACID · C (Consistencia, cara visible): cuando el motor rechaza una
+//     escritura por violar una restricción (NpgsqlException: pk_sede,
+//     uq_sede_nombre, FK fk_sesion_sede...), aquí se traduce a 500 con el
+//     mensaje del motor. La BD quedó intacta.
+//   · ACID · C (regla de existencia): 'filasAfectadas == 0' llega como
+//     NoEncontradoExcepcion y se traduce a 404.
+//
+//  FLUJO DE UNA PETICIÓN — PASOS 3 y 8 (los intermedios están en Servicio
+//  y Repositorio):
+//   [FLUJO 3] El método de acción recibe la 'Peticion' YA validada y llama
+//             a _servicio.XxxAsync(...).  <-- entra a la capa de negocio.
+//   [FLUJO 8] Vuelve el resultado (o sube una excepción). El try/catch de
+//             cada método arma el sobre JSON y fija el código HTTP. Fin.
 // ==========================================================================
 
 namespace ApiCatedras.Controllers;
@@ -39,7 +63,9 @@ using Npgsql;   // NpgsqlException
 [Route("api/Sede")]
 public class SedeController : ControllerBase
 {
-    // El controlador depende de la INTERFAZ del servicio, no de la clase.
+    // [SOLID · D] El controlador depende de la ABSTRACCIÓN IServicioSede,
+    // no de la clase concreta. [FLUJO 0->3] El contenedor de DI ya sabe (por
+    // Program.cs) qué construir y lo entrega por este constructor.
     private readonly IServicioSede _servicio;
 
     public SedeController(IServicioSede servicio)
@@ -56,6 +82,7 @@ public class SedeController : ControllerBase
     {
         try
         {
+            // [FLUJO 3] Salta a la capa de negocio por la interfaz.
             var (datos, total) = await _servicio.ListarAsync(limite);
 
             // Sin filas -> 204 No Content (sin cuerpo).
@@ -118,7 +145,9 @@ public class SedeController : ControllerBase
         }
         catch (NpgsqlException ex)
         {
-            // id_sede o nombre duplicado (pk_sede / uq_sede_nombre), etc.
+            // [ACID · C] id_sede o nombre duplicado (pk_sede / uq_sede_nombre):
+            // PostgreSQL aborta el INSERT para NO dejar la tabla inconsistente.
+            // [ACID · A] El INSERT completo se deshace (no queda a medias).
             return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
         }
         catch (ArgumentException ex)
@@ -209,7 +238,9 @@ public class SedeController : ControllerBase
         }
         catch (NpgsqlException ex)
         {
-            // FK fk_sesion_sede (ON DELETE RESTRICT): la sede tiene sesiones.
+            // [ACID · C] FK fk_sesion_sede (ON DELETE RESTRICT): borrar una
+            // sede con sesiones dejaría filas "huérfanas" -> el motor lo
+            // impide y la integridad referencial se mantiene.
             return Problema(500, "error_motor", "No se pudo eliminar la sede.", ex.Message);
         }
         catch (Exception ex)

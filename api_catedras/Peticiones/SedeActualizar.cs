@@ -14,6 +14,12 @@
 //
 //  El body VACÍO (ningún campo) NO es un error de forma: es una regla de
 //  negocio -> lo rechaza el SERVICIO con 400 (ver ServicioSede).
+//
+//  [SOLID · S] Reparto claro: aquí SOLO "forma" (longitudes, tipos); el
+//  "body vacío" es negocio y vive en ServicioSede. Cada cosa en su capa.
+//  'ACamposEnviados()' arma el diccionario columna->valor SOLO con lo que
+//  llegó: [ACID · C] así el UPDATE no pisa columnas que el cliente nunca
+//  mandó.
 // ==========================================================================
 
 namespace ApiCatedras.Peticiones;

@@ -8,6 +8,30 @@
 //  Comunica los problemas con excepciones y el controlador las traduce:
 //     ArgumentException     -> 400
 //     NoEncontradoExcepcion -> 404
+//
+// --------------------------------------------------------------------------
+//  PRINCIPIOS EN ESTE ARCHIVO:
+//   · SOLID · S (Responsabilidad única): SOLO reglas de negocio (límite > 0,
+//     body de PATCH no vacío, "no existe" -> 404). Ni HTTP ni SQL.
+//   · SOLID · D (Inversión de dependencias): depende de IRepositorioSede
+//     (campo _repositorio), nunca de RepositorioSedePostgres. Por eso la
+//     prueba de 'pruebas/' puede darle un repositorio FALSO en memoria.
+//   · SOLID · L (Sustitución de Liskov): el servicio se comporta igual con
+//     CUALQUIER IRepositorioSede (Postgres real o falso): ambos respetan el
+//     mismo contrato (devolver null / devolver 0 filas cuando no existe).
+//   · SOLID · O (Abierto/Cerrado): añadir un verbo nuevo = añadir un método
+//     nuevo; los existentes no se tocan.
+//   · ACID (nota de alcance): la v1 hace UNA sentencia SQL por operación, así
+//     que la atomicidad de cada operación la garantiza PostgreSQL en
+//     autocommit. Este servicio NO abre transacciones porque no las
+//     necesita. Si una regla futura tocara 2+ tablas, el 'BEGIN/COMMIT'
+//     viviría AQUÍ (la capa que conoce la unidad de trabajo del negocio).
+//
+//  FLUJO DE UNA PETICIÓN — PASOS 4 y 5:
+//   [FLUJO 4] Aplica la regla de negocio y transforma la 'Peticion' en lo
+//             que el repositorio entiende (un 'Sede' o un diccionario
+//             columna->valor).
+//   [FLUJO 5] Llama a _repositorio.XxxAsync(...) por la interfaz.
 // ==========================================================================
 
 namespace ApiCatedras.Servicios;
@@ -23,7 +47,9 @@ public class ServicioSede : IServicioSede
     // Límite por defecto de la lista cuando el cliente no manda '?limite='.
     private const int LimitePorDefecto = 1000;
 
-    // El servicio depende de la INTERFAZ, nunca de RepositorioSedePostgres.
+    // [SOLID · D + L] El servicio depende de la INTERFAZ, nunca de
+    // RepositorioSedePostgres. Cualquier implementación válida es
+    // intercambiable sin cambiar una línea de esta clase.
     private readonly IRepositorioSede _repositorio;
 
     public ServicioSede(IRepositorioSede repositorio)
@@ -36,13 +62,15 @@ public class ServicioSede : IServicioSede
     // ----------------------------------------------------------------------
     public async Task<(List<Sede> Datos, int Total)> ListarAsync(int? limite)
     {
-        // Regla: si no viene, 1000. Si viene, debe ser > 0.
+        // [FLUJO 4][SOLID · S] Regla de negocio: si no viene, 1000; si viene,
+        // debe ser > 0. Esta decisión NO está en el controlador ni en la BD.
         int limiteEfectivo = limite ?? LimitePorDefecto;
 
         if (limiteEfectivo <= 0)
             throw new ArgumentException(
                 "El parámetro 'limite' debe ser un entero mayor que 0.");
 
+        // [FLUJO 5] Baja a la capa de datos por la interfaz.
         var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo);
 
         // 'total' = cuántas filas se devuelven en esta respuesta.
@@ -97,8 +125,12 @@ public class ServicioSede : IServicioSede
             ["activo"]     = peticion.Activo!.Value,
         };
 
+        // [FLUJO 5] Una sola sentencia UPDATE. [ACID · A] PostgreSQL la
+        // aplica entera o nada: las 4 columnas cambian juntas.
         int filas = await _repositorio.ActualizarAsync(idSede, datos);
 
+        // [ACID · C] 0 filas = la fila no existe -> no se inventó nada; se
+        // avisa con 404.
         if (filas == 0)
             throw new NoEncontradoExcepcion($"No existe la sede '{idSede}'.");
 
@@ -113,7 +145,8 @@ public class ServicioSede : IServicioSede
         // La petición arma el diccionario solo con los campos que llegaron.
         var datos = peticion.ACamposEnviados();
 
-        // Regla de negocio (no de forma): body sin campos -> 400.
+        // [FLUJO 4][SOLID · S] Regla de negocio (no de forma): body sin
+        // campos -> 400. El framework no puede saber esto; el servicio sí.
         if (datos.Count == 0)
             throw new ArgumentException(
                 "El cuerpo del PATCH no trae ningún campo para actualizar.");

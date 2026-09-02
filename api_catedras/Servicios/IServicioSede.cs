@@ -8,6 +8,17 @@
 //   · habla con IRepositorioSede (no sabe qué motor hay),
 //   · comunica los problemas con excepciones (ArgumentException -> 400;
 //     NoEncontradoExcepcion -> 404). NO conoce HTTP.
+//
+// --------------------------------------------------------------------------
+//  PRINCIPIOS EN ESTE ARCHIVO:
+//   · SOLID · I (Segregación de interfaces): contrato PEQUEÑO y cohesionado
+//     (solo lo que un cliente de negocio de 'Sede' necesita). El controlador
+//     no arrastra métodos que no usa.
+//   · SOLID · D (Inversión de dependencias): esta interfaz es la
+//     ABSTRACCIÓN de la que depende el controlador; la clase que la cumple
+//     es un detalle intercambiable.
+//   · SOLID · O (Abierto/Cerrado): se puede sustituir ServicioSede por otra
+//     implementación (p. ej. con caché) sin tocar al controlador.
 // ==========================================================================
 
 namespace ApiCatedras.Servicios;

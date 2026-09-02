@@ -12,6 +12,31 @@
 //  Sin fábrica multi-motor ni selección de motor (Artículo 1 / RNF6): la
 //  v1 tiene UN motor y el código lo dice. En v3, cuando exista un segundo
 //  motor, SOLO esta sección se convierte en la fábrica real.
+//
+// --------------------------------------------------------------------------
+//  PRINCIPIOS QUE SE VEN EN ESTE ARCHIVO (mapa; el detalle está en cada
+//  bloque marcado más abajo y en docs/RESUMEN_SOLID_ACID.md):
+//
+//   · SOLID · S (Responsabilidad única): este archivo SOLO ensambla y
+//     arranca. No tiene reglas de negocio ni SQL.
+//   · SOLID · O (Abierto/Cerrado): agregar un segundo motor en v3 = crear
+//     otra clase ': IRepositorioSede' y cambiar SOLO las líneas de registro
+//     de abajo. Ningún controlador ni servicio se modifica.
+//   · SOLID · D (Inversión de dependencias): este es el ÚNICO lugar que
+//     nombra clases concretas (RepositorioSedePostgres, ServicioSede). El
+//     resto del sistema recibe interfaces por constructor. Aquí se "cablea"
+//     la abstracción a su implementación -> patrón Composition Root.
+//
+//  FLUJO DE UNA PETICIÓN — PASOS 0 a 2 (la cadena completa está numerada
+//  en Controller, Servicio y Repositorio):
+//   [FLUJO 0] Al arrancar, el contenedor de DI queda cargado con el mapa
+//             IServicioSede->ServicioSede y IRepositorioSede->Repositorio...
+//   [FLUJO 1] Llega el HTTP. El middleware de enrutado (app.MapControllers)
+//             elige el método por los atributos [HttpGet]/[HttpPost]/...
+//   [FLUJO 2] [ApiController] enlaza el body al objeto de 'Peticiones/' y
+//             corre sus anotaciones. Si algo falla -> se dispara la fábrica
+//             'InvalidModelStateResponseFactory' de abajo -> 422 y el
+//             controlador NUNCA se ejecuta.
 // ==========================================================================
 
 using ApiCatedras.Repositorios;
@@ -127,13 +152,21 @@ var cadenaConexion = builder.Configuration.GetConnectionString("Postgres")
         "Falta la cadena de conexión 'Postgres' " +
         "(appsettings.json o la variable ConnectionStrings__Postgres).");
 
+// [SOLID · D] Aquí se resuelve la inversión de dependencias: se declara qué
+// clase concreta responde a cada interfaz. Nadie más en el proyecto conoce
+// estos nombres concretos.
+// [SOLID · O] Para cambiar de motor NO se toca este archivo salvo esta
+// línea: se apunta la interfaz a otra clase.
+// [ACID · I] 'AddScoped' = una instancia (y una conexión lógica) por
+// petición HTTP: dos peticiones simultáneas no comparten estado en memoria;
+// el aislamiento real entre sus transacciones lo pone PostgreSQL.
+//
 // IRepositorioSede -> RepositorioSedePostgres (única implementación en v1).
-// 'AddScoped' = una instancia por petición HTTP.
 builder.Services.AddScoped<IRepositorioSede>(
     _ => new RepositorioSedePostgres(cadenaConexion));
 
 // IServicioSede -> ServicioSede. El framework le inyecta el IRepositorioSede
-// de arriba al construirlo.
+// de arriba al construirlo (inyección por constructor).
 builder.Services.AddScoped<IServicioSede, ServicioSede>();
 
 // --------------------------------------------------------------------------

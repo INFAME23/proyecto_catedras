@@ -14,6 +14,15 @@
 //  "El tipo también es regla": 'es_virtual' y 'activo' son 'bool?'. Si el
 //  cliente manda "texto" o un número, no encaja y cae en 422 sin escribir
 //  ni un 'if'.
+//
+//  [SOLID · S] Una petición por verbo (SedeCrear/SedeReemplazo/SedeActualizar):
+//  cada clase tiene la ÚNICA responsabilidad de describir el body de SU
+//  verbo. [SOLID · I] El controlador de POST solo depende de SedeCrear, no
+//  de un DTO gigante compartido.
+//  [FLUJO 2] Estas anotaciones son la frontera de "forma": se comprueban
+//  ANTES del controlador; si fallan -> 422 y la BD no se toca.
+//  [ACID · C] Es la primera línea de defensa de la Consistencia: filtra
+//  basura antes de que llegue al motor.
 // ==========================================================================
 
 namespace ApiCatedras.Peticiones;

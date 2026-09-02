@@ -11,6 +11,18 @@
 //  repositorio FALSO en memoria que implementa esta misma interfaz.
 //
 //  Todos los métodos son 'async' (Artículo 2, RNF4): devuelven Task.
+//
+// --------------------------------------------------------------------------
+//  PRINCIPIOS EN ESTE ARCHIVO:
+//   · SOLID · D (Inversión de dependencias): el servicio (alto nivel)
+//     depende de ESTA abstracción, no del detalle Postgres/Dapper.
+//   · SOLID · I (Segregación de interfaces): 5 operaciones de datos, todas
+//     necesarias. Nada de un "IRepositorioGenerico" con 30 métodos.
+//   · SOLID · L (Sustitución de Liskov): el contrato fija el comportamiento
+//     observable — "devuelve null si no existe", "devuelve filas afectadas,
+//     0 = no existe" — para que Postgres y el repo falso sean sustituibles.
+//   · SOLID · O (Abierto/Cerrado): v3 = nueva clase ': IRepositorioSede';
+//     esta interfaz y todo lo de arriba quedan intactos.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
