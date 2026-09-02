@@ -1,0 +1,36 @@
+# ==========================================================================
+#  .gitignore  ·  Proyecto Cátedras · Versión 1 (C# / ASP.NET Core .NET 10)
+# --------------------------------------------------------------------------
+#  Qué es: lista de patrones de archivos/carpetas que Git IGNORA por
+#  completo (no los muestra como cambios ni los sube). Sirve para no
+#  versionar cosas que se REGENERAN en cada máquina (compilados) o que son
+#  personales del editor.
+# ==========================================================================
+
+# --- Compilados de .NET -----------------------------------------------------
+#  'bin/' y 'obj/' los crea el compilador cada vez que construyes. Son
+#  distintos en Windows y en Linux (por eso en Docker van en volúmenes
+#  anónimos, ver docker-compose.yml). NUNCA se suben al repo.
+bin/
+obj/
+
+#  Resultado de 'dotnet publish' (no lo usamos en v1, pero por si acaso).
+publish/
+out/
+
+# --- Artefactos de Visual Studio / Rider ----------------------------------
+#  Carpeta de estado de Visual Studio y archivos de preferencias por
+#  usuario: son personales, no del proyecto.
+.vs/
+*.user
+*.suo
+
+# --- Logs y temporales ---------------------------------------------------
+*.log
+*.tmp
+
+# --- Secretos (defensa en profundidad) ----------------------------------
+#  En v1 las credenciales son didácticas y van en el compose, pero si
+#  algún día aparece un archivo .env con secretos, que no se suba.
+.env
+.env.*

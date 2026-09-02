@@ -1,0 +1,104 @@
+# ==========================================================================
+#  docker-compose.yml  ·  Proyecto Cátedras · Versión 1
+# --------------------------------------------------------------------------
+#  El Artículo 4 de la constitución manda "un solo comando":
+#      docker compose up -d --build
+#  ...deja TODO el sistema de la versión funcionando.
+#
+#  En la v1 ese "todo" son DOS servicios:
+#      postgres  -> la base de datos (se siembra sola con el script provisto)
+#      api       -> la API .NET, con 'dotnet watch' (recarga al guardar)
+# ==========================================================================
+
+# 'name' fija el nombre del PROYECTO Compose (prefijo de contenedores, redes
+# y volúmenes). Con un nombre propio, este proyecto NO choca con el del
+# curso aunque las carpetas se llamen parecido.
+name: mi_v1_catedras
+
+services:
+
+  # ======================================================================
+  #  Base de datos PostgreSQL
+  # ======================================================================
+  postgres:
+    # Imagen oficial de PostgreSQL 16, variante 'alpine' (Linux mínimo).
+    # El script provisto exige PostgreSQL 16 o superior.
+    image: postgres:16-alpine
+
+    container_name: mi_v1_catedras_postgres
+    restart: unless-stopped
+
+    # Variables que la imagen lee la PRIMERA vez para crear la base y el
+    # usuario. Credenciales DIDÁCTICAS (constitución, Art. 8).
+    environment:
+      POSTGRES_DB: bdcatedras_postgres_local
+      POSTGRES_USER: sa
+      POSTGRES_PASSWORD: Construccion123!
+
+    # "HOST:CONTENEDOR". Dentro de la red de Docker PostgreSQL escucha en el
+    # 5432 estándar; desde tu PC se entra por 15542 (+100 respecto a los
+    # documentos, para convivir con el proyecto del curso).
+    ports:
+      - "15542:5432"
+
+    volumes:
+      # Persistencia en un volumen NOMBRADO (ver 'volumes' abajo).
+      - pgdata:/var/lib/postgresql/data
+      # El script PROVISTO, montado de solo lectura en la carpeta mágica.
+      # PostgreSQL lo ejecuta la PRIMERA vez que arranca con el volumen
+      # vacío. Se monta, NO se genera ni se modifica (5_data_model.md §4).
+      - ./db/postgres/script_bdcatedras.sql:/docker-entrypoint-initdb.d/script_bdcatedras.sql:ro
+
+    # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
+    # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sa -d bdcatedras_postgres_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ======================================================================
+  #  API .NET (ASP.NET Core, con dotnet watch)
+  # ======================================================================
+  api:
+    # Construye la imagen a partir del Dockerfile de la carpeta de la API.
+    build:
+      context: ./api_catedras
+      dockerfile: Dockerfile
+
+    container_name: mi_v1_catedras_api
+    restart: unless-stopped
+
+    # La API NO arranca hasta que 'postgres' esté 'healthy' (y por tanto
+    # ya sembrado). Es el mecanismo del Art. 5 / decisión D6.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8042
+      # Sobrescribe ConnectionStrings:Postgres de appsettings.json. Aquí el
+      # host es 'postgres' (nombre del servicio en la red de Docker) y el
+      # puerto es el 5432 interno.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=bdcatedras_postgres_local;Username=sa;Password=Construccion123!;Include Error Detail=true"
+
+    # La API escucha en 8042 dentro del contenedor; se publica como 8142.
+    ports:
+      - "8142:8042"
+
+    volumes:
+      # 1) El código, montado en caliente: guardar un .cs -> dotnet watch
+      #    recompila y reinicia.
+      - ./api_catedras:/app
+      # 2) 'bin/' y 'obj/' en volúmenes ANÓNIMOS: los compilados de Linux
+      #    (contenedor) NO se mezclan con los de Windows (tu IDE).
+      - /app/bin
+      - /app/obj
+      - /app/pruebas/bin
+      - /app/pruebas/obj
+
+volumes:
+  # Datos de PostgreSQL. Con el 'name' del proyecto, el volumen real se
+  # llama 'mi_v1_catedras_pgdata'.
+  pgdata:

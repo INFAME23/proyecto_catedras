@@ -1,0 +1,56 @@
+<!--
+  ApiCatedras.csproj  ·  Proyecto Cátedras · Versión 1
+
+  Un archivo .csproj describe UN proyecto .NET: qué versión del framework
+  usa, qué opciones de compilación tiene y qué paquetes NuGet necesita.
+  MSBuild lo lee para compilar.
+
+  Sdk="Microsoft.NET.Sdk.Web"  =  proyecto de aplicación WEB (ASP.NET Core):
+  trae el servidor Kestrel, el enrutado por atributos y los controladores.
+-->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <!-- .NET 10: la versión del curso (Artículo 2 de la constitución). -->
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!-- "Nullable enable": el compilador avisa si puede llegar un null
+         donde no se espera. Distingue "string" de "string?". -->
+    <Nullable>enable</Nullable>
+
+    <!-- "ImplicitUsings": el SDK agrega los using más comunes
+         (System, System.Linq, etc.) sin escribirlos en cada archivo. -->
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Espacio de nombres raíz de todo el código de este proyecto. -->
+    <RootNamespace>ApiCatedras</RootNamespace>
+
+    <!-- Cultura invariante: números y fechas se formatean igual en
+         cualquier máquina (Windows y contenedor por igual). -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    Paquetes NuGet. El Artículo 2 permite EXACTAMENTE estos tres en la v1:
+      Npgsql                  = cliente oficial de PostgreSQL para .NET
+      Dapper                  = micro-ejecutor: corre el SQL que escribimos
+                                a mano y mapea fila a objeto (NO genera SQL)
+      Swashbuckle.AspNetCore  = documentación Swagger en /swagger
+  -->
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+    <PackageReference Include="Dapper" Version="2.1.66" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+  </ItemGroup>
+
+  <!--
+    El proyecto de pruebas (pruebas/PruebaCapas.csproj) es un proyecto
+    APARTE. Se excluye de esta compilación para que la API no arrastre su
+    archivo Programa.cs (que tiene su propio Main).
+  -->
+  <ItemGroup>
+    <Compile Remove="pruebas/**/*.cs" />
+    <Content Remove="pruebas/**/*" />
+  </ItemGroup>
+
+</Project>

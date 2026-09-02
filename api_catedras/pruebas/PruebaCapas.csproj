@@ -1,0 +1,36 @@
+<!--
+  PruebaCapas.csproj  ·  Proyecto Cátedras · Versión 1 · Criterio 6
+
+  Proyecto de CONSOLA independiente. Ejecuta ServicioSede con un
+  repositorio FALSO en memoria (sin PostgreSQL): la prueba objetiva de
+  que las capas quedaron bien cortadas (4_research.md, D2).
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- "Exe": genera un ejecutable con su propio Main (top-level). -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ApiCatedras.Pruebas</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    El proyecto de la API es una aplicación web; para referenciarlo desde
+    una consola hay que declarar el mismo marco de ASP.NET Core.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!--
+    Referencia al proyecto de la API: reutiliza (sin copiar) las clases
+    Sede, las peticiones, IServicioSede/ServicioSede, IRepositorioSede y
+    NoEncontradoExcepcion.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../ApiCatedras.csproj" />
+  </ItemGroup>
+
+</Project>
