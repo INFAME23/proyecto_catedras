@@ -459,3 +459,315 @@ def roles_eliminar(id_rol):
     except ErrorApi as ex:
         flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
     return redirect(url_for('admin.roles_listar'))
+
+
+# ==========================================================================
+#  TIPO DE DOCUMENTO  (recurso API: "TipoDocumento", clave: id_tipo_documento)
+# ==========================================================================
+
+@admin_bp.route('/tipos-documento')
+def tipos_documento_listar():
+    try:
+        tipos = listar('TipoDocumento')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        tipos = []
+    return render_template('admin/tipo_documento_lista.html', tipos=tipos)
+
+
+@admin_bp.route('/tipos-documento/nuevo', methods=['GET', 'POST'])
+def tipos_documento_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/tipo_documento_form.html', modo='nueva', tipo=None, errores=[])
+
+    datos = {
+        'id_tipo_documento': request.form.get('id_tipo_documento', '').strip(),
+        'nombre': request.form.get('nombre', '').strip(),
+        'activo': request.form.get('activo') == 'on',
+    }
+    try:
+        crear('TipoDocumento', datos)
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        return render_template('admin/tipo_documento_form.html', modo='nueva', tipo=datos, errores=ex.errores)
+
+    flash(f"Tipo de documento '{datos['id_tipo_documento']}' creado.", 'exito')
+    return redirect(url_for('admin.tipos_documento_listar'))
+
+
+@admin_bp.route('/tipos-documento/<id_tipo_documento>/editar', methods=['GET', 'POST'])
+def tipos_documento_editar(id_tipo_documento):
+    if request.method == 'GET':
+        try:
+            tipo = obtener('TipoDocumento', id_tipo_documento)
+        except ErrorApi as ex:
+            flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+            return redirect(url_for('admin.tipos_documento_listar'))
+        return render_template('admin/tipo_documento_form.html', modo='editar', tipo=tipo, errores=[])
+
+    datos = {
+        'nombre': request.form.get('nombre', '').strip(),
+        'activo': request.form.get('activo') == 'on',
+    }
+    try:
+        reemplazar('TipoDocumento', id_tipo_documento, datos)
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        datos['id_tipo_documento'] = id_tipo_documento
+        return render_template('admin/tipo_documento_form.html', modo='editar', tipo=datos, errores=ex.errores)
+
+    flash(f"Tipo de documento '{id_tipo_documento}' actualizado.", 'exito')
+    return redirect(url_for('admin.tipos_documento_listar'))
+
+
+@admin_bp.route('/tipos-documento/<id_tipo_documento>/eliminar', methods=['POST'])
+def tipos_documento_eliminar(id_tipo_documento):
+    try:
+        eliminar('TipoDocumento', id_tipo_documento)
+        flash(f"Tipo de documento '{id_tipo_documento}' eliminado.", 'exito')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+    return redirect(url_for('admin.tipos_documento_listar'))
+
+
+# ==========================================================================
+#  TIPO DE EVENTO  (recurso API: "TipoEvento", clave: id_tipo_evento)
+# ==========================================================================
+
+@admin_bp.route('/tipos-evento')
+def tipos_evento_listar():
+    try:
+        tipos = listar('TipoEvento')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        tipos = []
+    return render_template('admin/tipo_evento_lista.html', tipos=tipos)
+
+
+@admin_bp.route('/tipos-evento/nuevo', methods=['GET', 'POST'])
+def tipos_evento_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/tipo_evento_form.html', modo='nueva', tipo=None, errores=[])
+
+    datos = {
+        'id_tipo_evento': request.form.get('id_tipo_evento', '').strip(),
+        'nombre': request.form.get('nombre', '').strip(),
+        'activo': request.form.get('activo') == 'on',
+    }
+    try:
+        crear('TipoEvento', datos)
+    except ErrorApi as ex:
+        # Aquí llega, por ejemplo, "debe tener exactamente 4 caracteres" (422).
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        return render_template('admin/tipo_evento_form.html', modo='nueva', tipo=datos, errores=ex.errores)
+
+    flash(f"Tipo de evento '{datos['id_tipo_evento']}' creado.", 'exito')
+    return redirect(url_for('admin.tipos_evento_listar'))
+
+
+@admin_bp.route('/tipos-evento/<id_tipo_evento>/editar', methods=['GET', 'POST'])
+def tipos_evento_editar(id_tipo_evento):
+    if request.method == 'GET':
+        try:
+            tipo = obtener('TipoEvento', id_tipo_evento)
+        except ErrorApi as ex:
+            flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+            return redirect(url_for('admin.tipos_evento_listar'))
+        return render_template('admin/tipo_evento_form.html', modo='editar', tipo=tipo, errores=[])
+
+    datos = {
+        'nombre': request.form.get('nombre', '').strip(),
+        'activo': request.form.get('activo') == 'on',
+    }
+    try:
+        reemplazar('TipoEvento', id_tipo_evento, datos)
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        datos['id_tipo_evento'] = id_tipo_evento
+        return render_template('admin/tipo_evento_form.html', modo='editar', tipo=datos, errores=ex.errores)
+
+    flash(f"Tipo de evento '{id_tipo_evento}' actualizado.", 'exito')
+    return redirect(url_for('admin.tipos_evento_listar'))
+
+
+@admin_bp.route('/tipos-evento/<id_tipo_evento>/eliminar', methods=['POST'])
+def tipos_evento_eliminar(id_tipo_evento):
+    try:
+        eliminar('TipoEvento', id_tipo_evento)
+        flash(f"Tipo de evento '{id_tipo_evento}' eliminado.", 'exito')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+    return redirect(url_for('admin.tipos_evento_listar'))
+
+
+# ==========================================================================
+#  TIPO DE PREGUNTA  (recurso API: "TipoPregunta", clave: id_tipo_pregunta)
+# ==========================================================================
+#  ApiCatedras exige que EXACTAMENTE uno de guarda_numero/guarda_texto/
+#  guarda_opcion sea true. En vez de tres checkboxes independientes (que
+#  el usuario podría marcar mal), el formulario usa un solo <select>
+#  "destino" con las 3 opciones -- la forma del HTML ya impide el error
+#  antes de llegar a la API; la API igual lo revalida (400 si algo raro
+#  llegara por otra vía, p. ej. curl directo).
+
+DESTINOS_PREGUNTA = [('numero', 'Número'), ('texto', 'Texto'), ('opcion', 'Opción')]
+
+
+def _destino_a_booleanos(destino):
+    return {
+        'guarda_numero': destino == 'numero',
+        'guarda_texto': destino == 'texto',
+        'guarda_opcion': destino == 'opcion',
+    }
+
+
+def _booleanos_a_destino(tipo):
+    if tipo.get('guarda_numero'):
+        return 'numero'
+    if tipo.get('guarda_texto'):
+        return 'texto'
+    if tipo.get('guarda_opcion'):
+        return 'opcion'
+    return ''
+
+
+@admin_bp.route('/tipos-pregunta')
+def tipos_pregunta_listar():
+    try:
+        tipos = listar('TipoPregunta')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        tipos = []
+    return render_template('admin/tipo_pregunta_lista.html', tipos=tipos)
+
+
+@admin_bp.route('/tipos-pregunta/nuevo', methods=['GET', 'POST'])
+def tipos_pregunta_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/tipo_pregunta_form.html', modo='nueva', tipo=None, destino='', errores=[], destinos=DESTINOS_PREGUNTA)
+
+    datos = {
+        'id_tipo_pregunta': request.form.get('id_tipo_pregunta', '').strip(),
+        'nombre': request.form.get('nombre', '').strip(),
+        **_destino_a_booleanos(request.form.get('destino', '')),
+    }
+    try:
+        crear('TipoPregunta', datos)
+    except ErrorApi as ex:
+        # Aquí llega, por ejemplo, "exactamente uno... debe ser true" (400).
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        return render_template('admin/tipo_pregunta_form.html', modo='nueva', tipo=datos,
+                                destino=request.form.get('destino', ''), errores=ex.errores, destinos=DESTINOS_PREGUNTA)
+
+    flash(f"Tipo de pregunta '{datos['id_tipo_pregunta']}' creado.", 'exito')
+    return redirect(url_for('admin.tipos_pregunta_listar'))
+
+
+@admin_bp.route('/tipos-pregunta/<id_tipo_pregunta>/editar', methods=['GET', 'POST'])
+def tipos_pregunta_editar(id_tipo_pregunta):
+    if request.method == 'GET':
+        try:
+            tipo = obtener('TipoPregunta', id_tipo_pregunta)
+        except ErrorApi as ex:
+            flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+            return redirect(url_for('admin.tipos_pregunta_listar'))
+        return render_template('admin/tipo_pregunta_form.html', modo='editar', tipo=tipo,
+                                destino=_booleanos_a_destino(tipo), errores=[], destinos=DESTINOS_PREGUNTA)
+
+    datos = {
+        'nombre': request.form.get('nombre', '').strip(),
+        **_destino_a_booleanos(request.form.get('destino', '')),
+    }
+    try:
+        reemplazar('TipoPregunta', id_tipo_pregunta, datos)
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        datos['id_tipo_pregunta'] = id_tipo_pregunta
+        return render_template('admin/tipo_pregunta_form.html', modo='editar', tipo=datos,
+                                destino=request.form.get('destino', ''), errores=ex.errores, destinos=DESTINOS_PREGUNTA)
+
+    flash(f"Tipo de pregunta '{id_tipo_pregunta}' actualizado.", 'exito')
+    return redirect(url_for('admin.tipos_pregunta_listar'))
+
+
+@admin_bp.route('/tipos-pregunta/<id_tipo_pregunta>/eliminar', methods=['POST'])
+def tipos_pregunta_eliminar(id_tipo_pregunta):
+    try:
+        eliminar('TipoPregunta', id_tipo_pregunta)
+        flash(f"Tipo de pregunta '{id_tipo_pregunta}' eliminado.", 'exito')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+    return redirect(url_for('admin.tipos_pregunta_listar'))
+
+
+# ==========================================================================
+#  TIPO DE VINCULACIÓN  (recurso API: "TipoVinculacion", clave: id_tipo_vinculacion)
+# ==========================================================================
+
+@admin_bp.route('/tipos-vinculacion')
+def tipos_vinculacion_listar():
+    try:
+        tipos = listar('TipoVinculacion')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        tipos = []
+    return render_template('admin/tipo_vinculacion_lista.html', tipos=tipos)
+
+
+@admin_bp.route('/tipos-vinculacion/nuevo', methods=['GET', 'POST'])
+def tipos_vinculacion_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/tipo_vinculacion_form.html', modo='nueva', tipo=None, errores=[])
+
+    datos = {
+        'id_tipo_vinculacion': request.form.get('id_tipo_vinculacion', '').strip(),
+        'nombre': request.form.get('nombre', '').strip(),
+        'es_interno': request.form.get('es_interno') == 'on',
+        'exige_programa': request.form.get('exige_programa') == 'on',
+        'activo': request.form.get('activo') == 'on',
+    }
+    try:
+        crear('TipoVinculacion', datos)
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        return render_template('admin/tipo_vinculacion_form.html', modo='nueva', tipo=datos, errores=ex.errores)
+
+    flash(f"Tipo de vinculación '{datos['id_tipo_vinculacion']}' creado.", 'exito')
+    return redirect(url_for('admin.tipos_vinculacion_listar'))
+
+
+@admin_bp.route('/tipos-vinculacion/<id_tipo_vinculacion>/editar', methods=['GET', 'POST'])
+def tipos_vinculacion_editar(id_tipo_vinculacion):
+    if request.method == 'GET':
+        try:
+            tipo = obtener('TipoVinculacion', id_tipo_vinculacion)
+        except ErrorApi as ex:
+            flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+            return redirect(url_for('admin.tipos_vinculacion_listar'))
+        return render_template('admin/tipo_vinculacion_form.html', modo='editar', tipo=tipo, errores=[])
+
+    datos = {
+        'nombre': request.form.get('nombre', '').strip(),
+        'es_interno': request.form.get('es_interno') == 'on',
+        'exige_programa': request.form.get('exige_programa') == 'on',
+        'activo': request.form.get('activo') == 'on',
+    }
+    try:
+        reemplazar('TipoVinculacion', id_tipo_vinculacion, datos)
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        datos['id_tipo_vinculacion'] = id_tipo_vinculacion
+        return render_template('admin/tipo_vinculacion_form.html', modo='editar', tipo=datos, errores=ex.errores)
+
+    flash(f"Tipo de vinculación '{id_tipo_vinculacion}' actualizado.", 'exito')
+    return redirect(url_for('admin.tipos_vinculacion_listar'))
+
+
+@admin_bp.route('/tipos-vinculacion/<id_tipo_vinculacion>/eliminar', methods=['POST'])
+def tipos_vinculacion_eliminar(id_tipo_vinculacion):
+    try:
+        eliminar('TipoVinculacion', id_tipo_vinculacion)
+        flash(f"Tipo de vinculación '{id_tipo_vinculacion}' eliminado.", 'exito')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+    return redirect(url_for('admin.tipos_vinculacion_listar'))
