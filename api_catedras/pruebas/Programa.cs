@@ -464,6 +464,122 @@ await AfirmarLanza<NoEncontradoExcepcion>(
     "segundo DELETE lanza NoEncontradoExcepcion",
     () => servicioRol.EliminarAsync("PONENTE"));
 
+// ============================================================================
+//  Prueba de capas: ServicioTipoDocumento + repositorio falso en memoria
+// ============================================================================
+var servicioTipoDoc = new ServicioTipoDocumento(new RepositorioTipoDocumentoFalso());
+
+Console.WriteLine("\n== Prueba de capas: ServicioTipoDocumento + repositorio falso en memoria ==\n");
+
+var (datosTdoc, totalTdoc) = await servicioTipoDoc.ListarAsync(null);
+Afirmar("Listar() devuelve los 6 tipos de documento semilla", totalTdoc == 6 && datosTdoc.Count == 6);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioTipoDoc.ListarAsync(0));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(\"NO_VA\") lanza NoEncontradoExcepcion", () => servicioTipoDoc.ObtenerAsync("NO_VA"));
+
+await servicioTipoDoc.CrearAsync(new TipoDocumentoCrear
+{
+    IdTipoDocumento = "RC",
+    Nombre = "Registro civil",
+});
+var tdocCreado = await servicioTipoDoc.ObtenerAsync("RC");
+Afirmar("Crear() aplica 'activo=true' por defecto y Obtener() lo encuentra",
+    tdocCreado.Nombre == "Registro civil" && tdocCreado.Activo);
+
+int filasPutTdoc = await servicioTipoDoc.ReemplazarAsync("RC", new TipoDocumentoReemplazo
+{
+    Nombre = "Registro civil de nacimiento",
+    Activo = false,
+});
+var trasPutTdoc = await servicioTipoDoc.ObtenerAsync("RC");
+Afirmar("PUT reemplaza todo",
+    filasPutTdoc == 1 && trasPutTdoc.Nombre == "Registro civil de nacimiento" && !trasPutTdoc.Activo);
+
+int filasPatchTdoc = await servicioTipoDoc.ActualizarAsync("RC", new TipoDocumentoActualizar { Activo = true });
+var trasPatchTdoc = await servicioTipoDoc.ObtenerAsync("RC");
+Afirmar("PATCH cambia solo 'activo' y deja 'nombre' igual",
+    filasPatchTdoc == 1 && trasPatchTdoc.Activo && trasPatchTdoc.Nombre == "Registro civil de nacimiento");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioTipoDoc.ActualizarAsync("RC", new TipoDocumentoActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a \"NO_VA\" lanza NoEncontradoExcepcion",
+    () => servicioTipoDoc.ActualizarAsync("NO_VA", new TipoDocumentoActualizar { Activo = false }));
+
+int eliminadasTdoc = await servicioTipoDoc.EliminarAsync("RC");
+Afirmar("DELETE elimina 1 fila", eliminadasTdoc == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion",
+    () => servicioTipoDoc.EliminarAsync("RC"));
+
+// ============================================================================
+//  Prueba de capas: ServicioTipoEvento + repositorio falso en memoria
+// ============================================================================
+var servicioTipoEvt = new ServicioTipoEvento(new RepositorioTipoEventoFalso());
+
+Console.WriteLine("\n== Prueba de capas: ServicioTipoEvento + repositorio falso en memoria ==\n");
+
+var (datosTevt, totalTevt) = await servicioTipoEvt.ListarAsync(null);
+Afirmar("Listar() devuelve los 8 tipos de evento semilla", totalTevt == 8 && datosTevt.Count == 8);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioTipoEvt.ListarAsync(0));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(\"NO_VA\") lanza NoEncontradoExcepcion", () => servicioTipoEvt.ObtenerAsync("NO_VA"));
+
+await servicioTipoEvt.CrearAsync(new TipoEventoCrear
+{
+    IdTipoEvento = "TEST",
+    Nombre = "Prueba",
+});
+var tevtCreado = await servicioTipoEvt.ObtenerAsync("TEST");
+Afirmar("Crear() inserta y Obtener() lo encuentra", tevtCreado.Nombre == "Prueba");
+
+// A diferencia de Sede/Rol/TipoDocumento, 'nombre' NO es único aquí:
+// crear otro tipo de evento con el MISMO nombre debe funcionar sin problema.
+await servicioTipoEvt.CrearAsync(new TipoEventoCrear
+{
+    IdTipoEvento = "TES2",
+    Nombre = "Prueba",
+});
+Afirmar("Crear() permite 'nombre' repetido (no hay UNIQUE en tipo_evento)",
+    (await servicioTipoEvt.ObtenerAsync("TES2")).Nombre == "Prueba");
+
+int filasPutTevt = await servicioTipoEvt.ReemplazarAsync("TEST", new TipoEventoReemplazo
+{
+    Nombre = "Prueba renombrada",
+    Activo = false,
+});
+var trasPutTevt = await servicioTipoEvt.ObtenerAsync("TEST");
+Afirmar("PUT reemplaza todo",
+    filasPutTevt == 1 && trasPutTevt.Nombre == "Prueba renombrada" && !trasPutTevt.Activo);
+
+int filasPatchTevt = await servicioTipoEvt.ActualizarAsync("TEST", new TipoEventoActualizar { Activo = true });
+var trasPatchTevt = await servicioTipoEvt.ObtenerAsync("TEST");
+Afirmar("PATCH cambia solo 'activo' y deja 'nombre' igual",
+    filasPatchTevt == 1 && trasPatchTevt.Activo && trasPatchTevt.Nombre == "Prueba renombrada");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioTipoEvt.ActualizarAsync("TEST", new TipoEventoActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a \"NO_VA\" lanza NoEncontradoExcepcion",
+    () => servicioTipoEvt.ActualizarAsync("NO_VA", new TipoEventoActualizar { Activo = false }));
+
+int eliminadasTevt1 = await servicioTipoEvt.EliminarAsync("TEST");
+int eliminadasTevt2 = await servicioTipoEvt.EliminarAsync("TES2");
+Afirmar("DELETE elimina ambas filas", eliminadasTevt1 == 1 && eliminadasTevt2 == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion",
+    () => servicioTipoEvt.EliminarAsync("TEST"));
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -788,4 +904,103 @@ class RepositorioRolFalso : IRepositorioRol
 
     public Task<int> EliminarAsync(string idRol) =>
         Task.FromResult(_tabla.Remove(idRol) ? 1 : 0);
+}
+
+// ==========================================================================
+//  Repositorio FALSO de 'TipoDocumento': mismo patrón que RepositorioSedeFalso.
+// ==========================================================================
+class RepositorioTipoDocumentoFalso : IRepositorioTipoDocumento
+{
+    private readonly Dictionary<string, TipoDocumento> _tabla = new();
+
+    public RepositorioTipoDocumentoFalso()
+    {
+        // Los 6 tipos de documento semilla del script real.
+        _tabla["CC"] = new TipoDocumento { IdTipoDocumento = "CC", Nombre = "Cedula de ciudadania", Activo = true };
+        _tabla["CE"] = new TipoDocumento { IdTipoDocumento = "CE", Nombre = "Cedula de extranjeria", Activo = true };
+        _tabla["NIT"] = new TipoDocumento { IdTipoDocumento = "NIT", Nombre = "Numero de identificacion tributaria", Activo = true };
+        _tabla["PA"] = new TipoDocumento { IdTipoDocumento = "PA", Nombre = "Pasaporte", Activo = true };
+        _tabla["PEP"] = new TipoDocumento { IdTipoDocumento = "PEP", Nombre = "Permiso especial de permanencia", Activo = true };
+        _tabla["TI"] = new TipoDocumento { IdTipoDocumento = "TI", Nombre = "Tarjeta de identidad", Activo = true };
+    }
+
+    public Task<List<TipoDocumento>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(t => t.IdTipoDocumento).Take(limite).ToList());
+
+    public Task<TipoDocumento?> ObtenerPorIdAsync(string idTipoDocumento) =>
+        Task.FromResult(_tabla.TryGetValue(idTipoDocumento, out var tipo) ? tipo : null);
+
+    public Task CrearAsync(TipoDocumento tipoDocumento)
+    {
+        if (_tabla.ContainsKey(tipoDocumento.IdTipoDocumento))
+            throw new InvalidOperationException($"id_tipo_documento '{tipoDocumento.IdTipoDocumento}' duplicado (simulado).");
+
+        _tabla[tipoDocumento.IdTipoDocumento] = tipoDocumento;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idTipoDocumento, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idTipoDocumento, out var tipo))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) tipo.Nombre = (string)n!;
+        if (datos.TryGetValue("activo", out var a)) tipo.Activo = (bool)a!;
+
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idTipoDocumento) =>
+        Task.FromResult(_tabla.Remove(idTipoDocumento) ? 1 : 0);
+}
+
+// ==========================================================================
+//  Repositorio FALSO de 'TipoEvento': mismo patrón que RepositorioSedeFalso.
+//  NO valida unicidad de 'nombre': esta tabla no tiene esa restricción.
+// ==========================================================================
+class RepositorioTipoEventoFalso : IRepositorioTipoEvento
+{
+    private readonly Dictionary<string, TipoEvento> _tabla = new();
+
+    public RepositorioTipoEventoFalso()
+    {
+        // Los 8 tipos de evento semilla del script real.
+        _tabla["ARCU"] = new TipoEvento { IdTipoEvento = "ARCU", Nombre = "Arte y cultura", Activo = true };
+        _tabla["CAAB"] = new TipoEvento { IdTipoEvento = "CAAB", Nombre = "Catedra abierta", Activo = true };
+        _tabla["DEPR"] = new TipoEvento { IdTipoEvento = "DEPR", Nombre = "Deporte y recreacion", Activo = true };
+        _tabla["DIIB"] = new TipoEvento { IdTipoEvento = "DIIB", Nombre = "Difusion institucional", Activo = true };
+        _tabla["DLLH"] = new TipoEvento { IdTipoEvento = "DLLH", Nombre = "Desarrollo humano", Activo = true };
+        _tabla["EIIC"] = new TipoEvento { IdTipoEvento = "EIIC", Nombre = "Encuentro de investigacion", Activo = true };
+        _tabla["MTG "] = new TipoEvento { IdTipoEvento = "MTG ", Nombre = "Mesa de trabajo o grupo", Activo = true };
+        _tabla["SLDI"] = new TipoEvento { IdTipoEvento = "SLDI", Nombre = "Salud integral", Activo = true };
+    }
+
+    public Task<List<TipoEvento>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(t => t.IdTipoEvento).Take(limite).ToList());
+
+    public Task<TipoEvento?> ObtenerPorIdAsync(string idTipoEvento) =>
+        Task.FromResult(_tabla.TryGetValue(idTipoEvento, out var tipo) ? tipo : null);
+
+    public Task CrearAsync(TipoEvento tipoEvento)
+    {
+        if (_tabla.ContainsKey(tipoEvento.IdTipoEvento))
+            throw new InvalidOperationException($"id_tipo_evento '{tipoEvento.IdTipoEvento}' duplicado (simulado).");
+
+        _tabla[tipoEvento.IdTipoEvento] = tipoEvento;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idTipoEvento, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idTipoEvento, out var tipo))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) tipo.Nombre = (string)n!;
+        if (datos.TryGetValue("activo", out var a)) tipo.Activo = (bool)a!;
+
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idTipoEvento) =>
+        Task.FromResult(_tabla.Remove(idTipoEvento) ? 1 : 0);
 }
