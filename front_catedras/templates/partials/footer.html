@@ -1,0 +1,45 @@
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-4 mb-4 mb-md-0">
+                <h5 class="fw-bold mb-3">
+                    <span class="text-primary-custom">Cátedras</span> USB
+                </h5>
+                <p class="text-white-50 small">
+                    Plataforma de gestión de cátedras abiertas de la<br>
+                    <strong>Universidad San Buenaventura Medellín</strong>
+                </p>
+            </div>
+            <div class="col-md-4 mb-4 mb-md-0">
+                <h6 class="fw-bold text-white mb-3">Contacto</h6>
+                <ul class="list-unstyled text-white-50 small">
+                    <li class="mb-2">
+                        <i class="fas fa-envelope text-primary-custom me-2"></i>
+                        <a href="mailto:Direccion.cideh@usbmed.edu.co">Direccion.cideh@usbmed.edu.co</a>
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-phone text-primary-custom me-2"></i>
+                        <a href="tel:+573124136988">312 413 6988</a>
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-map-marker-alt text-primary-custom me-2"></i>
+                        Carrera 56C # 51-90, Medellín, Colombia
+                    </li>
+                </ul>
+            </div>
+            <div class="col-md-4">
+                <h6 class="fw-bold text-white mb-3">Enlaces rápidos</h6>
+                <ul class="list-unstyled text-white-50 small">
+                    <li class="mb-2"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+                    <li class="mb-2"><a href="{{ url_for('admin.sedes_listar') }}">Sedes</a></li>
+                    <li class="mb-2"><a href="{{ url_for('admin.encuestas_listar') }}">Encuestas</a></li>
+                    <li class="mb-2"><a href="{{ url_for('registro.inicio') }}">Registro de asistencia</a></li>
+                </ul>
+            </div>
+        </div>
+        <hr class="footer-divider">
+        <div class="text-center text-white-50 small">
+            &copy; 2026 Universidad San Buenaventura Medellín. Todos los derechos reservados.
+        </div>
+    </div>
+</footer>

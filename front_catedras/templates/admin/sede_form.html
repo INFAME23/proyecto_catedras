@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nueva sede' if modo == 'nueva' else 'Editar sede' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.sedes_listar') }}">Sede</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-building text-primary-custom me-2"></i>{{ 'Nueva sede' if modo == 'nueva' else 'Editar sede ' + sede.id_sede }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.sedes_nueva') if modo == 'nueva' else url_for('admin.sedes_editar', id_sede=sede.id_sede) }}">
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="id_sede">Código (id_sede)</label>
+                <input type="text" class="form-control" id="id_sede" name="id_sede" maxlength="15" required
+                       value="{{ sede.id_sede if sede else '' }}">
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label" for="nombre">Nombre</label>
+                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="80" required
+                       value="{{ sede.nombre if sede else '' }}">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="direccion">Dirección (opcional)</label>
+                <input type="text" class="form-control" id="direccion" name="direccion" maxlength="200"
+                       value="{{ (sede.direccion or '') if sede else '' }}">
+            </div>
+
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="es_virtual" name="es_virtual" {% if sede and sede.es_virtual %}checked{% endif %}>
+                <label class="form-check-label" for="es_virtual">Es virtual</label>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if sede is none or sede.activo %}checked{% endif %}>
+                <label class="form-check-label" for="activo">Activo</label>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">
+                    {% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.sedes_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

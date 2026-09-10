@@ -54,6 +54,13 @@ var builder = WebApplication.CreateBuilder(args);
 // --------------------------------------------------------------------------
 DefaultTypeMap.MatchNamesWithUnderscores = true;
 
+// Dapper no trae de fábrica un manejador para 'DateOnly' (columnas DATE de
+// Encuesta): se registra una vez aquí para 'DateOnly' y 'DateOnly?', y
+// todos los repositorios que usan fechas quedan cubiertos.
+var manejadorDateOnly = new ManejadorTipoDateOnly();
+SqlMapper.AddTypeHandler(typeof(DateOnly), manejadorDateOnly);
+SqlMapper.AddTypeHandler(typeof(DateOnly?), manejadorDateOnly);
+
 // --------------------------------------------------------------------------
 //  1. Controladores + respuesta 422 personalizada
 // --------------------------------------------------------------------------
@@ -168,6 +175,47 @@ builder.Services.AddScoped<IRepositorioSede>(
 // IServicioSede -> ServicioSede. El framework le inyecta el IRepositorioSede
 // de arriba al construirlo (inyección por constructor).
 builder.Services.AddScoped<IServicioSede, ServicioSede>();
+
+// IRepositorioModalidad -> RepositorioModalidadPostgres, IServicioModalidad
+// -> ServicioModalidad. Mismo patrón que Sede.
+builder.Services.AddScoped<IRepositorioModalidad>(
+    _ => new RepositorioModalidadPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioModalidad, ServicioModalidad>();
+
+// IRepositorioEstadoProceso -> RepositorioEstadoProcesoPostgres,
+// IServicioEstadoProceso -> ServicioEstadoProceso.
+builder.Services.AddScoped<IRepositorioEstadoProceso>(
+    _ => new RepositorioEstadoProcesoPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioEstadoProceso, ServicioEstadoProceso>();
+
+// IRepositorioEncuesta -> RepositorioEncuestaPostgres, IServicioEncuesta
+// -> ServicioEncuesta.
+builder.Services.AddScoped<IRepositorioEncuesta>(
+    _ => new RepositorioEncuestaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioEncuesta, ServicioEncuesta>();
+
+// IRepositorioPeriodoAcademico -> RepositorioPeriodoAcademicoPostgres,
+// IServicioPeriodoAcademico -> ServicioPeriodoAcademico.
+builder.Services.AddScoped<IRepositorioPeriodoAcademico>(
+    _ => new RepositorioPeriodoAcademicoPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioPeriodoAcademico, ServicioPeriodoAcademico>();
+
+// IRepositorioRol -> RepositorioRolPostgres, IServicioRol -> ServicioRol.
+builder.Services.AddScoped<IRepositorioRol>(
+    _ => new RepositorioRolPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRol, ServicioRol>();
+
+// IRepositorioTipoDocumento -> RepositorioTipoDocumentoPostgres,
+// IServicioTipoDocumento -> ServicioTipoDocumento.
+builder.Services.AddScoped<IRepositorioTipoDocumento>(
+    _ => new RepositorioTipoDocumentoPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioTipoDocumento, ServicioTipoDocumento>();
+
+// IRepositorioTipoEvento -> RepositorioTipoEventoPostgres,
+// IServicioTipoEvento -> ServicioTipoEvento.
+builder.Services.AddScoped<IRepositorioTipoEvento>(
+    _ => new RepositorioTipoEventoPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioTipoEvento, ServicioTipoEvento>();
 
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
