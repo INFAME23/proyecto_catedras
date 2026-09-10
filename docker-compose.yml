@@ -5,9 +5,10 @@
 #      docker compose up -d --build
 #  ...deja TODO el sistema de la versión funcionando.
 #
-#  En la v1 ese "todo" son DOS servicios:
+#  En la v1 ese "todo" son TRES servicios:
 #      postgres  -> la base de datos (se siembra sola con el script provisto)
 #      api       -> la API .NET, con 'dotnet watch' (recarga al guardar)
+#      front     -> el front en Flask, que consume la API por HTTP
 # ==========================================================================
 
 # 'name' fija el nombre del PROYECTO Compose (prefijo de contenedores, redes
@@ -97,6 +98,42 @@ services:
       - /app/obj
       - /app/pruebas/bin
       - /app/pruebas/obj
+
+  # ======================================================================
+  #  Front Flask (server-side rendering, consume 'api' por HTTP)
+  # ======================================================================
+  front:
+    # Construye la imagen a partir del Dockerfile de la carpeta del front.
+    build:
+      context: ./front_catedras
+      dockerfile: Dockerfile
+
+    container_name: mi_v1_catedras_front
+    restart: unless-stopped
+
+    # El front hace requests HTTP a la API en cada petición del usuario
+    # (no al arrancar), así que basta con que el contenedor 'api' ya esté
+    # levantado, no necesitamos esperar un healthcheck suyo.
+    depends_on:
+      - api
+
+    environment:
+      # OJO: dentro de la red de Docker el front NO usa 'localhost:8142'
+      # (ese es el puerto publicado al host). Usa el nombre del servicio
+      # 'api' y el puerto INTERNO 8042, igual que hace 'api' con 'postgres'.
+      API_BASE_URL: "http://api:8042/api"
+      FLASK_ENV: development
+
+    # Flask escucha en 5000 dentro del contenedor; se publica como 5000.
+    # Si choca con el proyecto del curso, súbelo a 5100 (mismo patrón +100
+    # que 'postgres' y 'api').
+    ports:
+      - "5000:5000"
+
+    volumes:
+      # El código, montado en caliente: run.py corre con debug=True, así
+      # que guardar un .py reinicia el servidor de desarrollo de Flask.
+      - ./front_catedras:/app
 
 volumes:
   # Datos de PostgreSQL. Con el 'name' del proyecto, el volumen real se
