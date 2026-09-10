@@ -217,18 +217,6 @@ builder.Services.AddScoped<IRepositorioTipoEvento>(
     _ => new RepositorioTipoEventoPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioTipoEvento, ServicioTipoEvento>();
 
-// IRepositorioTipoPregunta -> RepositorioTipoPreguntaPostgres,
-// IServicioTipoPregunta -> ServicioTipoPregunta.
-builder.Services.AddScoped<IRepositorioTipoPregunta>(
-    _ => new RepositorioTipoPreguntaPostgres(cadenaConexion));
-builder.Services.AddScoped<IServicioTipoPregunta, ServicioTipoPregunta>();
-
-// IRepositorioTipoVinculacion -> RepositorioTipoVinculacionPostgres,
-// IServicioTipoVinculacion -> ServicioTipoVinculacion.
-builder.Services.AddScoped<IRepositorioTipoVinculacion>(
-    _ => new RepositorioTipoVinculacionPostgres(cadenaConexion));
-builder.Services.AddScoped<IServicioTipoVinculacion, ServicioTipoVinculacion>();
-
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
