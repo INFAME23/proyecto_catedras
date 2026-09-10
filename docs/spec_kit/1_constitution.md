@@ -82,9 +82,9 @@ PATCH (parcial → 200 con el mismo body).
 
 | Cosa | Convención |
 |---|---|
-| Puertos del proyecto | API catedras **9497** · PostgreSQL **15442** |
+| Puertos del proyecto | API catedras **8142** (interno 8042) · PostgreSQL **15542** (interno 5432) |
 | Rutas | `/` (diagnóstico) · `/swagger` (documentación interactiva) · `/api/Sede` (v1) |
-| Nombres | PascalCase en español; interfaces con prefijo `I`; carpetas `Controllers/ Modelos/ Peticiones/ Servicios/ Repositorios/ Excepciones/ pruebas/` (`Modelos/` = clases entidad; `Peticiones/` = el body de cada verbo) |
+| Nombres | PascalCase en español; interfaces con prefijo `I`; proyecto `ApiCatedras` (`.csproj`); carpetas `Controllers/ Modelos/ Peticiones/ Servicios/ Repositorios/ Excepciones/ pruebas/` (`Modelos/` = clases entidad; `Peticiones/` = el body de cada verbo) |
 | Sobre de respuesta | Lecturas: `{tabla, limite, total, datos}` · Errores: `{estado, mensaje, detalle}` (+ `errores:[…]` en el 422) |
 | Errores | Body inválido (la petición) → **422** · `ArgumentException` → **400** · `NoEncontradoExcepcion` → **404** · `NpgsqlException` y demás → **500** |
 | Credenciales (didácticas) | BD: `sa` / `Construccion123!` · base `bdcatedras_postgres_local` |
