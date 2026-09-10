@@ -1,0 +1,43 @@
+<nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+    <div class="container">
+        <a class="navbar-brand d-flex align-items-center" href="{{ url_for('catedras.inicio') }}">
+            <img src="{{ url_for('static', filename='img/escudo-usb.jpeg') }}" alt="Escudo Universidad San Buenaventura" class="me-2 logo-escudo">
+            <span class="fw-bold">Cátedras <span class="brand-accent">USB</span></span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint == 'catedras.inicio' }}" href="{{ url_for('catedras.inicio') }}">
+                        <i class="fas fa-home"></i> Inicio
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}" href="{{ url_for('admin.panel') }}">
+                        <i class="fas fa-cogs"></i> Administración
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint == 'registro.inicio' }}" href="{{ url_for('registro.inicio') }}">
+                        <i class="fas fa-clipboard-check"></i> Registro de asistencia
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint == 'ponente.inicio' }}" href="{{ url_for('ponente.inicio') }}">
+                        <i class="fas fa-chalkboard-teacher"></i> Ponente
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint == 'estudiante.inicio' }}" href="{{ url_for('estudiante.inicio') }}">
+                        <i class="fas fa-user-graduate"></i> Estudiante
+                    </a>
+                </li>
+            </ul>
+            <a class="btn btn-outline-primary btn-sm" href="{{ url_for('auth.login') }}">
+                <i class="fas fa-sign-in-alt me-1"></i>Iniciar sesión
+            </a>
+        </div>
+    </div>
+</nav>
