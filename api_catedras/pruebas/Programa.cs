@@ -121,6 +121,217 @@ await AfirmarLanza<NoEncontradoExcepcion>(
     "segundo DELETE lanza NoEncontradoExcepcion",
     () => servicio.EliminarAsync("BELLO"));
 
+// ============================================================================
+//  Prueba de capas: ServicioModalidad + repositorio falso en memoria
+// ============================================================================
+var servicioModalidad = new ServicioModalidad(new RepositorioModalidadFalso());
+
+Console.WriteLine("\n== Prueba de capas: ServicioModalidad + repositorio falso en memoria ==\n");
+
+var (datosMod, totalMod) = await servicioModalidad.ListarAsync(null);
+Afirmar("Listar() devuelve las 4 modalidades semilla", totalMod == 4 && datosMod.Count == 4);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioModalidad.ListarAsync(0));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(\"NO_VA\") lanza NoEncontradoExcepcion", () => servicioModalidad.ObtenerAsync("NO_VA"));
+
+await servicioModalidad.CrearAsync(new ModalidadCrear
+{
+    IdModalidad = "ASINCRONA",
+    Nombre = "Asincrónica",
+    CanalDifusion = "ENLACE",
+});
+var modalidadCreada = await servicioModalidad.ObtenerAsync("ASINCRONA");
+Afirmar("Crear() aplica 'activo=true' por defecto y Obtener() la encuentra",
+    modalidadCreada.Nombre == "Asincrónica" && modalidadCreada.Activo);
+
+int filasPutMod = await servicioModalidad.ReemplazarAsync("ASINCRONA", new ModalidadReemplazo
+{
+    Nombre = "Asincrónica (renombrada)",
+    CanalDifusion = "AMBOS",
+    Activo = false,
+});
+var trasPutMod = await servicioModalidad.ObtenerAsync("ASINCRONA");
+Afirmar("PUT reemplaza todo",
+    filasPutMod == 1 && trasPutMod.Nombre == "Asincrónica (renombrada)"
+    && trasPutMod.CanalDifusion == "AMBOS" && !trasPutMod.Activo);
+
+int filasPatchMod = await servicioModalidad.ActualizarAsync("ASINCRONA", new ModalidadActualizar { Activo = true });
+var trasPatchMod = await servicioModalidad.ObtenerAsync("ASINCRONA");
+Afirmar("PATCH cambia solo 'activo' y deja 'nombre' igual",
+    filasPatchMod == 1 && trasPatchMod.Activo && trasPatchMod.Nombre == "Asincrónica (renombrada)");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioModalidad.ActualizarAsync("ASINCRONA", new ModalidadActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a \"NO_VA\" lanza NoEncontradoExcepcion",
+    () => servicioModalidad.ActualizarAsync("NO_VA", new ModalidadActualizar { Activo = false }));
+
+int eliminadasMod = await servicioModalidad.EliminarAsync("ASINCRONA");
+Afirmar("DELETE elimina 1 fila", eliminadasMod == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion",
+    () => servicioModalidad.EliminarAsync("ASINCRONA"));
+
+// ============================================================================
+//  Prueba de capas: ServicioEstadoProceso + repositorio falso en memoria
+// ============================================================================
+var servicioEstado = new ServicioEstadoProceso(new RepositorioEstadoProcesoFalso());
+
+Console.WriteLine("\n== Prueba de capas: ServicioEstadoProceso + repositorio falso en memoria ==\n");
+
+var (datosEdo, totalEdo) = await servicioEstado.ListarAsync(null);
+Afirmar("Listar() devuelve los 6 estados semilla", totalEdo == 6 && datosEdo.Count == 6);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioEstado.ListarAsync(0));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(\"NO_VA\") lanza NoEncontradoExcepcion", () => servicioEstado.ObtenerAsync("NO_VA"));
+
+// Regla de coherencia (chk_estado_coherente): exitoso=true exige final=true.
+await AfirmarLanza<ArgumentException>(
+    "Crear con es_exitoso=true y es_final=false lanza ArgumentException",
+    () => servicioEstado.CrearAsync(new EstadoProcesoCrear
+    {
+        IdEstado = "TEST",
+        Nombre = "Prueba",
+        EsFinal = false,
+        EsExitoso = true,
+    }));
+
+await servicioEstado.CrearAsync(new EstadoProcesoCrear
+{
+    IdEstado = "TEST",
+    Nombre = "Prueba",
+    EsFinal = true,
+    EsExitoso = true,
+});
+var estadoCreado = await servicioEstado.ObtenerAsync("TEST");
+Afirmar("Crear() inserta y Obtener() la encuentra", estadoCreado.Nombre == "Prueba");
+
+await AfirmarLanza<ArgumentException>(
+    "PUT con coherencia violada lanza ArgumentException",
+    () => servicioEstado.ReemplazarAsync("TEST", new EstadoProcesoReemplazo
+    {
+        Nombre = "Prueba",
+        EsFinal = false,
+        EsExitoso = true,
+    }));
+
+int filasPutEdo = await servicioEstado.ReemplazarAsync("TEST", new EstadoProcesoReemplazo
+{
+    Nombre = "Prueba (renombrada)",
+    EsFinal = false,
+    EsExitoso = false,
+});
+var trasPutEdo = await servicioEstado.ObtenerAsync("TEST");
+Afirmar("PUT reemplaza todo",
+    filasPutEdo == 1 && trasPutEdo.Nombre == "Prueba (renombrada)"
+    && !trasPutEdo.EsFinal && !trasPutEdo.EsExitoso);
+
+int filasPatchEdo = await servicioEstado.ActualizarAsync("TEST", new EstadoProcesoActualizar { EsFinal = true });
+var trasPatchEdo = await servicioEstado.ObtenerAsync("TEST");
+Afirmar("PATCH cambia solo 'es_final' y deja 'nombre' igual",
+    filasPatchEdo == 1 && trasPatchEdo.EsFinal && trasPatchEdo.Nombre == "Prueba (renombrada)");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH con los dos campos violando coherencia lanza ArgumentException",
+    () => servicioEstado.ActualizarAsync("TEST", new EstadoProcesoActualizar { EsFinal = false, EsExitoso = true }));
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioEstado.ActualizarAsync("TEST", new EstadoProcesoActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a \"NO_VA\" lanza NoEncontradoExcepcion",
+    () => servicioEstado.ActualizarAsync("NO_VA", new EstadoProcesoActualizar { EsFinal = false }));
+
+int eliminadasEdo = await servicioEstado.EliminarAsync("TEST");
+Afirmar("DELETE elimina 1 fila", eliminadasEdo == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion",
+    () => servicioEstado.EliminarAsync("TEST"));
+
+// ============================================================================
+//  Prueba de capas: ServicioEncuesta + repositorio falso en memoria
+// ============================================================================
+var servicioEncuesta = new ServicioEncuesta(new RepositorioEncuestaFalso());
+
+Console.WriteLine("\n== Prueba de capas: ServicioEncuesta + repositorio falso en memoria ==\n");
+
+var (datosEnc, totalEnc) = await servicioEncuesta.ListarAsync(null);
+Afirmar("Listar() devuelve la encuesta semilla", totalEnc == 1 && datosEnc.Count == 1);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioEncuesta.ListarAsync(0));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(999) lanza NoEncontradoExcepcion", () => servicioEncuesta.ObtenerAsync(999));
+
+// Regla de coherencia (chk_encuesta_vig): vigente_hasta no puede ser anterior a vigente_desde.
+await AfirmarLanza<ArgumentException>(
+    "Crear con vigente_hasta anterior a vigente_desde lanza ArgumentException",
+    () => servicioEncuesta.CrearAsync(new EncuestaCrear
+    {
+        Nombre = "Prueba",
+        VigenteDesde = new DateOnly(2026, 5, 1),
+        VigenteHasta = new DateOnly(2026, 1, 1),
+    }));
+
+// Crear() SIN version/vigente_desde/activa -> debe aplicar los defaults
+// (version=1, vigente_desde=hoy, activa=true) e id autogenerado por el
+// repositorio falso (simulando la IDENTITY de la BD real).
+long idEncuestaCreada = await servicioEncuesta.CrearAsync(new EncuestaCrear { Nombre = "Prueba" });
+var encuestaCreada = await servicioEncuesta.ObtenerAsync(idEncuestaCreada);
+Afirmar("Crear() aplica los valores por defecto y devuelve el id generado",
+    idEncuestaCreada == 2 && encuestaCreada.Version == 1 && encuestaCreada.Activa
+    && encuestaCreada.VigenteDesde == DateOnly.FromDateTime(DateTime.Now));
+
+int filasPutEnc = await servicioEncuesta.ReemplazarAsync(idEncuestaCreada, new EncuestaReemplazo
+{
+    Nombre = "Prueba (renombrada)",
+    Version = 2,
+    VigenteDesde = new DateOnly(2026, 1, 1),
+    VigenteHasta = null,
+    Activa = false,
+});
+var trasPutEnc = await servicioEncuesta.ObtenerAsync(idEncuestaCreada);
+Afirmar("PUT reemplaza todo",
+    filasPutEnc == 1 && trasPutEnc.Nombre == "Prueba (renombrada)"
+    && trasPutEnc.Version == 2 && !trasPutEnc.Activa);
+
+int filasPatchEnc = await servicioEncuesta.ActualizarAsync(idEncuestaCreada, new EncuestaActualizar { Activa = true });
+var trasPatchEnc = await servicioEncuesta.ObtenerAsync(idEncuestaCreada);
+Afirmar("PATCH cambia solo 'activa' y deja 'nombre' igual",
+    filasPatchEnc == 1 && trasPatchEnc.Activa && trasPatchEnc.Nombre == "Prueba (renombrada)");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH con las dos fechas invertidas lanza ArgumentException",
+    () => servicioEncuesta.ActualizarAsync(idEncuestaCreada, new EncuestaActualizar
+    {
+        VigenteDesde = new DateOnly(2026, 5, 1),
+        VigenteHasta = new DateOnly(2026, 1, 1),
+    }));
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioEncuesta.ActualizarAsync(idEncuestaCreada, new EncuestaActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a un id inexistente lanza NoEncontradoExcepcion",
+    () => servicioEncuesta.ActualizarAsync(999, new EncuestaActualizar { Activa = false }));
+
+int eliminadasEnc = await servicioEncuesta.EliminarAsync(idEncuestaCreada);
+Afirmar("DELETE elimina 1 fila", eliminadasEnc == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion",
+    () => servicioEncuesta.EliminarAsync(idEncuestaCreada));
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -191,4 +402,163 @@ class RepositorioSedeFalso : IRepositorioSede
 
     public Task<int> EliminarAsync(string idSede) =>
         Task.FromResult(_tabla.Remove(idSede) ? 1 : 0);
+}
+
+// ==========================================================================
+//  Repositorio FALSO de 'Modalidad': mismo patrón que RepositorioSedeFalso.
+// ==========================================================================
+class RepositorioModalidadFalso : IRepositorioModalidad
+{
+    private readonly Dictionary<string, Modalidad> _tabla = new();
+
+    public RepositorioModalidadFalso()
+    {
+        // Las 4 modalidades semilla del script real.
+        _tabla["PRESENCIAL"] = new Modalidad { IdModalidad = "PRESENCIAL", Nombre = "Presencial", CanalDifusion = "QR", Activo = true };
+        _tabla["VIRTUAL"] = new Modalidad { IdModalidad = "VIRTUAL", Nombre = "Virtual", CanalDifusion = "ENLACE", Activo = true };
+        _tabla["TELEPRESENCIAL"] = new Modalidad { IdModalidad = "TELEPRESENCIAL", Nombre = "Telepresencial", CanalDifusion = "ENLACE", Activo = true };
+        _tabla["HIBRIDA"] = new Modalidad { IdModalidad = "HIBRIDA", Nombre = "Hibrida", CanalDifusion = "AMBOS", Activo = true };
+    }
+
+    public Task<List<Modalidad>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(m => m.IdModalidad).Take(limite).ToList());
+
+    public Task<Modalidad?> ObtenerPorIdAsync(string idModalidad) =>
+        Task.FromResult(_tabla.TryGetValue(idModalidad, out var modalidad) ? modalidad : null);
+
+    public Task CrearAsync(Modalidad modalidad)
+    {
+        if (_tabla.ContainsKey(modalidad.IdModalidad))
+            throw new InvalidOperationException($"id_modalidad '{modalidad.IdModalidad}' duplicado (simulado).");
+
+        _tabla[modalidad.IdModalidad] = modalidad;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idModalidad, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idModalidad, out var modalidad))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) modalidad.Nombre = (string)n!;
+        if (datos.TryGetValue("canal_difusion", out var c)) modalidad.CanalDifusion = (string)c!;
+        if (datos.TryGetValue("activo", out var a)) modalidad.Activo = (bool)a!;
+
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idModalidad) =>
+        Task.FromResult(_tabla.Remove(idModalidad) ? 1 : 0);
+}
+
+// ==========================================================================
+//  Repositorio FALSO de 'EstadoProceso': mismo patrón que RepositorioSedeFalso.
+//  NO valida la regla de coherencia (es_exitoso implica es_final): esa
+//  regla es de NEGOCIO y vive en ServicioEstadoProceso, que es justo lo
+//  que esta prueba de capas está verificando.
+// ==========================================================================
+class RepositorioEstadoProcesoFalso : IRepositorioEstadoProceso
+{
+    private readonly Dictionary<string, EstadoProceso> _tabla = new();
+
+    public RepositorioEstadoProcesoFalso()
+    {
+        // Los 6 estados semilla del script real.
+        _tabla["GENERADO"] = new EstadoProceso { IdEstado = "GENERADO", Nombre = "Generado, sin enviar", EsFinal = false, EsExitoso = false };
+        _tabla["EN_COLA"] = new EstadoProceso { IdEstado = "EN_COLA", Nombre = "En cola", EsFinal = false, EsExitoso = false };
+        _tabla["EN_CURSO"] = new EstadoProceso { IdEstado = "EN_CURSO", Nombre = "En curso", EsFinal = false, EsExitoso = false };
+        _tabla["ERROR"] = new EstadoProceso { IdEstado = "ERROR", Nombre = "Error", EsFinal = true, EsExitoso = false };
+        _tabla["CORRECTO"] = new EstadoProceso { IdEstado = "CORRECTO", Nombre = "Correcto", EsFinal = true, EsExitoso = true };
+        _tabla["INCORRECTO"] = new EstadoProceso { IdEstado = "INCORRECTO", Nombre = "Incorrecto", EsFinal = true, EsExitoso = false };
+    }
+
+    public Task<List<EstadoProceso>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(e => e.IdEstado).Take(limite).ToList());
+
+    public Task<EstadoProceso?> ObtenerPorIdAsync(string idEstado) =>
+        Task.FromResult(_tabla.TryGetValue(idEstado, out var estado) ? estado : null);
+
+    public Task CrearAsync(EstadoProceso estado)
+    {
+        if (_tabla.ContainsKey(estado.IdEstado))
+            throw new InvalidOperationException($"id_estado '{estado.IdEstado}' duplicado (simulado).");
+
+        _tabla[estado.IdEstado] = estado;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idEstado, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idEstado, out var estado))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) estado.Nombre = (string)n!;
+        if (datos.TryGetValue("es_final", out var f)) estado.EsFinal = (bool)f!;
+        if (datos.TryGetValue("es_exitoso", out var x)) estado.EsExitoso = (bool)x!;
+
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idEstado) =>
+        Task.FromResult(_tabla.Remove(idEstado) ? 1 : 0);
+}
+
+// ==========================================================================
+//  Repositorio FALSO de 'Encuesta': mismo patrón, pero con clave 'long' y
+//  un contador propio que simula la columna IDENTITY de la BD real
+//  (3_plan.md §4.7) — 'CrearAsync' asigna el siguiente id y lo devuelve.
+// ==========================================================================
+class RepositorioEncuestaFalso : IRepositorioEncuesta
+{
+    private readonly Dictionary<long, Encuesta> _tabla = new();
+    private long _siguienteId = 2; // el id 1 ya lo usa la fila semilla
+
+    public RepositorioEncuestaFalso()
+    {
+        // La encuesta semilla del script real.
+        _tabla[1] = new Encuesta
+        {
+            IdEncuesta = 1,
+            Nombre = "Calidad de la catedra abierta",
+            Version = 1,
+            VigenteDesde = new DateOnly(2026, 1, 1),
+            VigenteHasta = null,
+            Activa = true,
+        };
+    }
+
+    public Task<List<Encuesta>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(e => e.IdEncuesta).Take(limite).ToList());
+
+    public Task<Encuesta?> ObtenerPorIdAsync(long idEncuesta) =>
+        Task.FromResult(_tabla.TryGetValue(idEncuesta, out var encuesta) ? encuesta : null);
+
+    public Task<long> CrearAsync(Encuesta encuesta)
+    {
+        // Simula la violación de uq_encuesta_ver (nombre, version).
+        if (_tabla.Values.Any(e => e.Nombre == encuesta.Nombre && e.Version == encuesta.Version))
+            throw new InvalidOperationException(
+                $"(nombre, version) '({encuesta.Nombre}, {encuesta.Version})' duplicado (simulado).");
+
+        encuesta.IdEncuesta = _siguienteId++;
+        _tabla[encuesta.IdEncuesta] = encuesta;
+        return Task.FromResult(encuesta.IdEncuesta);
+    }
+
+    public Task<int> ActualizarAsync(long idEncuesta, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idEncuesta, out var encuesta))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) encuesta.Nombre = (string)n!;
+        if (datos.TryGetValue("version", out var v)) encuesta.Version = (short)v!;
+        if (datos.TryGetValue("vigente_desde", out var vd)) encuesta.VigenteDesde = (DateOnly)vd!;
+        if (datos.TryGetValue("vigente_hasta", out var vh)) encuesta.VigenteHasta = (DateOnly?)vh;
+        if (datos.TryGetValue("activa", out var a)) encuesta.Activa = (bool)a!;
+
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(long idEncuesta) =>
+        Task.FromResult(_tabla.Remove(idEncuesta) ? 1 : 0);
 }

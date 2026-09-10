@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block titulo %}Cátedras USB · Inicio{% endblock %}
+{% block contenido %}
+<div class="bg-secondary-custom text-white p-4 p-md-5 rounded-3 mb-4 animate-fade-in">
+    <div class="d-flex align-items-center">
+        <img src="{{ url_for('static', filename='img/escudo-usb.jpeg') }}" alt="Escudo USB" class="me-3 rounded" style="height:64px;width:auto;">
+        <div>
+            <h1 class="fw-bold mb-1">Sistema de Cátedras</h1>
+            <p class="text-white-50 mb-0">Universidad San Buenaventura Medellín</p>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <p class="mb-2">
+            Este front consume <strong>ApiCatedras</strong> (C#/ASP.NET Core + PostgreSQL).
+            Por ahora expone la administración de las tablas catálogo ya construidas
+            en la API.
+        </p>
+        <a class="btn btn-primary" href="{{ url_for('admin.panel') }}">
+            <i class="fas fa-cogs me-1"></i>Ir a Administración
+        </a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom text-decoration-none" href="{{ url_for('admin.sedes_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-building fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-0">Sede</h6>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom text-decoration-none" href="{{ url_for('admin.encuestas_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-clipboard-list fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-0">Encuesta</h6>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom text-decoration-none" href="{{ url_for('admin.estados_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-tasks fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-0">Estado de proceso</h6>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom text-decoration-none" href="{{ url_for('admin.modalidades_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-video fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-0">Modalidad</h6>
+            </div>
+        </a>
+    </div>
+</div>
+{% endblock %}

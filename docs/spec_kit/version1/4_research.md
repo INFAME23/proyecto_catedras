@@ -72,14 +72,15 @@ v3, solo el ensamblador cambia.
 ## D4 — La BD completa desde la v1 (la API solo toca `Sede`)
 
 **Alternativa descartada:** una BD mínima que crece con cada versión.
-**Decisión:** `db/bdfacturas_postgres.sql` crea `bdfacturas` COMPLETA (12 tablas,
-triggers, SPs); la regla es que el código de v1 solo puede nombrar
-`Sede`.
+**Decisión:** `db/postgres/script_bdcatedras.sql` crea el esquema
+`catedras` COMPLETO (37 tablas, triggers, funciones) dentro de
+`bdcatedras_postgres_local`; la regla es que el código de v1 solo puede
+nombrar `Sede`.
 **Por qué:** los estudiantes ya vieron bases de datos — la BD es
 **infraestructura dada**; lo que se construye por versiones es la API. Evita
-migraciones entre versiones y deja los triggers y SPs de facturación
-esperando a la v2. Costo asumido: 11 tablas a la vista que aún no se usan —
-por eso la regla se declara explícita en la spec.
+migraciones entre versiones y deja los triggers y funciones del dominio de
+cátedras esperando a versiones posteriores. Costo asumido: 36 tablas a la
+vista que aún no se usan — por eso la regla se declara explícita en la spec.
 
 ## D5 — La validación vive en las PETICIONES (una por verbo)
 
@@ -91,9 +92,9 @@ valida y responde 422 con la lista de errores (formato personalizado en
 `Program.cs`).
 **Por qué:** es la manera idiomática del framework — la petición declara, el
 framework hace cumplir — y materializa la semántica de cada verbo: el mismo
-body `{"stock": 7}` falla en PUT (le faltan campos) y pasa en PATCH. Bono
-didáctico: **el tipo es regla** — `stock` es `int?`, así que un `7.5` o un
-`"texto"` caen en 422 sin escribir ni un if.
+body `{"activo": true}` falla en PUT (le faltan `nombre`/`es_virtual`) y
+pasa en PATCH. Bono didáctico: **el tipo es regla** — `es_virtual` y
+`activo` son `bool?`, así que un `"texto"` cae en 422 sin escribir ni un if.
 **Nota de nombre:** estas clases NO son modelos — modelo = clase entidad
 (`Modelos/`, en v1 `Sede`). Por eso viven en su propia carpeta
 `Peticiones/`: describen lo que LLEGA en cada verbo, no lo que ES.
@@ -127,10 +128,11 @@ estudiante).
 ## D8 — Docker compose desde la v1 (dos servicios)
 
 **Alternativa descartada:** `docker run` a mano y la API por fuera.
-**Decisión:** `docker-compose.yml` con `postgres` + `api-facturas` desde
+**Decisión:** `docker-compose.yml` con `postgres` + `api` desde
 v1 — `docker compose up -d --build` deja todo funcionando.
 **Por qué:** el Artículo 4 de la constitución ("un solo comando") es
 permanente — y la constitución gana. El compose de v1 **crece por
-versiones** (más adelante los otros motores y el front
-Flask con Jinja2): la infraestructura también se construye por
-incrementos.
+versiones** (más adelante nuevas tablas, otros motores): la
+infraestructura también se construye por incrementos. (El frontend
+`front_catedras/` ya existe como proyecto aparte, pero todavía no está
+integrado a este `docker-compose.yml` — ver 8_tasks.md, Fase 13.)
