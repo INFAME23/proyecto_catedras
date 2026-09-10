@@ -332,6 +332,138 @@ await AfirmarLanza<NoEncontradoExcepcion>(
     "segundo DELETE lanza NoEncontradoExcepcion",
     () => servicioEncuesta.EliminarAsync(idEncuestaCreada));
 
+// ============================================================================
+//  Prueba de capas: ServicioPeriodoAcademico + repositorio falso en memoria
+// ============================================================================
+var servicioPeriodo = new ServicioPeriodoAcademico(new RepositorioPeriodoAcademicoFalso());
+
+Console.WriteLine("\n== Prueba de capas: ServicioPeriodoAcademico + repositorio falso en memoria ==\n");
+
+var (datosPer, totalPer) = await servicioPeriodo.ListarAsync(null);
+Afirmar("Listar() devuelve los 4 periodos semilla", totalPer == 4 && datosPer.Count == 4);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioPeriodo.ListarAsync(0));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(\"NO_VA\") lanza NoEncontradoExcepcion", () => servicioPeriodo.ObtenerAsync("NO_VA"));
+
+// Regla de coherencia (chk_periodo_fechas): fecha_fin debe ser posterior a fecha_ini.
+await AfirmarLanza<ArgumentException>(
+    "Crear con fecha_fin <= fecha_ini lanza ArgumentException",
+    () => servicioPeriodo.CrearAsync(new PeriodoAcademicoCrear
+    {
+        IdPeriodo = "2027-1",
+        FechaIni = new DateOnly(2027, 6, 1),
+        FechaFin = new DateOnly(2027, 1, 1),
+    }));
+
+await servicioPeriodo.CrearAsync(new PeriodoAcademicoCrear
+{
+    IdPeriodo = "2027-1",
+    FechaIni = new DateOnly(2027, 1, 19),
+    FechaFin = new DateOnly(2027, 6, 6),
+});
+var periodoCreado = await servicioPeriodo.ObtenerAsync("2027-1");
+Afirmar("Crear() inserta y Obtener() lo encuentra", periodoCreado.Activo);
+
+await AfirmarLanza<ArgumentException>(
+    "PUT con fecha_fin <= fecha_ini lanza ArgumentException",
+    () => servicioPeriodo.ReemplazarAsync("2027-1", new PeriodoAcademicoReemplazo
+    {
+        FechaIni = new DateOnly(2027, 6, 1),
+        FechaFin = new DateOnly(2027, 1, 1),
+        Activo = true,
+    }));
+
+int filasPutPer = await servicioPeriodo.ReemplazarAsync("2027-1", new PeriodoAcademicoReemplazo
+{
+    FechaIni = new DateOnly(2027, 1, 20),
+    FechaFin = new DateOnly(2027, 6, 7),
+    Activo = false,
+});
+var trasPutPer = await servicioPeriodo.ObtenerAsync("2027-1");
+Afirmar("PUT reemplaza todo", filasPutPer == 1 && !trasPutPer.Activo);
+
+int filasPatchPer = await servicioPeriodo.ActualizarAsync("2027-1", new PeriodoAcademicoActualizar { Activo = true });
+var trasPatchPer = await servicioPeriodo.ObtenerAsync("2027-1");
+Afirmar("PATCH cambia solo 'activo'", filasPatchPer == 1 && trasPatchPer.Activo);
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH con las dos fechas invertidas lanza ArgumentException",
+    () => servicioPeriodo.ActualizarAsync("2027-1", new PeriodoAcademicoActualizar
+    {
+        FechaIni = new DateOnly(2027, 6, 1),
+        FechaFin = new DateOnly(2027, 1, 1),
+    }));
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioPeriodo.ActualizarAsync("2027-1", new PeriodoAcademicoActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a \"NO_VA\" lanza NoEncontradoExcepcion",
+    () => servicioPeriodo.ActualizarAsync("NO_VA", new PeriodoAcademicoActualizar { Activo = false }));
+
+int eliminadasPer = await servicioPeriodo.EliminarAsync("2027-1");
+Afirmar("DELETE elimina 1 fila", eliminadasPer == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion",
+    () => servicioPeriodo.EliminarAsync("2027-1"));
+
+// ============================================================================
+//  Prueba de capas: ServicioRol + repositorio falso en memoria
+// ============================================================================
+var servicioRol = new ServicioRol(new RepositorioRolFalso());
+
+Console.WriteLine("\n== Prueba de capas: ServicioRol + repositorio falso en memoria ==\n");
+
+var (datosRol, totalRol) = await servicioRol.ListarAsync(null);
+Afirmar("Listar() devuelve los 3 roles semilla", totalRol == 3 && datosRol.Count == 3);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioRol.ListarAsync(0));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(\"NO_VA\") lanza NoEncontradoExcepcion", () => servicioRol.ObtenerAsync("NO_VA"));
+
+await servicioRol.CrearAsync(new RolCrear
+{
+    IdRol = "PONENTE",
+    Nombre = "Ponente",
+    Descripcion = "Dicta cátedras",
+});
+var rolCreado = await servicioRol.ObtenerAsync("PONENTE");
+Afirmar("Crear() inserta y Obtener() lo encuentra", rolCreado.Nombre == "Ponente");
+
+int filasPutRol = await servicioRol.ReemplazarAsync("PONENTE", new RolReemplazo
+{
+    Nombre = "Ponente externo",
+    Descripcion = null,
+});
+var trasPutRol = await servicioRol.ObtenerAsync("PONENTE");
+Afirmar("PUT reemplaza todo (incluida 'descripcion' a null)",
+    filasPutRol == 1 && trasPutRol.Nombre == "Ponente externo" && trasPutRol.Descripcion is null);
+
+int filasPatchRol = await servicioRol.ActualizarAsync("PONENTE", new RolActualizar { Descripcion = "Actualizada" });
+var trasPatchRol = await servicioRol.ObtenerAsync("PONENTE");
+Afirmar("PATCH cambia solo 'descripcion' y deja 'nombre' igual",
+    filasPatchRol == 1 && trasPatchRol.Descripcion == "Actualizada" && trasPatchRol.Nombre == "Ponente externo");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioRol.ActualizarAsync("PONENTE", new RolActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a \"NO_VA\" lanza NoEncontradoExcepcion",
+    () => servicioRol.ActualizarAsync("NO_VA", new RolActualizar { Nombre = "x" }));
+
+int eliminadasRol = await servicioRol.EliminarAsync("PONENTE");
+Afirmar("DELETE elimina 1 fila", eliminadasRol == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion",
+    () => servicioRol.EliminarAsync("PONENTE"));
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -561,4 +693,99 @@ class RepositorioEncuestaFalso : IRepositorioEncuesta
 
     public Task<int> EliminarAsync(long idEncuesta) =>
         Task.FromResult(_tabla.Remove(idEncuesta) ? 1 : 0);
+}
+
+// ==========================================================================
+//  Repositorio FALSO de 'PeriodoAcademico': mismo patrón que
+//  RepositorioSedeFalso. NO valida 'fecha_fin > fecha_ini': esa regla es
+//  de NEGOCIO y vive en ServicioPeriodoAcademico, que es justo lo que
+//  esta prueba de capas está verificando.
+// ==========================================================================
+class RepositorioPeriodoAcademicoFalso : IRepositorioPeriodoAcademico
+{
+    private readonly Dictionary<string, PeriodoAcademico> _tabla = new();
+
+    public RepositorioPeriodoAcademicoFalso()
+    {
+        // Los 4 periodos semilla del script real.
+        _tabla["2025-1"] = new PeriodoAcademico { IdPeriodo = "2025-1", FechaIni = new DateOnly(2025, 1, 20), FechaFin = new DateOnly(2025, 6, 7), Activo = true };
+        _tabla["2025-2"] = new PeriodoAcademico { IdPeriodo = "2025-2", FechaIni = new DateOnly(2025, 7, 21), FechaFin = new DateOnly(2025, 12, 6), Activo = true };
+        _tabla["2026-1"] = new PeriodoAcademico { IdPeriodo = "2026-1", FechaIni = new DateOnly(2026, 1, 19), FechaFin = new DateOnly(2026, 6, 6), Activo = true };
+        _tabla["2026-2"] = new PeriodoAcademico { IdPeriodo = "2026-2", FechaIni = new DateOnly(2026, 7, 20), FechaFin = new DateOnly(2026, 12, 5), Activo = true };
+    }
+
+    public Task<List<PeriodoAcademico>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(p => p.IdPeriodo).Take(limite).ToList());
+
+    public Task<PeriodoAcademico?> ObtenerPorIdAsync(string idPeriodo) =>
+        Task.FromResult(_tabla.TryGetValue(idPeriodo, out var periodo) ? periodo : null);
+
+    public Task CrearAsync(PeriodoAcademico periodo)
+    {
+        if (_tabla.ContainsKey(periodo.IdPeriodo))
+            throw new InvalidOperationException($"id_periodo '{periodo.IdPeriodo}' duplicado (simulado).");
+
+        _tabla[periodo.IdPeriodo] = periodo;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idPeriodo, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idPeriodo, out var periodo))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("fecha_ini", out var fi)) periodo.FechaIni = (DateOnly)fi!;
+        if (datos.TryGetValue("fecha_fin", out var ff)) periodo.FechaFin = (DateOnly)ff!;
+        if (datos.TryGetValue("activo", out var a)) periodo.Activo = (bool)a!;
+
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idPeriodo) =>
+        Task.FromResult(_tabla.Remove(idPeriodo) ? 1 : 0);
+}
+
+// ==========================================================================
+//  Repositorio FALSO de 'Rol': mismo patrón que RepositorioSedeFalso.
+// ==========================================================================
+class RepositorioRolFalso : IRepositorioRol
+{
+    private readonly Dictionary<string, Rol> _tabla = new();
+
+    public RepositorioRolFalso()
+    {
+        // Los 3 roles semilla del script real.
+        _tabla["ADMIN"] = new Rol { IdRol = "ADMIN", Nombre = "Administrador", Descripcion = "Gestiona catedras, enlaces, cargas y migraciones" };
+        _tabla["CONSULTA"] = new Rol { IdRol = "CONSULTA", Nombre = "Consulta", Descripcion = "Solo lectura de informes" };
+        _tabla["COORDINADOR"] = new Rol { IdRol = "COORDINADOR", Nombre = "Coordinador de dependencia", Descripcion = "Ve y gestiona lo de su dependencia" };
+    }
+
+    public Task<List<Rol>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(r => r.IdRol).Take(limite).ToList());
+
+    public Task<Rol?> ObtenerPorIdAsync(string idRol) =>
+        Task.FromResult(_tabla.TryGetValue(idRol, out var rol) ? rol : null);
+
+    public Task CrearAsync(Rol rol)
+    {
+        if (_tabla.ContainsKey(rol.IdRol))
+            throw new InvalidOperationException($"id_rol '{rol.IdRol}' duplicado (simulado).");
+
+        _tabla[rol.IdRol] = rol;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idRol, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idRol, out var rol))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) rol.Nombre = (string)n!;
+        if (datos.TryGetValue("descripcion", out var d)) rol.Descripcion = (string?)d;
+
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idRol) =>
+        Task.FromResult(_tabla.Remove(idRol) ? 1 : 0);
 }

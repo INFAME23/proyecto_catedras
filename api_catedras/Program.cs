@@ -194,6 +194,17 @@ builder.Services.AddScoped<IRepositorioEncuesta>(
     _ => new RepositorioEncuestaPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioEncuesta, ServicioEncuesta>();
 
+// IRepositorioPeriodoAcademico -> RepositorioPeriodoAcademicoPostgres,
+// IServicioPeriodoAcademico -> ServicioPeriodoAcademico.
+builder.Services.AddScoped<IRepositorioPeriodoAcademico>(
+    _ => new RepositorioPeriodoAcademicoPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioPeriodoAcademico, ServicioPeriodoAcademico>();
+
+// IRepositorioRol -> RepositorioRolPostgres, IServicioRol -> ServicioRol.
+builder.Services.AddScoped<IRepositorioRol>(
+    _ => new RepositorioRolPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRol, ServicioRol>();
+
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------

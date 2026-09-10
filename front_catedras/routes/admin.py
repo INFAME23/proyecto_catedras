@@ -318,3 +318,144 @@ def encuestas_eliminar(id_encuesta):
     except ErrorApi as ex:
         flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
     return redirect(url_for('admin.encuestas_listar'))
+
+
+# ==========================================================================
+#  PERIODO ACADÉMICO  (recurso API: "PeriodoAcademico", clave: id_periodo)
+# ==========================================================================
+
+@admin_bp.route('/periodos')
+def periodos_listar():
+    try:
+        periodos = listar('PeriodoAcademico')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        periodos = []
+    return render_template('admin/periodo_lista.html', periodos=periodos)
+
+
+@admin_bp.route('/periodos/nuevo', methods=['GET', 'POST'])
+def periodos_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/periodo_form.html', modo='nueva', periodo=None, errores=[])
+
+    datos = {
+        'id_periodo': request.form.get('id_periodo', '').strip(),
+        'fecha_ini': request.form.get('fecha_ini', '').strip() or None,
+        'fecha_fin': request.form.get('fecha_fin', '').strip() or None,
+        'activo': request.form.get('activo') == 'on',
+    }
+    try:
+        crear('PeriodoAcademico', datos)
+    except ErrorApi as ex:
+        # Aquí llega, por ejemplo, "fecha_fin debe ser posterior a fecha_ini" (400).
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        return render_template('admin/periodo_form.html', modo='nueva', periodo=datos, errores=ex.errores)
+
+    flash(f"Periodo académico '{datos['id_periodo']}' creado.", 'exito')
+    return redirect(url_for('admin.periodos_listar'))
+
+
+@admin_bp.route('/periodos/<id_periodo>/editar', methods=['GET', 'POST'])
+def periodos_editar(id_periodo):
+    if request.method == 'GET':
+        try:
+            periodo = obtener('PeriodoAcademico', id_periodo)
+        except ErrorApi as ex:
+            flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+            return redirect(url_for('admin.periodos_listar'))
+        return render_template('admin/periodo_form.html', modo='editar', periodo=periodo, errores=[])
+
+    datos = {
+        'fecha_ini': request.form.get('fecha_ini', '').strip() or None,
+        'fecha_fin': request.form.get('fecha_fin', '').strip() or None,
+        'activo': request.form.get('activo') == 'on',
+    }
+    try:
+        reemplazar('PeriodoAcademico', id_periodo, datos)
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        datos['id_periodo'] = id_periodo
+        return render_template('admin/periodo_form.html', modo='editar', periodo=datos, errores=ex.errores)
+
+    flash(f"Periodo académico '{id_periodo}' actualizado.", 'exito')
+    return redirect(url_for('admin.periodos_listar'))
+
+
+@admin_bp.route('/periodos/<id_periodo>/eliminar', methods=['POST'])
+def periodos_eliminar(id_periodo):
+    try:
+        eliminar('PeriodoAcademico', id_periodo)
+        flash(f"Periodo académico '{id_periodo}' eliminado.", 'exito')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+    return redirect(url_for('admin.periodos_listar'))
+
+
+# ==========================================================================
+#  ROL  (recurso API: "Rol", clave: id_rol)
+# ==========================================================================
+
+@admin_bp.route('/roles')
+def roles_listar():
+    try:
+        roles = listar('Rol')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        roles = []
+    return render_template('admin/rol_lista.html', roles=roles)
+
+
+@admin_bp.route('/roles/nuevo', methods=['GET', 'POST'])
+def roles_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/rol_form.html', modo='nueva', rol=None, errores=[])
+
+    datos = {
+        'id_rol': request.form.get('id_rol', '').strip(),
+        'nombre': request.form.get('nombre', '').strip(),
+        'descripcion': request.form.get('descripcion', '').strip() or None,
+    }
+    try:
+        crear('Rol', datos)
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        return render_template('admin/rol_form.html', modo='nueva', rol=datos, errores=ex.errores)
+
+    flash(f"Rol '{datos['id_rol']}' creado.", 'exito')
+    return redirect(url_for('admin.roles_listar'))
+
+
+@admin_bp.route('/roles/<id_rol>/editar', methods=['GET', 'POST'])
+def roles_editar(id_rol):
+    if request.method == 'GET':
+        try:
+            rol = obtener('Rol', id_rol)
+        except ErrorApi as ex:
+            flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+            return redirect(url_for('admin.roles_listar'))
+        return render_template('admin/rol_form.html', modo='editar', rol=rol, errores=[])
+
+    datos = {
+        'nombre': request.form.get('nombre', '').strip(),
+        'descripcion': request.form.get('descripcion', '').strip() or None,
+    }
+    try:
+        reemplazar('Rol', id_rol, datos)
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        datos['id_rol'] = id_rol
+        return render_template('admin/rol_form.html', modo='editar', rol=datos, errores=ex.errores)
+
+    flash(f"Rol '{id_rol}' actualizado.", 'exito')
+    return redirect(url_for('admin.roles_listar'))
+
+
+@admin_bp.route('/roles/<id_rol>/eliminar', methods=['POST'])
+def roles_eliminar(id_rol):
+    try:
+        eliminar('Rol', id_rol)
+        flash(f"Rol '{id_rol}' eliminado.", 'exito')
+    except ErrorApi as ex:
+        flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+    return redirect(url_for('admin.roles_listar'))

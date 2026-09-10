@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nuevo rol' if modo == 'nueva' else 'Editar rol' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.roles_listar') }}">Rol</a></li>
+        <li class="breadcrumb-item active">{{ 'Nuevo' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-user-shield text-primary-custom me-2"></i>{{ 'Nuevo rol' if modo == 'nueva' else 'Editar rol ' + rol.id_rol }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.roles_nuevo') if modo == 'nueva' else url_for('admin.roles_editar', id_rol=rol.id_rol) }}">
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="id_rol">Código (id_rol)</label>
+                <input type="text" class="form-control" id="id_rol" name="id_rol" maxlength="20" required
+                       value="{{ rol.id_rol if rol else '' }}">
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label" for="nombre">Nombre</label>
+                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="60" required
+                       value="{{ rol.nombre if rol else '' }}">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="descripcion">Descripción (opcional)</label>
+                <textarea class="form-control" id="descripcion" name="descripcion" maxlength="200" rows="3">{{ (rol.descripcion or '') if rol else '' }}</textarea>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">
+                    {% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.roles_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
