@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nueva encuesta' if modo == 'nueva' else 'Editar encuesta' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.encuestas_listar') }}">Encuesta</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-clipboard-list text-primary-custom me-2"></i>{{ 'Nueva encuesta' if modo == 'nueva' else 'Editar encuesta ' ~ encuesta.id_encuesta }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        {% if modo == 'nueva' %}
+        <p class="form-text mb-3"><i class="fas fa-info-circle me-1"></i>El id_encuesta lo genera la base de datos; no se pide aquí.</p>
+        {% endif %}
+
+        <form method="post"
+              action="{{ url_for('admin.encuestas_nueva') if modo == 'nueva' else url_for('admin.encuestas_editar', id_encuesta=encuesta.id_encuesta) }}">
+
+            <div class="mb-3">
+                <label class="form-label" for="nombre">Nombre</label>
+                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="120" required
+                       value="{{ encuesta.nombre if encuesta else '' }}">
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="version">Versión {% if modo == 'nueva' %}<span class="form-text">(vacío = 1)</span>{% endif %}</label>
+                    <input type="number" class="form-control" id="version" name="version" min="1"
+                           value="{{ encuesta.version if encuesta else '' }}" placeholder="1">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="vigente_desde">Vigente desde {% if modo == 'nueva' %}<span class="form-text">(vacío = hoy)</span>{% endif %}</label>
+                    <input type="date" class="form-control" id="vigente_desde" name="vigente_desde"
+                           value="{{ encuesta.vigente_desde if encuesta else '' }}">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label" for="vigente_hasta">Vigente hasta (opcional)</label>
+                    <input type="date" class="form-control" id="vigente_hasta" name="vigente_hasta"
+                           value="{{ (encuesta.vigente_hasta or '') if encuesta else '' }}">
+                </div>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="activa" name="activa" {% if encuesta is none or encuesta.activa %}checked{% endif %}>
+                <label class="form-check-label" for="activa">Activa</label>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">
+                    {% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.encuestas_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

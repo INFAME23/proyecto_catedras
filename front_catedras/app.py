@@ -1,0 +1,36 @@
+from flask import Flask, render_template
+from flask_cors import CORS
+from config import Config
+
+from routes.catedras import catedras_bp
+from routes.registro import registro_bp
+from routes.admin import admin_bp
+from routes.ponente import ponente_bp
+from routes.estudiante import estudiante_bp
+from routes.auth import auth_bp
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+CORS(app)
+
+app.register_blueprint(catedras_bp, url_prefix='/')
+app.register_blueprint(registro_bp, url_prefix='/')
+app.register_blueprint(auth_bp, url_prefix='/')
+app.register_blueprint(admin_bp, url_prefix='/admin')
+app.register_blueprint(ponente_bp, url_prefix='/ponente')
+app.register_blueprint(estudiante_bp, url_prefix='/estudiante')
+
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('errors/404.html'), 404
+
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    return render_template('errors/500.html'), 500
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)

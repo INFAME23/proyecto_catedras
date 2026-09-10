@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nueva modalidad' if modo == 'nueva' else 'Editar modalidad' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.modalidades_listar') }}">Modalidad</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-video text-primary-custom me-2"></i>{{ 'Nueva modalidad' if modo == 'nueva' else 'Editar modalidad ' + modalidad.id_modalidad }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.modalidades_nueva') if modo == 'nueva' else url_for('admin.modalidades_editar', id_modalidad=modalidad.id_modalidad) }}">
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="id_modalidad">Código (id_modalidad)</label>
+                <input type="text" class="form-control" id="id_modalidad" name="id_modalidad" maxlength="15" required
+                       value="{{ modalidad.id_modalidad if modalidad else '' }}">
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label" for="nombre">Nombre</label>
+                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="60" required
+                       value="{{ modalidad.nombre if modalidad else '' }}">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="canal_difusion">Canal de difusión</label>
+                <select class="form-select" id="canal_difusion" name="canal_difusion" required>
+                    <option value="">-- Selecciona --</option>
+                    {% for c in canales %}
+                    <option value="{{ c }}" {% if modalidad and modalidad.canal_difusion == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if modalidad is none or modalidad.activo %}checked{% endif %}>
+                <label class="form-check-label" for="activo">Activo</label>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">
+                    {% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.modalidades_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
