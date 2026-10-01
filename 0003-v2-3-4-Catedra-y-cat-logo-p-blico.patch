@@ -1,0 +1,1394 @@
+From 84393b97f83ad2d726db1995ab1a01d1733c102d Mon Sep 17 00:00:00 2001
+From: Integrante 3 <integrante3@ejemplo.com>
+Date: Thu, 1 Oct 2026 15:45:54 +0000
+Subject: [PATCH 3/4] =?UTF-8?q?v2=20(3/4):=20Catedra=20y=20cat=C3=A1logo?=
+ =?UTF-8?q?=20p=C3=BAblico?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Catedra (RF84-RF89): 'nombre_asis' es columna generada; el INSERT la
+  devuelve junto al id con un solo RETURNING (ADR D11) y ninguna
+  petición la declara (RNF7). 'id_evento_asis' validado como 9 dígitos.
+- GET /api/Catedra sin 'limite' devuelve todas las filas y 'total' es el
+  total real de la tabla (criterio 6 y contrato del catálogo, §9).
+- Front: catálogo público /catedras (buscador por nombre, filtro por tipo
+  de evento y paginación en Flask, ADR D13) y detalle /catedras/<id>.
+  Si la API falla se muestra el error (RF93), nunca datos inventados.
+- Repositorio falso de Catedra en pruebas/ (simula el RETURNING).
+- Fase 16 y parte de la Fase 20 de version2/8_tasks.md marcadas.
+---
+ api_catedras/Controllers/CatedraController.cs | 219 ++++++++++++++++++
+ api_catedras/Modelos/Catedra.cs               |  64 +++++
+ api_catedras/Peticiones/CatedraActualizar.cs  |  55 +++++
+ api_catedras/Peticiones/CatedraCrear.cs       |  54 +++++
+ api_catedras/Peticiones/CatedraReemplazo.cs   |  47 ++++
+ api_catedras/Program.cs                       |   6 +
+ .../Repositorios/IRepositorioCatedra.cs       |  40 ++++
+ .../RepositorioCatedraPostgres.cs             | 128 ++++++++++
+ api_catedras/Servicios/IServicioCatedra.cs    |  28 +++
+ api_catedras/Servicios/ServicioCatedra.cs     | 113 +++++++++
+ api_catedras/pruebas/Programa.cs              | 121 ++++++++++
+ docs/spec_kit/Versiones/version2/8_tasks.md   |  20 +-
+ front_catedras/routes/catedras.py             | 109 ++++++++-
+ front_catedras/servicios/api_catedras.py      |  11 +-
+ front_catedras/templates/catedras.html        |  83 +++++++
+ front_catedras/templates/detalle_catedra.html |  55 +++++
+ front_catedras/templates/inicio.html          |   5 +-
+ front_catedras/templates/partials/navbar.html |   5 +
+ 18 files changed, 1143 insertions(+), 20 deletions(-)
+ create mode 100644 api_catedras/Controllers/CatedraController.cs
+ create mode 100644 api_catedras/Modelos/Catedra.cs
+ create mode 100644 api_catedras/Peticiones/CatedraActualizar.cs
+ create mode 100644 api_catedras/Peticiones/CatedraCrear.cs
+ create mode 100644 api_catedras/Peticiones/CatedraReemplazo.cs
+ create mode 100644 api_catedras/Repositorios/IRepositorioCatedra.cs
+ create mode 100644 api_catedras/Repositorios/RepositorioCatedraPostgres.cs
+ create mode 100644 api_catedras/Servicios/IServicioCatedra.cs
+ create mode 100644 api_catedras/Servicios/ServicioCatedra.cs
+ create mode 100644 front_catedras/templates/catedras.html
+ create mode 100644 front_catedras/templates/detalle_catedra.html
+
+diff --git a/api_catedras/Controllers/CatedraController.cs b/api_catedras/Controllers/CatedraController.cs
+new file mode 100644
+index 0000000..036340d
+--- /dev/null
++++ b/api_catedras/Controllers/CatedraController.cs
+@@ -0,0 +1,219 @@
++// ==========================================================================
++//  Controllers/CatedraController.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Capa HTTP de 'Catedra'. Mismo patrón que SedeController (v1), con tres
++//  diferencias:
++//   · el id es 'long' (lo genera la BD) -> restricción de ruta ':long';
++//   · el GET de lista sin '?limite=' devuelve TODAS las cátedras y 'total'
++//     es el total real de la tabla (contrato del catálogo público);
++//   · el POST responde también 'id_catedra' y 'nombre_asis' calculados por
++//     la BD en el mismo INSERT (ADR D11).
++//  Errores: ArgumentException -> 400 · NoEncontradoExcepcion -> 404 ·
++//  NpgsqlException -> 500 (ASIS duplicado, tipo de evento o dependencia
++//  inexistentes).
++// ==========================================================================
++
++namespace ApiCatedras.Controllers;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Servicios;
++using Microsoft.AspNetCore.Mvc;
++using Npgsql;   // NpgsqlException
++
++// [ApiController]: enlaza el body y valida la petición (422 automático).
++// [Route]: prefijo común de todos los métodos.
++[ApiController]
++[Route("api/Catedra")]
++public class CatedraController : ControllerBase
++{
++    // [SOLID · D] El controlador solo conoce la interfaz del servicio.
++    private readonly IServicioCatedra _servicio;
++
++    public CatedraController(IServicioCatedra servicio)
++    {
++        _servicio = servicio;
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF84 · GET /api/Catedra?limite=N   -> 200 { tabla, limite, total, datos } | 204
++    // ----------------------------------------------------------------------
++    [HttpGet]
++    public async Task<IActionResult> Listar([FromQuery] int? limite)
++    {
++        try
++        {
++            var (datos, total) = await _servicio.ListarAsync(limite);
++
++            // Sin filas devueltas -> 204 (aquí 'total' es el de la tabla, por
++            // eso se mira la lista).
++            if (datos.Count == 0)
++                return NoContent();
++
++            return Ok(new
++            {
++                tabla = "catedra",
++                limite = limite ?? total,   // sin límite = se devolvieron todas
++                total,                      // total REAL de la tabla
++                datos,
++            });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Parámetro de consulta inválido.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al listar las cátedras.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF85 · GET /api/Catedra/{idCatedra:long}   -> 200 | 404
++    // ----------------------------------------------------------------------
++    [HttpGet("{idCatedra:long}")]
++    public async Task<IActionResult> Obtener(long idCatedra)
++    {
++        try
++        {
++            return Ok(await _servicio.ObtenerAsync(idCatedra));
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Cátedra no encontrada.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al obtener la cátedra.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF86 · POST /api/Catedra   -> 200 { estado, mensaje } | 400 | 422 | 500
++    // ----------------------------------------------------------------------
++    [HttpPost]
++    public async Task<IActionResult> Crear([FromBody] CatedraCrear peticion)
++    {
++        try
++        {
++            // Deconstrucción: los dos valores que puso la BD.
++            var (idCatedra, nombreAsis) = await _servicio.CrearAsync(peticion);
++            return Ok(new
++            {
++                estado = "creada",
++                mensaje = $"Cátedra '{peticion.IdEventoAsis}' creada.",
++                id_catedra = idCatedra,
++                nombre_asis = nombreAsis,
++            });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            // ASIS duplicado (uq_catedra_asis) o tipo de evento / dependencia
++            // inexistentes (fk_catedra_tipo_evento / fk_catedra_dependencia).
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al crear la cátedra.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF87 · PUT /api/Catedra/{idCatedra:long}   -> 200 { filasAfectadas } | 400 | 404 | 422
++    // ----------------------------------------------------------------------
++    [HttpPut("{idCatedra:long}")]
++    public async Task<IActionResult> Reemplazar(long idCatedra, [FromBody] CatedraReemplazo peticion)
++    {
++        try
++        {
++            int filas = await _servicio.ReemplazarAsync(idCatedra, peticion);
++            return Ok(new { filasAfectadas = filas });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Cátedra no encontrada.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al reemplazar la cátedra.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF88 · PATCH /api/Catedra/{idCatedra:long}   -> 200 { filasAfectadas } | 400 | 404
++    // ----------------------------------------------------------------------
++    [HttpPatch("{idCatedra:long}")]
++    public async Task<IActionResult> Actualizar(long idCatedra, [FromBody] CatedraActualizar peticion)
++    {
++        try
++        {
++            int filas = await _servicio.ActualizarAsync(idCatedra, peticion);
++            return Ok(new { filasAfectadas = filas });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Cátedra no encontrada.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al actualizar la cátedra.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF89 · DELETE /api/Catedra/{idCatedra:long}   -> 200 { filasEliminadas } | 404
++    //  ⚠ 'sesion.fk_catedra' es ON DELETE CASCADE: borrar una cátedra borra
++    //  también sus sesiones (v4, ya sembradas). Para pruebas, usar una cátedra
++    //  sin sesiones (p. ej. 5502) o una creada por la propia prueba.
++    // ----------------------------------------------------------------------
++    [HttpDelete("{idCatedra:long}")]
++    public async Task<IActionResult> Eliminar(long idCatedra)
++    {
++        try
++        {
++            int filas = await _servicio.EliminarAsync(idCatedra);
++            return Ok(new { filasEliminadas = filas });
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Cátedra no encontrada.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "No se pudo eliminar la cátedra.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al eliminar la cátedra.", ex.Message);
++        }
++    }
++
++    // Arma el sobre de error { estado, mensaje, detalle } con el código indicado.
++    private ObjectResult Problema(int codigo, string estado, string mensaje, string? detalle)
++    {
++        return new ObjectResult(new { estado, mensaje, detalle })
++        {
++            StatusCode = codigo,
++        };
++    }
++}
+diff --git a/api_catedras/Modelos/Catedra.cs b/api_catedras/Modelos/Catedra.cs
+new file mode 100644
+index 0000000..b740640
+--- /dev/null
++++ b/api_catedras/Modelos/Catedra.cs
+@@ -0,0 +1,64 @@
++// ==========================================================================
++//  Modelos/Catedra.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Una fila de 'catedras.catedra': el CATÁLOGO de cátedras (5502 de ejemplo).
++//
++//  Definición real de la tabla (ver version2/5_data_model.md §2.5):
++//    id_catedra      BIGINT        PK  GENERATED ALWAYS AS IDENTITY
++//    id_evento_asis  CHAR(9)       NOT NULL UNIQUE  CHECK ('^[0-9]{9}$')
++//    nombre          VARCHAR(200)  NOT NULL
++//    nombre_asis     VARCHAR(30)   GENERATED ALWAYS AS (left(nombre, 30)) STORED
++//    fk_tipo_evento  CHAR(4)       NOT NULL  FK -> tipo_evento (v1, RESTRICT)
++//    fk_dependencia  VARCHAR(15)             FK -> dependencia (SET NULL)
++//    activo          BOOLEAN       NOT NULL  DEFAULT true
++//    creado_en       TIMESTAMPTZ   NOT NULL  DEFAULT now()
++//
++//  NOVEDAD DE LA v2 — COLUMNA GENERADA (RNF7): 'nombre_asis' la calcula la
++//  BD a partir de 'nombre'. Vive SOLO aquí, en el modelo de respuesta;
++//  ninguna clase de 'Peticiones/' la declara, así que el cliente no puede
++//  escribirla. Tres propiedades las pone la BD: IdCatedra, NombreAsis y
++//  CreadoEn (por eso no llevan 'required').
++//
++//  'IdEventoAsis' es TEXTO, no número: '000023636' como entero perdería los
++//  ceros a la izquierda y dejaría de servir para la carga al ASIS.
++// ==========================================================================
++
++namespace ApiCatedras.Modelos;
++
++using System.Text.Json.Serialization;
++
++/// <summary>Una cátedra del catálogo (el "evento" del ASIS).</summary>
++public class Catedra
++{
++    /// <summary>Identificador autogenerado por la BD.</summary>
++    [JsonPropertyName("id_catedra")]
++    public long IdCatedra { get; set; }
++
++    /// <summary>Código del evento en el ASIS: 9 dígitos con ceros a la izquierda.</summary>
++    [JsonPropertyName("id_evento_asis")]
++    public required string IdEventoAsis { get; set; }
++
++    /// <summary>Nombre completo de la cátedra (hasta 200 caracteres).</summary>
++    [JsonPropertyName("nombre")]
++    public required string Nombre { get; set; }
++
++    /// <summary>Primeros 30 caracteres del nombre. Columna GENERADA por la BD: solo lectura.</summary>
++    [JsonPropertyName("nombre_asis")]
++    public string NombreAsis { get; set; } = "";
++
++    /// <summary>Código del tipo de evento (tabla de la v1). Obligatorio.</summary>
++    [JsonPropertyName("fk_tipo_evento")]
++    public required string FkTipoEvento { get; set; }
++
++    /// <summary>Dependencia que organiza la cátedra. Opcional.</summary>
++    [JsonPropertyName("fk_dependencia")]
++    public string? FkDependencia { get; set; }
++
++    /// <summary>¿Está activa? Por defecto true.</summary>
++    [JsonPropertyName("activo")]
++    public bool Activo { get; set; } = true;
++
++    /// <summary>Cuándo se registró (DEFAULT now() de la BD). Solo lectura, en UTC.</summary>
++    [JsonPropertyName("creado_en")]
++    public DateTime CreadoEn { get; set; }
++}
+diff --git a/api_catedras/Peticiones/CatedraActualizar.cs b/api_catedras/Peticiones/CatedraActualizar.cs
+new file mode 100644
+index 0000000..4e0b703
+--- /dev/null
++++ b/api_catedras/Peticiones/CatedraActualizar.cs
+@@ -0,0 +1,55 @@
++// ==========================================================================
++//  Peticiones/CatedraActualizar.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del PATCH /api/Catedra/{idCatedra}: PARCIAL, todo opcional.
++//  Sin 'nombre_asis' (RNF7). Convención v1: null = "no enviado".
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del PATCH /api/Catedra/{idCatedra}. Todo opcional.</summary>
++public class CatedraActualizar
++{
++    [StringLength(9, MinimumLength = 9,
++        ErrorMessage = "El campo 'id_evento_asis' debe tener exactamente 9 caracteres.")]
++    [RegularExpression("^[0-9]{9}$",
++        ErrorMessage = "El campo 'id_evento_asis' debe tener exactamente 9 dígitos (p. ej. '000023636').")]
++    [JsonPropertyName("id_evento_asis")]
++    public string? IdEventoAsis { get; set; }
++
++    [StringLength(200, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 200 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    [StringLength(4, MinimumLength = 4,
++        ErrorMessage = "El campo 'fk_tipo_evento' debe tener exactamente 4 caracteres.")]
++    [JsonPropertyName("fk_tipo_evento")]
++    public string? FkTipoEvento { get; set; }
++
++    [StringLength(15, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_dependencia' debe tener entre 1 y 15 caracteres.")]
++    [JsonPropertyName("fk_dependencia")]
++    public string? FkDependencia { get; set; }
++
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++
++    /// <summary>Diccionario columna -> valor SOLO con lo que llegó (no null).
++    /// 'nombre_asis' jamás aparece: es una columna generada.</summary>
++    public Dictionary<string, object?> ACamposEnviados()
++    {
++        var datos = new Dictionary<string, object?>();
++
++        if (IdEventoAsis is not null) datos["id_evento_asis"] = IdEventoAsis;
++        if (Nombre is not null) datos["nombre"] = Nombre;
++        if (FkTipoEvento is not null) datos["fk_tipo_evento"] = FkTipoEvento;
++        if (FkDependencia is not null) datos["fk_dependencia"] = FkDependencia;
++        if (Activo is not null) datos["activo"] = Activo;
++
++        return datos;
++    }
++}
+diff --git a/api_catedras/Peticiones/CatedraCrear.cs b/api_catedras/Peticiones/CatedraCrear.cs
+new file mode 100644
+index 0000000..462e91d
+--- /dev/null
++++ b/api_catedras/Peticiones/CatedraCrear.cs
+@@ -0,0 +1,54 @@
++// ==========================================================================
++//  Peticiones/CatedraCrear.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del POST /api/Catedra.
++//
++//  RNF7: aquí NO existe 'nombre_asis' (columna generada) ni 'id_catedra'
++//  ni 'creado_en' (los pone la BD). Si el cliente los manda, el
++//  deserializador los ignora: no hay propiedad donde guardarlos.
++//
++//  'id_evento_asis' se valida como TEXTO de exactamente 9 dígitos con
++//  [RegularExpression] (refleja el CHECK chk_catedra_asis). "123" -> 422.
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del POST /api/Catedra.</summary>
++public class CatedraCrear
++{
++    /// <summary>Código ASIS. Obligatorio: exactamente 9 dígitos (con ceros a la izquierda).</summary>
++    [Required(ErrorMessage = "El campo 'id_evento_asis' es obligatorio.")]
++    [StringLength(9, MinimumLength = 9,
++        ErrorMessage = "El campo 'id_evento_asis' debe tener exactamente 9 caracteres.")]
++    [RegularExpression("^[0-9]{9}$",
++        ErrorMessage = "El campo 'id_evento_asis' debe tener exactamente 9 dígitos (p. ej. '000023636').")]
++    [JsonPropertyName("id_evento_asis")]
++    public string? IdEventoAsis { get; set; }
++
++    /// <summary>Nombre. Obligatorio, 1 a 200 caracteres.</summary>
++    [Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
++    [StringLength(200, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 200 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    /// <summary>Tipo de evento (v1). Obligatorio, exactamente 4 caracteres (CHAR(4)).</summary>
++    [Required(ErrorMessage = "El campo 'fk_tipo_evento' es obligatorio.")]
++    [StringLength(4, MinimumLength = 4,
++        ErrorMessage = "El campo 'fk_tipo_evento' debe tener exactamente 4 caracteres.")]
++    [JsonPropertyName("fk_tipo_evento")]
++    public string? FkTipoEvento { get; set; }
++
++    /// <summary>Dependencia. Opcional; si llega, 1 a 15 caracteres.</summary>
++    [StringLength(15, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_dependencia' debe tener entre 1 y 15 caracteres.")]
++    [JsonPropertyName("fk_dependencia")]
++    public string? FkDependencia { get; set; }
++
++    /// <summary>¿Está activa? Opcional (por defecto true).</summary>
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++}
+diff --git a/api_catedras/Peticiones/CatedraReemplazo.cs b/api_catedras/Peticiones/CatedraReemplazo.cs
+new file mode 100644
+index 0000000..308a552
+--- /dev/null
++++ b/api_catedras/Peticiones/CatedraReemplazo.cs
+@@ -0,0 +1,47 @@
++// ==========================================================================
++//  Peticiones/CatedraReemplazo.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del PUT /api/Catedra/{idCatedra}: REEMPLAZO COMPLETO.
++//  Obligatorios: id_evento_asis, nombre, fk_tipo_evento y activo.
++//  'fk_dependencia' se escribe siempre (si no llega, queda NULL).
++//  Sin 'nombre_asis' (RNF7): al cambiar 'nombre', la BD la recalcula sola.
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del PUT /api/Catedra/{idCatedra}.</summary>
++public class CatedraReemplazo
++{
++    [Required(ErrorMessage = "El campo 'id_evento_asis' es obligatorio.")]
++    [StringLength(9, MinimumLength = 9,
++        ErrorMessage = "El campo 'id_evento_asis' debe tener exactamente 9 caracteres.")]
++    [RegularExpression("^[0-9]{9}$",
++        ErrorMessage = "El campo 'id_evento_asis' debe tener exactamente 9 dígitos (p. ej. '000023636').")]
++    [JsonPropertyName("id_evento_asis")]
++    public string? IdEventoAsis { get; set; }
++
++    [Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
++    [StringLength(200, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 200 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    [Required(ErrorMessage = "El campo 'fk_tipo_evento' es obligatorio.")]
++    [StringLength(4, MinimumLength = 4,
++        ErrorMessage = "El campo 'fk_tipo_evento' debe tener exactamente 4 caracteres.")]
++    [JsonPropertyName("fk_tipo_evento")]
++    public string? FkTipoEvento { get; set; }
++
++    /// <summary>Si no llega o es null -> la cátedra queda sin dependencia.</summary>
++    [StringLength(15, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_dependencia' debe tener entre 1 y 15 caracteres.")]
++    [JsonPropertyName("fk_dependencia")]
++    public string? FkDependencia { get; set; }
++
++    [Required(ErrorMessage = "El campo 'activo' es obligatorio (true o false).")]
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++}
+diff --git a/api_catedras/Program.cs b/api_catedras/Program.cs
+index e544b26..fa5ad07 100644
+--- a/api_catedras/Program.cs
++++ b/api_catedras/Program.cs
+@@ -259,6 +259,12 @@ builder.Services.AddScoped<IRepositorioAliasPrograma>(
+     _ => new RepositorioAliasProgramaPostgres(cadenaConexion));
+ builder.Services.AddScoped<IServicioAliasPrograma, ServicioAliasPrograma>();
+ 
++// IRepositorioCatedra -> RepositorioCatedraPostgres,
++// IServicioCatedra -> ServicioCatedra (catálogo de cátedras).
++builder.Services.AddScoped<IRepositorioCatedra>(
++    _ => new RepositorioCatedraPostgres(cadenaConexion));
++builder.Services.AddScoped<IServicioCatedra, ServicioCatedra>();
++
+ // --------------------------------------------------------------------------
+ //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
+ // --------------------------------------------------------------------------
+diff --git a/api_catedras/Repositorios/IRepositorioCatedra.cs b/api_catedras/Repositorios/IRepositorioCatedra.cs
+new file mode 100644
+index 0000000..c5f6df5
+--- /dev/null
++++ b/api_catedras/Repositorios/IRepositorioCatedra.cs
+@@ -0,0 +1,40 @@
++// ==========================================================================
++//  Repositorios/IRepositorioCatedra.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Contrato de acceso a datos de 'catedras.catedra'. Dos diferencias con
++//  el molde de la v1:
++//   · 'ObtenerTodosAsync' acepta 'int?': null = SIN límite (las 5502 filas,
++//     que es lo que consume el catálogo público, 6_contracts.md §9), y
++//     'ContarAsync' da el total REAL de la tabla (criterio 6:
++//     '?limite=10' responde 10 filas con total 5502).
++//   · 'CrearAsync' devuelve una TUPLA con los dos valores que la BD pone en
++//     el mismo INSERT: el id (IDENTITY) y 'nombre_asis' (columna generada).
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++
++/// <summary>Operaciones de datos sobre la tabla 'catedras.catedra'.</summary>
++public interface IRepositorioCatedra
++{
++    /// <summary>Cátedras ordenadas por id; 'limite' null = todas.</summary>
++    Task<List<Catedra>> ObtenerTodosAsync(int? limite);
++
++    /// <summary>Cuántas filas tiene la tabla en total.</summary>
++    Task<int> ContarAsync();
++
++    /// <summary>La cátedra con ese id, o null si no existe.</summary>
++    Task<Catedra?> ObtenerPorIdAsync(long idCatedra);
++
++    /// <summary>Inserta y devuelve (id_catedra, nombre_asis) calculados por la BD.
++    /// Código ASIS duplicado o FK inexistente -> NpgsqlException (500).</summary>
++    Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra);
++
++    /// <summary>Actualiza las columnas de 'datos'. Devuelve filas afectadas (0 = no existe).</summary>
++    Task<int> ActualizarAsync(long idCatedra, Dictionary<string, object?> datos);
++
++    /// <summary>Borra. ⚠ 'sesion.fk_catedra' es ON DELETE CASCADE: borra también
++    /// sus sesiones (tabla de la v4 ya sembrada). Devuelve filas eliminadas.</summary>
++    Task<int> EliminarAsync(long idCatedra);
++}
+diff --git a/api_catedras/Repositorios/RepositorioCatedraPostgres.cs b/api_catedras/Repositorios/RepositorioCatedraPostgres.cs
+new file mode 100644
+index 0000000..75f8175
+--- /dev/null
++++ b/api_catedras/Repositorios/RepositorioCatedraPostgres.cs
+@@ -0,0 +1,128 @@
++// ==========================================================================
++//  Repositorios/RepositorioCatedraPostgres.cs  ·  Proyecto Cátedras · v2
++// --------------------------------------------------------------------------
++//  IRepositorioCatedra para PostgreSQL con Dapper.
++//
++//  Lo nuevo (3_plan.md §4.3, ADR D11): el INSERT devuelve DOS valores que
++//  la BD calcula — 'id_catedra' (IDENTITY) y 'nombre_asis' (columna
++//  GENERADA, left(nombre, 30)) — con un solo RETURNING. Así 'nombre_asis'
++//  tiene una única fuente de verdad: la BD. El C# nunca la calcula.
++//
++//  'LIMIT @limite' con @limite = NULL equivale en PostgreSQL a "sin
++//  límite" (LIMIT ALL): por eso el mismo SQL sirve con y sin límite.
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++using Dapper;
++using Npgsql;
++
++/// <summary>Acceso a 'catedras.catedra' en PostgreSQL mediante Dapper.</summary>
++public class RepositorioCatedraPostgres : IRepositorioCatedra
++{
++    private readonly string _cadenaConexion;
++
++    // [ACID · C] Lista blanca del UPDATE. NO están: 'id_catedra' (PK),
++    // 'nombre_asis' (generada: PostgreSQL rechazaría escribirla) ni
++    // 'creado_en' (la pone la BD).
++    private static readonly HashSet<string> ColumnasActualizables =
++        new() { "id_evento_asis", "nombre", "fk_tipo_evento", "fk_dependencia", "activo" };
++
++    // Columnas de lectura, escritas una sola vez para los dos SELECT.
++    private const string ColumnasSelect =
++        "id_catedra, id_evento_asis, nombre, nombre_asis, fk_tipo_evento, fk_dependencia, activo, creado_en";
++
++    public RepositorioCatedraPostgres(string cadenaConexion)
++    {
++        _cadenaConexion = cadenaConexion;
++    }
++
++    public async Task<List<Catedra>> ObtenerTodosAsync(int? limite)
++    {
++        // Interpolación '$"..."' SOLO con la constante de columnas (texto
++        // nuestro, nunca del cliente). El valor del límite va como @parámetro.
++        string sql = $@"
++            SELECT {ColumnasSelect}
++            FROM catedras.catedra
++            ORDER BY id_catedra
++            LIMIT @limite;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++        var filas = await conexion.QueryAsync<Catedra>(sql, new { limite });
++        return filas.ToList();
++    }
++
++    public async Task<int> ContarAsync()
++    {
++        const string sql = "SELECT COUNT(*) FROM catedras.catedra;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // COUNT(*) devuelve BIGINT; Dapper lo convierte al 'int' pedido.
++        return await conexion.ExecuteScalarAsync<int>(sql);
++    }
++
++    public async Task<Catedra?> ObtenerPorIdAsync(long idCatedra)
++    {
++        string sql = $@"
++            SELECT {ColumnasSelect}
++            FROM catedras.catedra
++            WHERE id_catedra = @idCatedra;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++        return await conexion.QuerySingleOrDefaultAsync<Catedra>(sql, new { idCatedra });
++    }
++
++    public async Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra)
++    {
++        // Ni id_catedra, ni nombre_asis, ni creado_en se envían: los pone la BD.
++        const string sql = @"
++            INSERT INTO catedras.catedra
++                (id_evento_asis, nombre, fk_tipo_evento, fk_dependencia, activo)
++            VALUES (@IdEventoAsis, @Nombre, @FkTipoEvento, @FkDependencia, @Activo)
++            RETURNING id_catedra, nombre_asis;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Una fila con dos columnas -> tupla (long, string), en ese orden.
++        return await conexion.QuerySingleAsync<(long, string)>(sql, catedra);
++    }
++
++    public async Task<int> ActualizarAsync(long idCatedra, Dictionary<string, object?> datos)
++    {
++        var asignaciones = new List<string>();
++        var parametros = new DynamicParameters();
++        parametros.Add("id_clave", idCatedra);
++
++        foreach (var (columna, valor) in datos)
++        {
++            if (!ColumnasActualizables.Contains(columna))
++                continue;
++
++            asignaciones.Add($"{columna} = @{columna}");
++            parametros.Add(columna, valor);
++        }
++
++        if (asignaciones.Count == 0)
++            return 0;
++
++        // Si cambia 'nombre', PostgreSQL recalcula 'nombre_asis' en el mismo UPDATE.
++        var sql =
++            $"UPDATE catedras.catedra SET {string.Join(", ", asignaciones)} " +
++            "WHERE id_catedra = @id_clave;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++        return await conexion.ExecuteAsync(sql, parametros);
++    }
++
++    public async Task<int> EliminarAsync(long idCatedra)
++    {
++        const string sql = "DELETE FROM catedras.catedra WHERE id_catedra = @idCatedra;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // ⚠ CASCADE hacia 'sesion': el motor borra también sus sesiones.
++        return await conexion.ExecuteAsync(sql, new { idCatedra });
++    }
++}
+diff --git a/api_catedras/Servicios/IServicioCatedra.cs b/api_catedras/Servicios/IServicioCatedra.cs
+new file mode 100644
+index 0000000..f277f17
+--- /dev/null
++++ b/api_catedras/Servicios/IServicioCatedra.cs
+@@ -0,0 +1,28 @@
++// ==========================================================================
++//  Servicios/IServicioCatedra.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Contrato de negocio de 'Catedra'.
++//  ListarAsync: 'limite' null = TODAS las filas (contrato del catálogo
++//  público); 'Total' = total real de la tabla, no solo las devueltas.
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++
++/// <summary>Reglas de negocio del recurso 'Catedra'.</summary>
++public interface IServicioCatedra
++{
++    /// <summary>Lista cátedras. 'limite' &lt;= 0 -> ArgumentException.</summary>
++    Task<(List<Catedra> Datos, int Total)> ListarAsync(int? limite);
++
++    Task<Catedra> ObtenerAsync(long idCatedra);
++
++    /// <summary>Crea y devuelve (id_catedra, nombre_asis) que calculó la BD.</summary>
++    Task<(long IdCatedra, string NombreAsis)> CrearAsync(CatedraCrear peticion);
++
++    Task<int> ReemplazarAsync(long idCatedra, CatedraReemplazo peticion);
++    Task<int> ActualizarAsync(long idCatedra, CatedraActualizar peticion);
++    Task<int> EliminarAsync(long idCatedra);
++}
+diff --git a/api_catedras/Servicios/ServicioCatedra.cs b/api_catedras/Servicios/ServicioCatedra.cs
+new file mode 100644
+index 0000000..a3abda4
+--- /dev/null
++++ b/api_catedras/Servicios/ServicioCatedra.cs
+@@ -0,0 +1,113 @@
++// ==========================================================================
++//  Servicios/ServicioCatedra.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Reglas de negocio de 'Catedra'.
++//
++//  Diferencia con el resto de servicios (decisión de la v2): sin '?limite='
++//  NO se aplica el tope de 1000, se devuelven TODAS las cátedras, porque
++//  el catálogo público las pide así (6_contracts.md §9, ADR D13). Y el
++//  total es el de la tabla completa (criterio de aceptación 6).
++//
++//  Las FK (tipo de evento, dependencia) y el formato ASIS NO se validan
++//  aquí: el formato es de la petición (422) y las FK del motor (500).
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Repositorios;
++
++/// <summary>Reglas de negocio de 'Catedra'.</summary>
++public class ServicioCatedra : IServicioCatedra
++{
++    private readonly IRepositorioCatedra _repositorio;
++
++    public ServicioCatedra(IRepositorioCatedra repositorio)
++    {
++        _repositorio = repositorio;
++    }
++
++    public async Task<(List<Catedra> Datos, int Total)> ListarAsync(int? limite)
++    {
++        // Si llega, debe ser > 0. Si no llega, null = sin límite.
++        if (limite is not null && limite <= 0)
++            throw new ArgumentException(
++                "El parámetro 'limite' debe ser un entero mayor que 0.");
++
++        var datos = await _repositorio.ObtenerTodosAsync(limite);
++        int total = await _repositorio.ContarAsync();
++        return (datos, total);
++    }
++
++    public async Task<Catedra> ObtenerAsync(long idCatedra)
++    {
++        var catedra = await _repositorio.ObtenerPorIdAsync(idCatedra);
++
++        if (catedra is null)
++            throw new NoEncontradoExcepcion($"No existe la cátedra '{idCatedra}'.");
++
++        return catedra;
++    }
++
++    public async Task<(long IdCatedra, string NombreAsis)> CrearAsync(CatedraCrear peticion)
++    {
++        var catedra = new Catedra
++        {
++            IdEventoAsis = peticion.IdEventoAsis!,
++            Nombre = peticion.Nombre!,
++            FkTipoEvento = peticion.FkTipoEvento!,
++            FkDependencia = peticion.FkDependencia,   // opcional
++            Activo = peticion.Activo ?? true,
++            // NombreAsis NO se asigna: lo calcula la BD (RNF7).
++        };
++
++        return await _repositorio.CrearAsync(catedra);
++    }
++
++    public async Task<int> ReemplazarAsync(long idCatedra, CatedraReemplazo peticion)
++    {
++        var datos = new Dictionary<string, object?>
++        {
++            ["id_evento_asis"] = peticion.IdEventoAsis!,
++            ["nombre"] = peticion.Nombre!,
++            ["fk_tipo_evento"] = peticion.FkTipoEvento!,
++            ["fk_dependencia"] = peticion.FkDependencia,   // null si no llegó
++            ["activo"] = peticion.Activo!.Value,
++        };
++
++        int filas = await _repositorio.ActualizarAsync(idCatedra, datos);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe la cátedra '{idCatedra}'.");
++
++        return filas;
++    }
++
++    public async Task<int> ActualizarAsync(long idCatedra, CatedraActualizar peticion)
++    {
++        var datos = peticion.ACamposEnviados();
++
++        if (datos.Count == 0)
++            throw new ArgumentException(
++                "El cuerpo del PATCH no trae ningún campo para actualizar.");
++
++        int filas = await _repositorio.ActualizarAsync(idCatedra, datos);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe la cátedra '{idCatedra}'.");
++
++        return filas;
++    }
++
++    public async Task<int> EliminarAsync(long idCatedra)
++    {
++        int filas = await _repositorio.EliminarAsync(idCatedra);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe la cátedra '{idCatedra}'.");
++
++        return filas;
++    }
++}
+diff --git a/api_catedras/pruebas/Programa.cs b/api_catedras/pruebas/Programa.cs
+index 45f7856..5f8661f 100644
+--- a/api_catedras/pruebas/Programa.cs
++++ b/api_catedras/pruebas/Programa.cs
+@@ -802,6 +802,62 @@ await AfirmarLanza<NoEncontradoExcepcion>(
+ Afirmar("IRepositorioAliasPrograma no declara ActualizarAsync",
+     typeof(IRepositorioAliasPrograma).GetMethod("ActualizarAsync") is null);
+ 
++// ============================================================================
++//  v2 · Prueba de capas: ServicioCatedra + repositorio falso
++//  El repositorio falso simula el RETURNING (id_catedra, nombre_asis): así
++//  se verifica NombreAsis sin PostgreSQL.
++// ============================================================================
++var servicioCatedra = new ServicioCatedra(new RepositorioCatedraFalso());
++
++Console.WriteLine("\n== v2 · Prueba de capas: ServicioCatedra + repositorio falso en memoria ==\n");
++
++var (datosCat, totalCat) = await servicioCatedra.ListarAsync(null);
++Afirmar("Listar() sin límite devuelve TODAS las cátedras semilla", datosCat.Count == 3 && totalCat == 3);
++
++var (datosCat1, totalCat1) = await servicioCatedra.ListarAsync(1);
++Afirmar("Listar(1) devuelve 1 fila pero 'total' es el de la tabla (3)", datosCat1.Count == 1 && totalCat1 == 3);
++
++await AfirmarLanza<ArgumentException>(
++    "Listar(0) lanza ArgumentException", () => servicioCatedra.ListarAsync(0));
++
++var nombreLargo = "CATEDRA ABIERTA DE PRUEBA CON UN NOMBRE BASTANTE LARGO";
++var (idCat, nombreAsisCat) = await servicioCatedra.CrearAsync(new CatedraCrear
++{ IdEventoAsis = "000999001", Nombre = nombreLargo, FkTipoEvento = "CAAB" });
++Afirmar("Crear() devuelve el id generado", idCat == 5505);
++Afirmar("Crear() devuelve nombre_asis = primeros 30 caracteres",
++    nombreAsisCat == nombreLargo[..30] && nombreAsisCat.Length == 30);
++
++var catCreada = await servicioCatedra.ObtenerAsync(idCat);
++Afirmar("Crear() aplica activo = true y deja la dependencia en null",
++    catCreada.Activo && catCreada.FkDependencia is null);
++
++int filasPutCat = await servicioCatedra.ReemplazarAsync(idCat, new CatedraReemplazo
++{ IdEventoAsis = "000999001", Nombre = "Corta", FkTipoEvento = "DEPR", FkDependencia = "DEPORTES", Activo = false });
++var trasPutCat = await servicioCatedra.ObtenerAsync(idCat);
++Afirmar("PUT reemplaza todo (y la 'BD' recalcula nombre_asis)",
++    filasPutCat == 1 && trasPutCat.FkTipoEvento == "DEPR" && trasPutCat.FkDependencia == "DEPORTES"
++    && !trasPutCat.Activo && trasPutCat.NombreAsis == "Corta");
++
++int filasPatchCat = await servicioCatedra.ActualizarAsync(idCat, new CatedraActualizar { Activo = true });
++var trasPatchCat = await servicioCatedra.ObtenerAsync(idCat);
++Afirmar("PATCH cambia solo 'activo'", filasPatchCat == 1 && trasPatchCat.Activo && trasPatchCat.Nombre == "Corta");
++
++await AfirmarLanza<ArgumentException>(
++    "PATCH sin campos lanza ArgumentException",
++    () => servicioCatedra.ActualizarAsync(idCat, new CatedraActualizar()));
++
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "Obtener(99999) lanza NoEncontradoExcepcion", () => servicioCatedra.ObtenerAsync(99999));
++
++Afirmar("DELETE elimina 1 fila", await servicioCatedra.EliminarAsync(idCat) == 1);
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioCatedra.EliminarAsync(idCat));
++
++// RNF7 por REFLEXIÓN: ninguna petición de Catedra declara 'NombreAsis'.
++Afirmar("Ninguna petición de Catedra tiene la propiedad NombreAsis (columna generada)",
++    new[] { typeof(CatedraCrear), typeof(CatedraReemplazo), typeof(CatedraActualizar) }
++        .All(t => t.GetProperty("NombreAsis") is null));
++
+ // --------------------------------------------------------------------------
+ //  Resultado final -> código de salida del proceso.
+ // --------------------------------------------------------------------------
+@@ -1492,3 +1548,68 @@ class RepositorioAliasProgramaFalso : IRepositorioAliasPrograma
+     public Task<int> EliminarAsync(long idAlias) =>
+         Task.FromResult(_tabla.Remove(idAlias) ? 1 : 0);
+ }
++
++
++// ==========================================================================
++//  v2 · Repositorio FALSO de 'Catedra'. Simula lo que hace la BD:
++//   · IDENTITY  -> contador '_siguienteId';
++//   · columna GENERADA nombre_asis -> left(nombre, 30), recalculada en
++//     cada INSERT/UPDATE (aquí, en el método privado 'Generar').
++// ==========================================================================
++class RepositorioCatedraFalso : IRepositorioCatedra
++{
++    private readonly Dictionary<long, Catedra> _tabla = new();
++    private long _siguienteId = 5505; // en el script real el último id es 5504
++
++    public RepositorioCatedraFalso()
++    {
++        Guardar(new Catedra { IdCatedra = 1, IdEventoAsis = "000023636", Nombre = "PELICULA:LA MIRADA DEL AMOR", FkTipoEvento = "CAAB" });
++        Guardar(new Catedra { IdCatedra = 5497, IdEventoAsis = "000900001", Nombre = "Taller de desarrollo humano", FkTipoEvento = "DLLH", FkDependencia = "DESA_HUM" });
++        Guardar(new Catedra { IdCatedra = 5502, IdEventoAsis = "000913190", Nombre = "CATEDRA DE PRUEBA DE CERTIFICACION", FkTipoEvento = "CAAB" });
++    }
++
++    // Lo que hace PostgreSQL con 'GENERATED ALWAYS AS (left(nombre, 30))'.
++    private static string Generar(string nombre) => nombre.Length > 30 ? nombre[..30] : nombre;
++
++    private void Guardar(Catedra c)
++    {
++        c.NombreAsis = Generar(c.Nombre);
++        _tabla[c.IdCatedra] = c;
++    }
++
++    public Task<List<Catedra>> ObtenerTodosAsync(int? limite) =>
++        Task.FromResult(_tabla.Values.OrderBy(c => c.IdCatedra).Take(limite ?? int.MaxValue).ToList());
++
++    public Task<int> ContarAsync() => Task.FromResult(_tabla.Count);
++
++    public Task<Catedra?> ObtenerPorIdAsync(long idCatedra) =>
++        Task.FromResult(_tabla.TryGetValue(idCatedra, out var catedra) ? catedra : null);
++
++    public Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra)
++    {
++        if (_tabla.Values.Any(c => c.IdEventoAsis == catedra.IdEventoAsis))
++            throw new InvalidOperationException("id_evento_asis duplicado (simulado).");
++
++        catedra.IdCatedra = _siguienteId++;
++        catedra.CreadoEn = DateTime.UtcNow;
++        Guardar(catedra);
++        return Task.FromResult((catedra.IdCatedra, catedra.NombreAsis));
++    }
++
++    public Task<int> ActualizarAsync(long idCatedra, Dictionary<string, object?> datos)
++    {
++        if (!_tabla.TryGetValue(idCatedra, out var c))
++            return Task.FromResult(0);
++
++        if (datos.TryGetValue("id_evento_asis", out var e)) c.IdEventoAsis = (string)e!;
++        if (datos.TryGetValue("nombre", out var n)) c.Nombre = (string)n!;
++        if (datos.TryGetValue("fk_tipo_evento", out var t)) c.FkTipoEvento = (string)t!;
++        if (datos.TryGetValue("fk_dependencia", out var d)) c.FkDependencia = (string?)d;
++        if (datos.TryGetValue("activo", out var a)) c.Activo = (bool)a!;
++        Guardar(c); // recalcula nombre_asis, como la BD
++        return Task.FromResult(1);
++    }
++
++    public Task<int> EliminarAsync(long idCatedra) =>
++        Task.FromResult(_tabla.Remove(idCatedra) ? 1 : 0);
++}
+diff --git a/docs/spec_kit/Versiones/version2/8_tasks.md b/docs/spec_kit/Versiones/version2/8_tasks.md
+index e472d4a..8de94d0 100644
+--- a/docs/spec_kit/Versiones/version2/8_tasks.md
++++ b/docs/spec_kit/Versiones/version2/8_tasks.md
+@@ -97,28 +97,28 @@ verdad no está declarado).
+ > (`fk_dependencia`) y de `TipoEvento`, ya construido en v1
+ > (`fk_tipo_evento`).
+ 
+-- [ ] `Modelos/Catedra.cs` — `IdCatedra`, `NombreAsis` y `CreadoEn` sin
++- [x] `Modelos/Catedra.cs` — `IdCatedra`, `NombreAsis` y `CreadoEn` sin
+       `required` (los pone la BD; `NombreAsis` además nunca se asigna
+       a mano, solo la rellena el repositorio con lo que devuelve el
+       `RETURNING`).
+-- [ ] `Peticiones/Catedra{Crear,Reemplazo,Actualizar}.cs` —
++- [x] `Peticiones/Catedra{Crear,Reemplazo,Actualizar}.cs` —
+       `id_evento_asis` con
+       `[RegularExpression("^[0-9]{9}$")]` y `[StringLength(9)]`;
+       **ninguna de las 3** declara `nombre_asis` (§4.3 de
+       [3_plan.md](3_plan.md): si el cliente lo manda, Dapper/ASP.NET
+       lo ignora al no existir la propiedad).
+-- [ ] `Repositorios/IRepositorioCatedra.cs` +
++- [x] `Repositorios/IRepositorioCatedra.cs` +
+       `RepositorioCatedraPostgres.cs` — `CrearAsync` devuelve
+       `Task<(long IdCatedra, string NombreAsis)>` con
+       `INSERT ... RETURNING id_catedra, nombre_asis` (código exacto en
+       §4.3 de [3_plan.md](3_plan.md)).
+-- [ ] `Servicios/IServicioCatedra.cs` + `ServicioCatedra.cs`.
+-- [ ] `Controllers/CatedraController.cs` — 6 endpoints; el de `POST`
++- [x] `Servicios/IServicioCatedra.cs` + `ServicioCatedra.cs`.
++- [x] `Controllers/CatedraController.cs` — 6 endpoints; el de `POST`
+       arma la respuesta con la tupla `(IdCatedra, NombreAsis)` que
+       devuelve el servicio.
+-- [ ] `Program.cs` — registrar la pareja nueva.
++- [x] `Program.cs` — registrar la pareja nueva.
+ 
+-**Verificar:** `GET /api/Catedra?limite=5` → 5 filas, `total: 5502`;
++**Verificado** (contra PostgreSQL real): `GET /api/Catedra?limite=5` → 5 filas, `total: 5502`;
+ `GET /api/Catedra/1` → `nombre_asis: "PELICULA:LA MIRADA DEL AMOR"`
+ (verificar que coincide con `LEFT(nombre, 30)` calculado por la BD, no
+ por el C#); `POST` con `id_evento_asis: "12345"` → 422; un
+@@ -208,13 +208,13 @@ produce ningún `werkzeug.routing.BuildError`.
+ > RF90-RF91, RF94 de [2_spec.md](2_spec.md). Depende de la Fase 19
+ > (plantilla integrada) y de las Fases 14-16 (API completa).
+ 
+-- [ ] `routes/catedras.py` — reemplazar el placeholder: `GET /catedras`
++- [x] `routes/catedras.py` — reemplazar el placeholder: `GET /catedras`
+       llama una vez a `GET /api/Catedra` (sin `limite`, ADR D13 de
+       [4_research.md](4_research.md)), filtra por `?q=` y pagina con
+       `?pagina=` en Python, sin JavaScript nuevo (código de forma en
+       §4.7 de [3_plan.md](3_plan.md)).
+-- [ ] `templates/catedras.html` — listado paginado + buscador.
+-- [ ] `GET /catedras/{idCatedra}` + `templates/detalle_catedra.html` —
++- [x] `templates/catedras.html` — listado paginado + buscador.
++- [x] `GET /catedras/{idCatedra}` + `templates/detalle_catedra.html` —
+       si `fk_dependencia` no es nulo, una llamada adicional a
+       `GET /api/Dependencia/{id}` para mostrar su nombre.
+ - [ ] `routes/admin.py` — 5 bloques CRUD nuevos (mismo patrón que las
+diff --git a/front_catedras/routes/catedras.py b/front_catedras/routes/catedras.py
+index b4ebc86..2cc6a37 100644
+--- a/front_catedras/routes/catedras.py
++++ b/front_catedras/routes/catedras.py
+@@ -1,17 +1,114 @@
+ # ==========================================================================
+-#  routes/catedras.py  ·  Front Cátedras
++#  routes/catedras.py  ·  Front Cátedras · Versión 2
+ # --------------------------------------------------------------------------
+-#  Página de inicio pública. Por ahora solo enlaza al panel de
+-#  administración (§ las 4 tablas ya construidas en ApiCatedras); el resto
+-#  de la aplicación (registro de asistencia, ponente, estudiante, auth)
+-#  llega cuando la API tenga esas tablas.
++#  Páginas PÚBLICAS: inicio, catálogo de cátedras y detalle de una cátedra.
++#
++#  Catálogo (RF90, ADR D13 de version2/4_research.md): la ruta pide a la
++#  API TODAS las cátedras en UNA sola llamada (GET /api/Catedra sin
++#  'limite') y resuelve aquí, en Python, las dos cosas que la pantalla
++#  necesita:
++#    1. el FILTRO  ('?q=' texto en el nombre, '?tipo=' tipo de evento),
++#       sobre el catálogo COMPLETO, no solo sobre la página visible;
++#    2. la PAGINACIÓN ('?pagina='), cortando la lista con slicing.
++#  Sin JavaScript nuevo y sin cambiar el contrato de la API.
++#
++#  RF93: si la API falla, se MUESTRA el error. Nunca se inventan datos.
+ # ==========================================================================
+ 
+-from flask import Blueprint, render_template
++from flask import Blueprint, abort, render_template, request
++
++from servicios.api_catedras import ErrorApi, listar, obtener
+ 
+ catedras_bp = Blueprint('catedras', __name__)
+ 
++# Cuántas cátedras se muestran por página del catálogo.
++POR_PAGINA = 24
++
++# Segundos de espera para traer las 5502 cátedras en una sola llamada.
++TIMEOUT_CATALOGO = 30
++
+ 
+ @catedras_bp.route('/')
+ def inicio():
+     return render_template('inicio.html')
++
++
++def _numero_pagina(texto):
++    """Convierte '?pagina=' a entero >= 1; cualquier cosa rara -> 1."""
++    try:
++        return max(1, int(texto))
++    except (TypeError, ValueError):
++        return 1
++
++
++@catedras_bp.route('/catedras')
++def catalogo():
++    # Parámetros de la URL. '.strip()' quita espacios sobrantes.
++    texto_busqueda = request.args.get('q', '').strip()
++    tipo = request.args.get('tipo', '').strip()
++    pagina = _numero_pagina(request.args.get('pagina'))
++
++    try:
++        # UNA sola llamada: las 5502 cátedras.
++        catedras = listar('Catedra', timeout=TIMEOUT_CATALOGO)
++        # Tipos de evento (tabla de la v1) para el <select> del filtro.
++        tipos_evento = listar('TipoEvento')
++    except ErrorApi as ex:
++        # RF93: el error se muestra tal cual; la lista queda vacía.
++        return render_template('catedras.html', error=ex, catedras=[], tipos_evento=[],
++                               q=texto_busqueda, tipo=tipo, pagina=1, total_paginas=0,
++                               total_filtrado=0, total_catalogo=0), 502
++
++    total_catalogo = len(catedras)
++
++    # 1 · FILTRO por texto libre en el nombre (sin distinguir mayúsculas).
++    if texto_busqueda:
++        buscado = texto_busqueda.lower()
++        catedras = [c for c in catedras if buscado in c['nombre'].lower()]
++
++    # 1b · FILTRO por tipo de evento. CHAR(4) puede traer espacios ('MTG '),
++    #      por eso se comparan los dos lados sin espacios.
++    if tipo:
++        catedras = [c for c in catedras if c['fk_tipo_evento'].strip() == tipo.strip()]
++
++    # 2 · PAGINACIÓN con slicing. '-(-a // b)' = división redondeando hacia arriba.
++    total_filtrado = len(catedras)
++    total_paginas = max(1, -(-total_filtrado // POR_PAGINA))
++    pagina = min(pagina, total_paginas)
++    inicio_corte = (pagina - 1) * POR_PAGINA
++    pagina_actual = catedras[inicio_corte:inicio_corte + POR_PAGINA]
++
++    # Diccionario código -> nombre para mostrar el tipo de evento legible.
++    nombres_tipo = {t['id_tipo_evento'].strip(): t['nombre'] for t in tipos_evento}
++
++    return render_template('catedras.html', error=None, catedras=pagina_actual,
++                           tipos_evento=tipos_evento, nombres_tipo=nombres_tipo,
++                           q=texto_busqueda, tipo=tipo, pagina=pagina,
++                           total_paginas=total_paginas, total_filtrado=total_filtrado,
++                           total_catalogo=total_catalogo)
++
++
++@catedras_bp.route('/catedras/<int:id_catedra>')
++def detalle(id_catedra):
++    # RF91: la cátedra, y si tiene dependencia, también su nombre.
++    try:
++        catedra = obtener('Catedra', id_catedra)
++    except ErrorApi as ex:
++        if ex.codigo == 404:
++            abort(404)  # cátedra inexistente -> página 404 del front
++        return render_template('detalle_catedra.html', error=ex, catedra=None,
++                               dependencia=None, tipo_evento=None), 502
++
++    dependencia = None
++    tipo_evento = None
++    error = None
++    try:
++        if catedra.get('fk_dependencia'):
++            dependencia = obtener('Dependencia', catedra['fk_dependencia'])
++        tipo_evento = obtener('TipoEvento', catedra['fk_tipo_evento'])
++    except ErrorApi as ex:
++        # La cátedra se muestra igual; el dato secundario que falló, se avisa.
++        error = ex
++
++    return render_template('detalle_catedra.html', error=error, catedra=catedra,
++                           dependencia=dependencia, tipo_evento=tipo_evento)
+diff --git a/front_catedras/servicios/api_catedras.py b/front_catedras/servicios/api_catedras.py
+index 6788080..f88bd9a 100644
+--- a/front_catedras/servicios/api_catedras.py
++++ b/front_catedras/servicios/api_catedras.py
+@@ -56,11 +56,16 @@ def _procesar(respuesta):
+     )
+ 
+ 
+-def listar(recurso, limite=None):
+-    """GET /api/{recurso}. Tabla vacía (204) -> lista vacía, no error."""
++def listar(recurso, limite=None, timeout=5):
++    """GET /api/{recurso}. Tabla vacía (204) -> lista vacía, no error.
++
++    'timeout' (segundos) es configurable porque el catálogo de cátedras
++    trae las 5502 filas en una sola llamada (ADR D13 de la v2) y puede
++    tardar más que una tabla catálogo pequeña.
++    """
+     try:
+         parametros = {'limite': limite} if limite else {}
+-        respuesta = requests.get(_url(recurso), params=parametros, timeout=5)
++        respuesta = requests.get(_url(recurso), params=parametros, timeout=timeout)
+     except requests.RequestException as ex:
+         raise ErrorApi(f"No se pudo contactar la API en '{_url(recurso)}'.", detalle=str(ex))
+ 
+diff --git a/front_catedras/templates/catedras.html b/front_catedras/templates/catedras.html
+new file mode 100644
+index 0000000..bbc82f7
+--- /dev/null
++++ b/front_catedras/templates/catedras.html
+@@ -0,0 +1,83 @@
++{% extends 'base.html' %}
++{% block titulo %}Catálogo de cátedras · Cátedras USB{% endblock %}
++{% block contenido %}
++<div class="bg-secondary-custom text-white p-4 rounded-3 mb-4 animate-fade-in">
++    <h1 class="fw-bold mb-1"><i class="fas fa-book-open me-2"></i>Catálogo de cátedras</h1>
++    <p class="text-white-50 mb-0">
++        {% if total_catalogo %}{{ total_catalogo }} cátedras registradas{% else %}Cátedras de la Universidad San Buenaventura{% endif %}
++    </p>
++</div>
++
++{% if error %}
++<div class="alert alert-danger">
++    <strong><i class="fas fa-exclamation-triangle me-1"></i>{{ error.mensaje }}</strong>
++    {% if error.detalle %}<div class="small mt-1">{{ error.detalle }}</div>{% endif %}
++</div>
++{% endif %}
++
++{# Buscador: formulario GET -> los filtros quedan en la URL (?q=&tipo=). #}
++<form class="card shadow-sm mb-4" method="get" action="{{ url_for('catedras.catalogo') }}">
++    <div class="card-body row g-2 align-items-end">
++        <div class="col-md-6">
++            <label class="form-label" for="q">Buscar por nombre</label>
++            <input class="form-control" type="search" id="q" name="q" value="{{ q }}" placeholder="Ej.: amor, liderazgo, ética...">
++        </div>
++        <div class="col-md-4">
++            <label class="form-label" for="tipo">Tipo de evento</label>
++            <select class="form-select" id="tipo" name="tipo">
++                <option value="">Todos</option>
++                {% for t in tipos_evento %}
++                <option value="{{ t.id_tipo_evento|trim }}" {% if tipo == t.id_tipo_evento|trim %}selected{% endif %}>{{ t.nombre }}</option>
++                {% endfor %}
++            </select>
++        </div>
++        <div class="col-md-2 d-grid">
++            <button class="btn btn-primary" type="submit"><i class="fas fa-search me-1"></i>Buscar</button>
++        </div>
++    </div>
++</form>
++
++{% if not error %}
++<p class="text-muted small mb-3">
++    {{ total_filtrado }} resultado{{ '' if total_filtrado == 1 else 's' }}
++    {% if q or tipo %}· <a href="{{ url_for('catedras.catalogo') }}">quitar filtros</a>{% endif %}
++    · página {{ pagina }} de {{ total_paginas }}
++</p>
++
++<div class="row g-3">
++    {% for c in catedras %}
++    <div class="col-md-6 col-lg-4">
++        <a class="catedra-card d-block h-100 text-decoration-none" href="{{ url_for('catedras.detalle', id_catedra=c.id_catedra) }}">
++            <div class="catedra-title">{{ c.nombre }}</div>
++            <div class="catedra-meta">
++                <div><i class="fas fa-hashtag"></i>ASIS {{ c.id_evento_asis }}</div>
++                <div><i class="fas fa-tag"></i>{{ nombres_tipo.get(c.fk_tipo_evento|trim, c.fk_tipo_evento) }}</div>
++                {% if not c.activo %}<span class="badge badge-danger mt-1">Inactiva</span>{% endif %}
++            </div>
++        </a>
++    </div>
++    {% else %}
++    <p class="text-muted text-center py-4">No hay cátedras que coincidan con la búsqueda.</p>
++    {% endfor %}
++</div>
++
++{# Paginación: cada enlace conserva los filtros actuales. #}
++{% if total_paginas > 1 %}
++<nav class="mt-4" aria-label="Paginación del catálogo">
++    <ul class="pagination justify-content-center flex-wrap">
++        <li class="page-item {{ 'disabled' if pagina == 1 }}">
++            <a class="page-link" href="{{ url_for('catedras.catalogo', q=q, tipo=tipo, pagina=pagina - 1) }}">Anterior</a>
++        </li>
++        {% for n in range([1, pagina - 2]|max, [total_paginas, pagina + 2]|min + 1) %}
++        <li class="page-item {{ 'active' if n == pagina }}">
++            <a class="page-link" href="{{ url_for('catedras.catalogo', q=q, tipo=tipo, pagina=n) }}">{{ n }}</a>
++        </li>
++        {% endfor %}
++        <li class="page-item {{ 'disabled' if pagina == total_paginas }}">
++            <a class="page-link" href="{{ url_for('catedras.catalogo', q=q, tipo=tipo, pagina=pagina + 1) }}">Siguiente</a>
++        </li>
++    </ul>
++</nav>
++{% endif %}
++{% endif %}
++{% endblock %}
+diff --git a/front_catedras/templates/detalle_catedra.html b/front_catedras/templates/detalle_catedra.html
+new file mode 100644
+index 0000000..647be29
+--- /dev/null
++++ b/front_catedras/templates/detalle_catedra.html
+@@ -0,0 +1,55 @@
++{% extends 'base.html' %}
++{% block titulo %}{{ catedra.nombre if catedra else 'Cátedra' }} · Cátedras USB{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('catedras.catalogo') }}">Catálogo</a></li>
++        <li class="breadcrumb-item active">{{ catedra.id_evento_asis if catedra else 'Error' }}</li>
++    </ol>
++</nav>
++
++{% if error %}
++<div class="alert alert-danger">
++    <strong><i class="fas fa-exclamation-triangle me-1"></i>{{ error.mensaje }}</strong>
++    {% if error.detalle %}<div class="small mt-1">{{ error.detalle }}</div>{% endif %}
++</div>
++{% endif %}
++
++{% if catedra %}
++<div class="card shadow-sm animate-fade-in">
++    <div class="card-body p-4">
++        <h1 class="h3 fw-bold mb-3"><i class="fas fa-book-open text-primary-custom me-2"></i>{{ catedra.nombre }}</h1>
++        <dl class="row mb-0">
++            <dt class="col-sm-4">Código ASIS</dt>
++            <dd class="col-sm-8">{{ catedra.id_evento_asis }}</dd>
++
++            <dt class="col-sm-4">Nombre en el ASIS <span class="text-muted small">(30 car., lo calcula la BD)</span></dt>
++            <dd class="col-sm-8"><code>{{ catedra.nombre_asis }}</code></dd>
++
++            <dt class="col-sm-4">Tipo de evento</dt>
++            <dd class="col-sm-8">
++                {{ tipo_evento.nombre if tipo_evento else '' }}
++                <span class="badge badge-secondary">{{ catedra.fk_tipo_evento }}</span>
++            </dd>
++
++            <dt class="col-sm-4">Dependencia</dt>
++            <dd class="col-sm-8">
++                {% if dependencia %}{{ dependencia.nombre }} <span class="badge badge-secondary">{{ dependencia.id_dependencia }}</span>
++                {% elif catedra.fk_dependencia %}{{ catedra.fk_dependencia }}
++                {% else %}<span class="text-muted">Sin dependencia asignada</span>{% endif %}
++            </dd>
++
++            <dt class="col-sm-4">Estado</dt>
++            <dd class="col-sm-8"><span class="badge {{ 'badge-success' if catedra.activo else 'badge-danger' }}">{{ 'Activa' if catedra.activo else 'Inactiva' }}</span></dd>
++
++            <dt class="col-sm-4">Registrada</dt>
++            <dd class="col-sm-8">{{ catedra.creado_en[:10] }}</dd>
++        </dl>
++    </div>
++</div>
++{% endif %}
++
++<a class="btn btn-outline-primary mt-3" href="{{ url_for('catedras.catalogo') }}">
++    <i class="fas fa-arrow-left me-1"></i>Volver al catálogo
++</a>
++{% endblock %}
+diff --git a/front_catedras/templates/inicio.html b/front_catedras/templates/inicio.html
+index 81c68ef..78aef01 100644
+--- a/front_catedras/templates/inicio.html
++++ b/front_catedras/templates/inicio.html
+@@ -18,7 +18,10 @@
+             Por ahora expone la administración de las tablas catálogo ya construidas
+             en la API.
+         </p>
+-        <a class="btn btn-primary" href="{{ url_for('admin.panel') }}">
++        <a class="btn btn-primary" href="{{ url_for('catedras.catalogo') }}">
++            <i class="fas fa-book-open me-1"></i>Ver el catálogo de cátedras
++        </a>
++        <a class="btn btn-outline-primary" href="{{ url_for('admin.panel') }}">
+             <i class="fas fa-cogs me-1"></i>Ir a Administración
+         </a>
+     </div>
+diff --git a/front_catedras/templates/partials/navbar.html b/front_catedras/templates/partials/navbar.html
+index 912f7dd..2df9a91 100644
+--- a/front_catedras/templates/partials/navbar.html
++++ b/front_catedras/templates/partials/navbar.html
+@@ -14,6 +14,11 @@
+                         <i class="fas fa-home"></i> Inicio
+                     </a>
+                 </li>
++                <li class="nav-item">
++                    <a class="nav-link {{ 'active' if request.endpoint in ('catedras.catalogo', 'catedras.detalle') }}" href="{{ url_for('catedras.catalogo') }}">
++                        <i class="fas fa-book-open"></i> Catálogo
++                    </a>
++                </li>
+                 <li class="nav-item">
+                     <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}" href="{{ url_for('admin.panel') }}">
+                         <i class="fas fa-cogs"></i> Administración
