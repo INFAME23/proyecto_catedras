@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block titulo %}Catálogo de cátedras · Cátedras USB{% endblock %}
+{% block contenido %}
+<div class="bg-secondary-custom text-white p-4 rounded-3 mb-4 animate-fade-in">
+    <h1 class="fw-bold mb-1"><i class="fas fa-book-open me-2"></i>Catálogo de cátedras</h1>
+    <p class="text-white-50 mb-0">
+        {% if total_catalogo %}{{ total_catalogo }} cátedras registradas{% else %}Cátedras de la Universidad San Buenaventura{% endif %}
+    </p>
+</div>
+
+{% if error %}
+<div class="alert alert-danger">
+    <strong><i class="fas fa-exclamation-triangle me-1"></i>{{ error.mensaje }}</strong>
+    {% if error.detalle %}<div class="small mt-1">{{ error.detalle }}</div>{% endif %}
+</div>
+{% endif %}
+
+{# Buscador: formulario GET -> los filtros quedan en la URL (?q=&tipo=). #}
+<form class="card shadow-sm mb-4" method="get" action="{{ url_for('catedras.catalogo') }}">
+    <div class="card-body row g-2 align-items-end">
+        <div class="col-md-6">
+            <label class="form-label" for="q">Buscar por nombre</label>
+            <input class="form-control" type="search" id="q" name="q" value="{{ q }}" placeholder="Ej.: amor, liderazgo, ética...">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="tipo">Tipo de evento</label>
+            <select class="form-select" id="tipo" name="tipo">
+                <option value="">Todos</option>
+                {% for t in tipos_evento %}
+                <option value="{{ t.id_tipo_evento|trim }}" {% if tipo == t.id_tipo_evento|trim %}selected{% endif %}>{{ t.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 d-grid">
+            <button class="btn btn-primary" type="submit"><i class="fas fa-search me-1"></i>Buscar</button>
+        </div>
+    </div>
+</form>
+
+{% if not error %}
+<p class="text-muted small mb-3">
+    {{ total_filtrado }} resultado{{ '' if total_filtrado == 1 else 's' }}
+    {% if q or tipo %}· <a href="{{ url_for('catedras.catalogo') }}">quitar filtros</a>{% endif %}
+    · página {{ pagina }} de {{ total_paginas }}
+</p>
+
+<div class="row g-3">
+    {% for c in catedras %}
+    <div class="col-md-6 col-lg-4">
+        <a class="catedra-card d-block h-100 text-decoration-none" href="{{ url_for('catedras.detalle', id_catedra=c.id_catedra) }}">
+            <div class="catedra-title">{{ c.nombre }}</div>
+            <div class="catedra-meta">
+                <div><i class="fas fa-hashtag"></i>ASIS {{ c.id_evento_asis }}</div>
+                <div><i class="fas fa-tag"></i>{{ nombres_tipo.get(c.fk_tipo_evento|trim, c.fk_tipo_evento) }}</div>
+                {% if not c.activo %}<span class="badge badge-danger mt-1">Inactiva</span>{% endif %}
+            </div>
+        </a>
+    </div>
+    {% else %}
+    <p class="text-muted text-center py-4">No hay cátedras que coincidan con la búsqueda.</p>
+    {% endfor %}
+</div>
+
+{# Paginación: cada enlace conserva los filtros actuales. #}
+{% if total_paginas > 1 %}
+<nav class="mt-4" aria-label="Paginación del catálogo">
+    <ul class="pagination justify-content-center flex-wrap">
+        <li class="page-item {{ 'disabled' if pagina == 1 }}">
+            <a class="page-link" href="{{ url_for('catedras.catalogo', q=q, tipo=tipo, pagina=pagina - 1) }}">Anterior</a>
+        </li>
+        {% for n in range([1, pagina - 2]|max, [total_paginas, pagina + 2]|min + 1) %}
+        <li class="page-item {{ 'active' if n == pagina }}">
+            <a class="page-link" href="{{ url_for('catedras.catalogo', q=q, tipo=tipo, pagina=n) }}">{{ n }}</a>
+        </li>
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if pagina == total_paginas }}">
+            <a class="page-link" href="{{ url_for('catedras.catalogo', q=q, tipo=tipo, pagina=pagina + 1) }}">Siguiente</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -802,6 +802,62 @@ await AfirmarLanza<NoEncontradoExcepcion>(
 Afirmar("IRepositorioAliasPrograma no declara ActualizarAsync",
     typeof(IRepositorioAliasPrograma).GetMethod("ActualizarAsync") is null);
 
+// ============================================================================
+//  v2 · Prueba de capas: ServicioCatedra + repositorio falso
+//  El repositorio falso simula el RETURNING (id_catedra, nombre_asis): así
+//  se verifica NombreAsis sin PostgreSQL.
+// ============================================================================
+var servicioCatedra = new ServicioCatedra(new RepositorioCatedraFalso());
+
+Console.WriteLine("\n== v2 · Prueba de capas: ServicioCatedra + repositorio falso en memoria ==\n");
+
+var (datosCat, totalCat) = await servicioCatedra.ListarAsync(null);
+Afirmar("Listar() sin límite devuelve TODAS las cátedras semilla", datosCat.Count == 3 && totalCat == 3);
+
+var (datosCat1, totalCat1) = await servicioCatedra.ListarAsync(1);
+Afirmar("Listar(1) devuelve 1 fila pero 'total' es el de la tabla (3)", datosCat1.Count == 1 && totalCat1 == 3);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioCatedra.ListarAsync(0));
+
+var nombreLargo = "CATEDRA ABIERTA DE PRUEBA CON UN NOMBRE BASTANTE LARGO";
+var (idCat, nombreAsisCat) = await servicioCatedra.CrearAsync(new CatedraCrear
+{ IdEventoAsis = "000999001", Nombre = nombreLargo, FkTipoEvento = "CAAB" });
+Afirmar("Crear() devuelve el id generado", idCat == 5505);
+Afirmar("Crear() devuelve nombre_asis = primeros 30 caracteres",
+    nombreAsisCat == nombreLargo[..30] && nombreAsisCat.Length == 30);
+
+var catCreada = await servicioCatedra.ObtenerAsync(idCat);
+Afirmar("Crear() aplica activo = true y deja la dependencia en null",
+    catCreada.Activo && catCreada.FkDependencia is null);
+
+int filasPutCat = await servicioCatedra.ReemplazarAsync(idCat, new CatedraReemplazo
+{ IdEventoAsis = "000999001", Nombre = "Corta", FkTipoEvento = "DEPR", FkDependencia = "DEPORTES", Activo = false });
+var trasPutCat = await servicioCatedra.ObtenerAsync(idCat);
+Afirmar("PUT reemplaza todo (y la 'BD' recalcula nombre_asis)",
+    filasPutCat == 1 && trasPutCat.FkTipoEvento == "DEPR" && trasPutCat.FkDependencia == "DEPORTES"
+    && !trasPutCat.Activo && trasPutCat.NombreAsis == "Corta");
+
+int filasPatchCat = await servicioCatedra.ActualizarAsync(idCat, new CatedraActualizar { Activo = true });
+var trasPatchCat = await servicioCatedra.ObtenerAsync(idCat);
+Afirmar("PATCH cambia solo 'activo'", filasPatchCat == 1 && trasPatchCat.Activo && trasPatchCat.Nombre == "Corta");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioCatedra.ActualizarAsync(idCat, new CatedraActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(99999) lanza NoEncontradoExcepcion", () => servicioCatedra.ObtenerAsync(99999));
+
+Afirmar("DELETE elimina 1 fila", await servicioCatedra.EliminarAsync(idCat) == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioCatedra.EliminarAsync(idCat));
+
+// RNF7 por REFLEXIÓN: ninguna petición de Catedra declara 'NombreAsis'.
+Afirmar("Ninguna petición de Catedra tiene la propiedad NombreAsis (columna generada)",
+    new[] { typeof(CatedraCrear), typeof(CatedraReemplazo), typeof(CatedraActualizar) }
+        .All(t => t.GetProperty("NombreAsis") is null));
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -1491,4 +1547,69 @@ class RepositorioAliasProgramaFalso : IRepositorioAliasPrograma
 
     public Task<int> EliminarAsync(long idAlias) =>
         Task.FromResult(_tabla.Remove(idAlias) ? 1 : 0);
+}
+
+
+// ==========================================================================
+//  v2 · Repositorio FALSO de 'Catedra'. Simula lo que hace la BD:
+//   · IDENTITY  -> contador '_siguienteId';
+//   · columna GENERADA nombre_asis -> left(nombre, 30), recalculada en
+//     cada INSERT/UPDATE (aquí, en el método privado 'Generar').
+// ==========================================================================
+class RepositorioCatedraFalso : IRepositorioCatedra
+{
+    private readonly Dictionary<long, Catedra> _tabla = new();
+    private long _siguienteId = 5505; // en el script real el último id es 5504
+
+    public RepositorioCatedraFalso()
+    {
+        Guardar(new Catedra { IdCatedra = 1, IdEventoAsis = "000023636", Nombre = "PELICULA:LA MIRADA DEL AMOR", FkTipoEvento = "CAAB" });
+        Guardar(new Catedra { IdCatedra = 5497, IdEventoAsis = "000900001", Nombre = "Taller de desarrollo humano", FkTipoEvento = "DLLH", FkDependencia = "DESA_HUM" });
+        Guardar(new Catedra { IdCatedra = 5502, IdEventoAsis = "000913190", Nombre = "CATEDRA DE PRUEBA DE CERTIFICACION", FkTipoEvento = "CAAB" });
+    }
+
+    // Lo que hace PostgreSQL con 'GENERATED ALWAYS AS (left(nombre, 30))'.
+    private static string Generar(string nombre) => nombre.Length > 30 ? nombre[..30] : nombre;
+
+    private void Guardar(Catedra c)
+    {
+        c.NombreAsis = Generar(c.Nombre);
+        _tabla[c.IdCatedra] = c;
+    }
+
+    public Task<List<Catedra>> ObtenerTodosAsync(int? limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(c => c.IdCatedra).Take(limite ?? int.MaxValue).ToList());
+
+    public Task<int> ContarAsync() => Task.FromResult(_tabla.Count);
+
+    public Task<Catedra?> ObtenerPorIdAsync(long idCatedra) =>
+        Task.FromResult(_tabla.TryGetValue(idCatedra, out var catedra) ? catedra : null);
+
+    public Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra)
+    {
+        if (_tabla.Values.Any(c => c.IdEventoAsis == catedra.IdEventoAsis))
+            throw new InvalidOperationException("id_evento_asis duplicado (simulado).");
+
+        catedra.IdCatedra = _siguienteId++;
+        catedra.CreadoEn = DateTime.UtcNow;
+        Guardar(catedra);
+        return Task.FromResult((catedra.IdCatedra, catedra.NombreAsis));
+    }
+
+    public Task<int> ActualizarAsync(long idCatedra, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idCatedra, out var c))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("id_evento_asis", out var e)) c.IdEventoAsis = (string)e!;
+        if (datos.TryGetValue("nombre", out var n)) c.Nombre = (string)n!;
+        if (datos.TryGetValue("fk_tipo_evento", out var t)) c.FkTipoEvento = (string)t!;
+        if (datos.TryGetValue("fk_dependencia", out var d)) c.FkDependencia = (string?)d;
+        if (datos.TryGetValue("activo", out var a)) c.Activo = (bool)a!;
+        Guardar(c); // recalcula nombre_asis, como la BD
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(long idCatedra) =>
+        Task.FromResult(_tabla.Remove(idCatedra) ? 1 : 0);
 }

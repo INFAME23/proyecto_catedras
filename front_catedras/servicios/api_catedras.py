@@ -56,11 +56,16 @@ def _procesar(respuesta):
     )
 
 
-def listar(recurso, limite=None):
-    """GET /api/{recurso}. Tabla vacía (204) -> lista vacía, no error."""
+def listar(recurso, limite=None, timeout=5):
+    """GET /api/{recurso}. Tabla vacía (204) -> lista vacía, no error.
+
+    'timeout' (segundos) es configurable porque el catálogo de cátedras
+    trae las 5502 filas en una sola llamada (ADR D13 de la v2) y puede
+    tardar más que una tabla catálogo pequeña.
+    """
     try:
         parametros = {'limite': limite} if limite else {}
-        respuesta = requests.get(_url(recurso), params=parametros, timeout=5)
+        respuesta = requests.get(_url(recurso), params=parametros, timeout=timeout)
     except requests.RequestException as ex:
         raise ErrorApi(f"No se pudo contactar la API en '{_url(recurso)}'.", detalle=str(ex))
 

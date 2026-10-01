@@ -259,6 +259,12 @@ builder.Services.AddScoped<IRepositorioAliasPrograma>(
     _ => new RepositorioAliasProgramaPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioAliasPrograma, ServicioAliasPrograma>();
 
+// IRepositorioCatedra -> RepositorioCatedraPostgres,
+// IServicioCatedra -> ServicioCatedra (catálogo de cátedras).
+builder.Services.AddScoped<IRepositorioCatedra>(
+    _ => new RepositorioCatedraPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioCatedra, ServicioCatedra>();
+
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
