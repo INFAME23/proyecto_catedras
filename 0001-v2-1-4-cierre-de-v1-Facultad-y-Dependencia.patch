@@ -1,0 +1,3765 @@
+From 891366a8c5f87179d2aea2a725623143f6aac8aa Mon Sep 17 00:00:00 2001
+From: Integrante 1 <feature/rama-alejandro>
+Date: Thu, 1 Oct 2026 15:38:28 +0000
+Subject: [PATCH 1/4] v2 (1/4): cierre de v1 + Facultad y Dependencia
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Spec kit de la v2 en docs/spec_kit/Versiones/version2/.
+- Cierre de v1: registra TipoPregunta y TipoVinculacion en Program.cs
+  (respondían 500) y agrega sus repositorios falsos a pruebas/.
+- Facultad y Dependencia (RF62-RF73): modelo, 3 peticiones, repositorio,
+  servicio y controlador. El servicio rechaza con 400 una fila que se
+  nombra a sí misma como padre (autorreferencia, ADR D10).
+- Fase 14 de version2/8_tasks.md marcada como hecha.
+---
+ .../Controllers/DependenciaController.cs      | 209 ++++++++++
+ .../Controllers/FacultadController.cs         | 209 ++++++++++
+ api_catedras/Modelos/Dependencia.cs           |  42 ++
+ api_catedras/Modelos/Facultad.cs              |  49 +++
+ .../Peticiones/DependenciaActualizar.cs       |  51 +++
+ api_catedras/Peticiones/DependenciaCrear.cs   |  49 +++
+ .../Peticiones/DependenciaReemplazo.cs        |  37 ++
+ api_catedras/Peticiones/FacultadActualizar.cs |  51 +++
+ api_catedras/Peticiones/FacultadCrear.cs      |  49 +++
+ api_catedras/Peticiones/FacultadReemplazo.cs  |  37 ++
+ api_catedras/Program.cs                       |  36 +-
+ .../Repositorios/IRepositorioDependencia.cs   |  35 ++
+ .../Repositorios/IRepositorioFacultad.cs      |  35 ++
+ .../RepositorioDependenciaPostgres.cs         | 123 ++++++
+ .../RepositorioFacultadPostgres.cs            | 123 ++++++
+ .../Servicios/IServicioDependencia.cs         |  36 ++
+ api_catedras/Servicios/IServicioFacultad.cs   |  36 ++
+ api_catedras/Servicios/ServicioDependencia.cs | 141 +++++++
+ api_catedras/Servicios/ServicioFacultad.cs    | 141 +++++++
+ api_catedras/pruebas/Programa.cs              | 331 ++++++++++++++-
+ docs/spec_kit/Versiones/version1/8_tasks.md   |  30 +-
+ docs/spec_kit/Versiones/version2/2_spec.md    | 385 ++++++++++++++++++
+ docs/spec_kit/Versiones/version2/3_plan.md    | 260 ++++++++++++
+ .../spec_kit/Versiones/version2/4_research.md | 180 ++++++++
+ .../Versiones/version2/5_data_model.md        | 300 ++++++++++++++
+ .../Versiones/version2/6_contracts.md         | 114 ++++++
+ .../Versiones/version2/7_quickstart.md        | 135 ++++++
+ docs/spec_kit/Versiones/version2/8_tasks.md   | 241 +++++++++++
+ 28 files changed, 3446 insertions(+), 19 deletions(-)
+ create mode 100644 api_catedras/Controllers/DependenciaController.cs
+ create mode 100644 api_catedras/Controllers/FacultadController.cs
+ create mode 100644 api_catedras/Modelos/Dependencia.cs
+ create mode 100644 api_catedras/Modelos/Facultad.cs
+ create mode 100644 api_catedras/Peticiones/DependenciaActualizar.cs
+ create mode 100644 api_catedras/Peticiones/DependenciaCrear.cs
+ create mode 100644 api_catedras/Peticiones/DependenciaReemplazo.cs
+ create mode 100644 api_catedras/Peticiones/FacultadActualizar.cs
+ create mode 100644 api_catedras/Peticiones/FacultadCrear.cs
+ create mode 100644 api_catedras/Peticiones/FacultadReemplazo.cs
+ create mode 100644 api_catedras/Repositorios/IRepositorioDependencia.cs
+ create mode 100644 api_catedras/Repositorios/IRepositorioFacultad.cs
+ create mode 100644 api_catedras/Repositorios/RepositorioDependenciaPostgres.cs
+ create mode 100644 api_catedras/Repositorios/RepositorioFacultadPostgres.cs
+ create mode 100644 api_catedras/Servicios/IServicioDependencia.cs
+ create mode 100644 api_catedras/Servicios/IServicioFacultad.cs
+ create mode 100644 api_catedras/Servicios/ServicioDependencia.cs
+ create mode 100644 api_catedras/Servicios/ServicioFacultad.cs
+ create mode 100644 docs/spec_kit/Versiones/version2/2_spec.md
+ create mode 100644 docs/spec_kit/Versiones/version2/3_plan.md
+ create mode 100644 docs/spec_kit/Versiones/version2/4_research.md
+ create mode 100644 docs/spec_kit/Versiones/version2/5_data_model.md
+ create mode 100644 docs/spec_kit/Versiones/version2/6_contracts.md
+ create mode 100644 docs/spec_kit/Versiones/version2/7_quickstart.md
+ create mode 100644 docs/spec_kit/Versiones/version2/8_tasks.md
+
+diff --git a/api_catedras/Controllers/DependenciaController.cs b/api_catedras/Controllers/DependenciaController.cs
+new file mode 100644
+index 0000000..9f9cba8
+--- /dev/null
++++ b/api_catedras/Controllers/DependenciaController.cs
+@@ -0,0 +1,209 @@
++// ==========================================================================
++//  Controllers/DependenciaController.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Capa HTTP de 'Dependencia'. Mismo patrón que SedeController (v1): recibe la
++//  petición ya validada (si no, 422 antes de llegar aquí), llama al
++//  servicio por su INTERFAZ y traduce resultado/excepción a código HTTP:
++//     ArgumentException     -> 400  (incluida la autorreferencia)
++//     NoEncontradoExcepcion -> 404
++//     NpgsqlException        -> 500  (duplicado o FK violada; mensaje del motor)
++// ==========================================================================
++
++namespace ApiCatedras.Controllers;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Servicios;
++using Microsoft.AspNetCore.Mvc;
++using Npgsql;   // NpgsqlException
++
++// [ApiController]: enlaza el body y valida la petición (422 automático).
++// [Route]: prefijo común de todos los métodos.
++[ApiController]
++[Route("api/Dependencia")]
++public class DependenciaController : ControllerBase
++{
++    // [SOLID · D] El controlador solo conoce la interfaz del servicio.
++    private readonly IServicioDependencia _servicio;
++
++    public DependenciaController(IServicioDependencia servicio)
++    {
++        _servicio = servicio;
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF68 · GET /api/Dependencia?limite=N   -> 200 { tabla, limite, total, datos } | 204
++    // ----------------------------------------------------------------------
++    [HttpGet]
++    public async Task<IActionResult> Listar([FromQuery] int? limite)
++    {
++        try
++        {
++            var (datos, total) = await _servicio.ListarAsync(limite);
++
++            if (total == 0)
++                return NoContent();
++
++            return Ok(new
++            {
++                tabla = "dependencia",
++                limite = limite ?? 1000,
++                total,
++                datos,
++            });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Parámetro de consulta inválido.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al listar las dependencias.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF69 · GET /api/Dependencia/{idDependencia}   -> 200 | 404
++    // ----------------------------------------------------------------------
++    [HttpGet("{idDependencia}")]
++    public async Task<IActionResult> Obtener(string idDependencia)
++    {
++        try
++        {
++            return Ok(await _servicio.ObtenerAsync(idDependencia));
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Dependencia no encontrada.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al obtener la dependencia.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF70 · POST /api/Dependencia   -> 200 { estado, mensaje } | 400 | 422 | 500
++    // ----------------------------------------------------------------------
++    [HttpPost]
++    public async Task<IActionResult> Crear([FromBody] DependenciaCrear peticion)
++    {
++        try
++        {
++            await _servicio.CrearAsync(peticion);
++            return Ok(new
++            {
++                estado = "creada",
++                mensaje = $"Dependencia '{peticion.IdDependencia}' creada.",
++            });
++        }
++        catch (ArgumentException ex)
++        {
++            // Autorreferencia: la dependencia se nombró a sí misma como padre.
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            // Duplicado (pk_dependencia / uq_dependencia_nombre) o padre inexistente
++            // (FK fk_dependencia_padre): el motor aborta el INSERT completo.
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al crear la dependencia.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF71 · PUT /api/Dependencia/{idDependencia}   -> 200 { filasAfectadas } | 400 | 404 | 422
++    // ----------------------------------------------------------------------
++    [HttpPut("{idDependencia}")]
++    public async Task<IActionResult> Reemplazar(string idDependencia, [FromBody] DependenciaReemplazo peticion)
++    {
++        try
++        {
++            int filas = await _servicio.ReemplazarAsync(idDependencia, peticion);
++            return Ok(new { filasAfectadas = filas });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Dependencia no encontrada.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al reemplazar la dependencia.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF72 · PATCH /api/Dependencia/{idDependencia}   -> 200 { filasAfectadas } | 400 | 404
++    // ----------------------------------------------------------------------
++    [HttpPatch("{idDependencia}")]
++    public async Task<IActionResult> Actualizar(string idDependencia, [FromBody] DependenciaActualizar peticion)
++    {
++        try
++        {
++            int filas = await _servicio.ActualizarAsync(idDependencia, peticion);
++            return Ok(new { filasAfectadas = filas });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Dependencia no encontrada.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al actualizar la dependencia.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF73 · DELETE /api/Dependencia/{idDependencia}   -> 200 { filasEliminadas } | 404
++    //  No falla por tener hijas ni cátedras: ambas FK son ON DELETE SET NULL.
++    // ----------------------------------------------------------------------
++    [HttpDelete("{idDependencia}")]
++    public async Task<IActionResult> Eliminar(string idDependencia)
++    {
++        try
++        {
++            int filas = await _servicio.EliminarAsync(idDependencia);
++            return Ok(new { filasEliminadas = filas });
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Dependencia no encontrada.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "No se pudo eliminar la dependencia.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al eliminar la dependencia.", ex.Message);
++        }
++    }
++
++    // Arma el sobre de error { estado, mensaje, detalle } con el código indicado.
++    private ObjectResult Problema(int codigo, string estado, string mensaje, string? detalle)
++    {
++        return new ObjectResult(new { estado, mensaje, detalle })
++        {
++            StatusCode = codigo,
++        };
++    }
++}
+diff --git a/api_catedras/Controllers/FacultadController.cs b/api_catedras/Controllers/FacultadController.cs
+new file mode 100644
+index 0000000..4c553c6
+--- /dev/null
++++ b/api_catedras/Controllers/FacultadController.cs
+@@ -0,0 +1,209 @@
++// ==========================================================================
++//  Controllers/FacultadController.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Capa HTTP de 'Facultad'. Mismo patrón que SedeController (v1): recibe la
++//  petición ya validada (si no, 422 antes de llegar aquí), llama al
++//  servicio por su INTERFAZ y traduce resultado/excepción a código HTTP:
++//     ArgumentException     -> 400  (incluida la autorreferencia)
++//     NoEncontradoExcepcion -> 404
++//     NpgsqlException        -> 500  (duplicado o FK violada; mensaje del motor)
++// ==========================================================================
++
++namespace ApiCatedras.Controllers;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Servicios;
++using Microsoft.AspNetCore.Mvc;
++using Npgsql;   // NpgsqlException
++
++// [ApiController]: enlaza el body y valida la petición (422 automático).
++// [Route]: prefijo común de todos los métodos.
++[ApiController]
++[Route("api/Facultad")]
++public class FacultadController : ControllerBase
++{
++    // [SOLID · D] El controlador solo conoce la interfaz del servicio.
++    private readonly IServicioFacultad _servicio;
++
++    public FacultadController(IServicioFacultad servicio)
++    {
++        _servicio = servicio;
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF62 · GET /api/Facultad?limite=N   -> 200 { tabla, limite, total, datos } | 204
++    // ----------------------------------------------------------------------
++    [HttpGet]
++    public async Task<IActionResult> Listar([FromQuery] int? limite)
++    {
++        try
++        {
++            var (datos, total) = await _servicio.ListarAsync(limite);
++
++            if (total == 0)
++                return NoContent();
++
++            return Ok(new
++            {
++                tabla = "facultad",
++                limite = limite ?? 1000,
++                total,
++                datos,
++            });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Parámetro de consulta inválido.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al listar las facultades.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF63 · GET /api/Facultad/{idFacultad}   -> 200 | 404
++    // ----------------------------------------------------------------------
++    [HttpGet("{idFacultad}")]
++    public async Task<IActionResult> Obtener(string idFacultad)
++    {
++        try
++        {
++            return Ok(await _servicio.ObtenerAsync(idFacultad));
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Facultad no encontrada.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al obtener la facultad.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF64 · POST /api/Facultad   -> 200 { estado, mensaje } | 400 | 422 | 500
++    // ----------------------------------------------------------------------
++    [HttpPost]
++    public async Task<IActionResult> Crear([FromBody] FacultadCrear peticion)
++    {
++        try
++        {
++            await _servicio.CrearAsync(peticion);
++            return Ok(new
++            {
++                estado = "creada",
++                mensaje = $"Facultad '{peticion.IdFacultad}' creada.",
++            });
++        }
++        catch (ArgumentException ex)
++        {
++            // Autorreferencia: la facultad se nombró a sí misma como padre.
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            // Duplicado (pk_facultad / uq_facultad_nombre) o padre inexistente
++            // (FK fk_facultad_padre): el motor aborta el INSERT completo.
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al crear la facultad.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF65 · PUT /api/Facultad/{idFacultad}   -> 200 { filasAfectadas } | 400 | 404 | 422
++    // ----------------------------------------------------------------------
++    [HttpPut("{idFacultad}")]
++    public async Task<IActionResult> Reemplazar(string idFacultad, [FromBody] FacultadReemplazo peticion)
++    {
++        try
++        {
++            int filas = await _servicio.ReemplazarAsync(idFacultad, peticion);
++            return Ok(new { filasAfectadas = filas });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Facultad no encontrada.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al reemplazar la facultad.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF66 · PATCH /api/Facultad/{idFacultad}   -> 200 { filasAfectadas } | 400 | 404
++    // ----------------------------------------------------------------------
++    [HttpPatch("{idFacultad}")]
++    public async Task<IActionResult> Actualizar(string idFacultad, [FromBody] FacultadActualizar peticion)
++    {
++        try
++        {
++            int filas = await _servicio.ActualizarAsync(idFacultad, peticion);
++            return Ok(new { filasAfectadas = filas });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Facultad no encontrada.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al actualizar la facultad.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF67 · DELETE /api/Facultad/{idFacultad}   -> 200 { filasEliminadas } | 404
++    //  No falla por tener hijas ni programas: ambas FK son ON DELETE SET NULL.
++    // ----------------------------------------------------------------------
++    [HttpDelete("{idFacultad}")]
++    public async Task<IActionResult> Eliminar(string idFacultad)
++    {
++        try
++        {
++            int filas = await _servicio.EliminarAsync(idFacultad);
++            return Ok(new { filasEliminadas = filas });
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Facultad no encontrada.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "No se pudo eliminar la facultad.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al eliminar la facultad.", ex.Message);
++        }
++    }
++
++    // Arma el sobre de error { estado, mensaje, detalle } con el código indicado.
++    private ObjectResult Problema(int codigo, string estado, string mensaje, string? detalle)
++    {
++        return new ObjectResult(new { estado, mensaje, detalle })
++        {
++            StatusCode = codigo,
++        };
++    }
++}
+diff --git a/api_catedras/Modelos/Dependencia.cs b/api_catedras/Modelos/Dependencia.cs
+new file mode 100644
+index 0000000..d1ea5c3
+--- /dev/null
++++ b/api_catedras/Modelos/Dependencia.cs
+@@ -0,0 +1,42 @@
++// ==========================================================================
++//  Modelos/Dependencia.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Una fila de 'catedras.dependencia'. Misma forma que Facultad: tiene una
++//  AUTORREFERENCIA ('fk_dependencia_padre') que modela la jerarquía de
++//  dependencias administrativas (BIENESTAR -> PASTORAL, DEPORTES...).
++//
++//  Definición real de la tabla (ver version2/5_data_model.md §2.2):
++//    id_dependencia        VARCHAR(15)   NOT NULL  PRIMARY KEY
++//    nombre                VARCHAR(120)  NOT NULL  UNIQUE (uq_dependencia_nombre)
++//    fk_dependencia_padre  VARCHAR(15)             FK -> dependencia.id_dependencia
++//                                                  (ON DELETE SET NULL)
++//    activo                BOOLEAN       NOT NULL  DEFAULT true
++//    CHECK (fk_dependencia_padre <> id_dependencia) -- chk_dependencia_padre
++//
++//  'catedra.fk_dependencia' apunta a esta tabla (también ON DELETE SET NULL):
++//  borrar una dependencia NO borra cátedras, solo les deja ese campo en null.
++// ==========================================================================
++
++namespace ApiCatedras.Modelos;
++
++using System.Text.Json.Serialization;
++
++/// <summary>Una dependencia administrativa de la universidad.</summary>
++public class Dependencia
++{
++    /// <summary>Código único. Clave primaria. 1 a 15 caracteres.</summary>
++    [JsonPropertyName("id_dependencia")]
++    public required string IdDependencia { get; set; }
++
++    /// <summary>Nombre visible. Obligatorio y único en la tabla.</summary>
++    [JsonPropertyName("nombre")]
++    public required string Nombre { get; set; }
++
++    /// <summary>Código de la dependencia padre. Opcional: las raíces no tienen.</summary>
++    [JsonPropertyName("fk_dependencia_padre")]
++    public string? FkDependenciaPadre { get; set; }
++
++    /// <summary>¿Está activa? Por defecto true.</summary>
++    [JsonPropertyName("activo")]
++    public bool Activo { get; set; } = true;
++}
+diff --git a/api_catedras/Modelos/Facultad.cs b/api_catedras/Modelos/Facultad.cs
+new file mode 100644
+index 0000000..e4e58f5
+--- /dev/null
++++ b/api_catedras/Modelos/Facultad.cs
+@@ -0,0 +1,49 @@
++// ==========================================================================
++//  Modelos/Facultad.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  El MODELO es la ENTIDAD: una clase de C# que representa UNA FILA de la
++//  tabla 'catedras.facultad'. Es lo que viaja entre capas y lo que la API
++//  devuelve en el JSON de las lecturas.
++//
++//  Definición real de la tabla (ver version2/5_data_model.md §2.1):
++//    id_facultad        VARCHAR(10)   NOT NULL  PRIMARY KEY
++//    nombre             VARCHAR(120)  NOT NULL  UNIQUE (uq_facultad_nombre)
++//    fk_facultad_padre  VARCHAR(10)             FK -> facultad.id_facultad
++//                                               (ON DELETE SET NULL)
++//    activo             BOOLEAN       NOT NULL  DEFAULT true
++//    CHECK (fk_facultad_padre <> id_facultad)   -- chk_facultad_padre
++//
++//  NOVEDAD DE LA v2 — AUTORREFERENCIA: 'fk_facultad_padre' apunta a la MISMA
++//  tabla. Así se modela una jerarquía (USB es la raíz; F_ING, F_ARTES...
++//  son sus hijas). La regla "una facultad no puede ser su propio padre" la
++//  valida el SERVICIO (no este modelo): ver ServicioFacultad.
++//
++//  [SOLID · S] Esta clase SOLO representa la fila: no se valida, no se
++//  guarda a sí misma y no sabe de HTTP.
++// ==========================================================================
++
++// 'namespace' agrupa el código; el punto marca la carpeta.
++namespace ApiCatedras.Modelos;
++
++// Atributo [JsonPropertyName] para renombrar propiedades en el JSON.
++using System.Text.Json.Serialization;
++
++/// <summary>Una facultad (o la universidad raíz) dentro de la jerarquía académica.</summary>
++public class Facultad
++{
++    /// <summary>Código único de la facultad. Clave primaria. 1 a 10 caracteres.</summary>
++    [JsonPropertyName("id_facultad")]          // en el JSON la clave se llama "id_facultad"
++    public required string IdFacultad { get; set; } // 'required' = hay que darle valor al crear el objeto
++
++    /// <summary>Nombre visible. Obligatorio y único en la tabla.</summary>
++    [JsonPropertyName("nombre")]
++    public required string Nombre { get; set; }
++
++    /// <summary>Código de la facultad padre. Opcional: la raíz (USB) no tiene padre.</summary>
++    [JsonPropertyName("fk_facultad_padre")]
++    public string? FkFacultadPadre { get; set; } // el '?' = puede ser null
++
++    /// <summary>¿Está activa? Por defecto true (igual que el DEFAULT de la columna).</summary>
++    [JsonPropertyName("activo")]
++    public bool Activo { get; set; } = true;
++}
+diff --git a/api_catedras/Peticiones/DependenciaActualizar.cs b/api_catedras/Peticiones/DependenciaActualizar.cs
+new file mode 100644
+index 0000000..d16b388
+--- /dev/null
++++ b/api_catedras/Peticiones/DependenciaActualizar.cs
+@@ -0,0 +1,51 @@
++// ==========================================================================
++//  Peticiones/DependenciaActualizar.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del PATCH /api/Dependencia/{idDependencia}: ACTUALIZACIÓN PARCIAL.
++//  Todo opcional; solo se modifica lo que llega.
++//
++//  Convención heredada de la v1: un campo null = "no enviado". Por eso un
++//  PATCH no puede QUITAR el padre (dejarlo en null): para eso se usa PUT.
++//  El body vacío lo rechaza el SERVICIO con 400 (es regla de negocio).
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del PATCH /api/Dependencia/{idDependencia}. Todo opcional.</summary>
++public class DependenciaActualizar
++{
++    /// <summary>Nuevo nombre. Si llega: 1 a 120 caracteres.</summary>
++    [StringLength(120, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 120 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    /// <summary>Nuevo padre. Si llega: 1 a 15 caracteres.</summary>
++    [StringLength(15, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_dependencia_padre' debe tener entre 1 y 15 caracteres.")]
++    [JsonPropertyName("fk_dependencia_padre")]
++    public string? FkDependenciaPadre { get; set; }
++
++    /// <summary>Nuevo valor de "activo". Si llega: true o false.</summary>
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++
++    /// <summary>
++    /// Arma el diccionario columna -> valor SOLO con los campos que llegaron
++    /// (no null). Las claves son nombres de columna fijos (lista blanca):
++    /// nunca vienen del cliente.
++    /// </summary>
++    public Dictionary<string, object?> ACamposEnviados()
++    {
++        var datos = new Dictionary<string, object?>();
++
++        if (Nombre is not null) datos["nombre"] = Nombre;
++        if (FkDependenciaPadre is not null) datos["fk_dependencia_padre"] = FkDependenciaPadre;
++        if (Activo is not null) datos["activo"] = Activo;
++
++        return datos;
++    }
++}
+diff --git a/api_catedras/Peticiones/DependenciaCrear.cs b/api_catedras/Peticiones/DependenciaCrear.cs
+new file mode 100644
+index 0000000..e8d87e2
+--- /dev/null
++++ b/api_catedras/Peticiones/DependenciaCrear.cs
+@@ -0,0 +1,49 @@
++// ==========================================================================
++//  Peticiones/DependenciaCrear.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del POST /api/Dependencia: CREAR una dependencia nueva.
++//
++//  Aquí SOLO se valida la FORMA de cada campo (obligatorio, longitud,
++//  tipo). Si algo falla, ASP.NET responde 422 ANTES de entrar al
++//  controlador (formato definido en Program.cs) y la BD no se toca.
++//
++//  Lo que NO se valida aquí: que 'fk_dependencia_padre' sea distinto de
++//  'id_dependencia'. Esa regla CRUZA dos campos del mismo body -> es de
++//  NEGOCIO y le toca al servicio (ServicioDependencia -> 400). Tampoco se
++//  valida que el padre exista: eso lo garantiza la FK de la BD (-> 500,
++//  decisión D9 de version2/4_research.md).
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++// Espacio donde viven [Required], [StringLength], etc.
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del POST /api/Dependencia.</summary>
++public class DependenciaCrear
++{
++    /// <summary>Código de la dependencia. Obligatorio, 1 a 15 caracteres.</summary>
++    [Required(ErrorMessage = "El campo 'id_dependencia' es obligatorio.")]
++    [StringLength(15, MinimumLength = 1,
++        ErrorMessage = "El campo 'id_dependencia' debe tener entre 1 y 15 caracteres.")]
++    [JsonPropertyName("id_dependencia")]
++    public string? IdDependencia { get; set; }
++
++    /// <summary>Nombre. Obligatorio, 1 a 120 caracteres (único en la tabla).</summary>
++    [Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
++    [StringLength(120, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 120 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    /// <summary>Código de la dependencia padre. Opcional (null = raíz).</summary>
++    [StringLength(15, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_dependencia_padre' debe tener entre 1 y 15 caracteres.")]
++    [JsonPropertyName("fk_dependencia_padre")]
++    public string? FkDependenciaPadre { get; set; }
++
++    /// <summary>¿Está activa? Opcional: si no llega, true (DEFAULT de la columna).</summary>
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }   // 'bool?': un texto o número aquí -> 422 sin escribir un 'if'
++}
+diff --git a/api_catedras/Peticiones/DependenciaReemplazo.cs b/api_catedras/Peticiones/DependenciaReemplazo.cs
+new file mode 100644
+index 0000000..e7c1665
+--- /dev/null
++++ b/api_catedras/Peticiones/DependenciaReemplazo.cs
+@@ -0,0 +1,37 @@
++// ==========================================================================
++//  Peticiones/DependenciaReemplazo.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del PUT /api/Dependencia/{idDependencia}: REEMPLAZO COMPLETO.
++//
++//  'nombre' y 'activo' son obligatorios (falta uno -> 422). El padre se
++//  escribe SIEMPRE: si no llega (o llega null), la dependencia queda SIN
++//  padre — eso es lo que significa "reemplazar todo" (igual que
++//  'direccion' de Sede en la v1). El 'id_dependencia' viaja en la URL, no aquí.
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del PUT /api/Dependencia/{idDependencia}.</summary>
++public class DependenciaReemplazo
++{
++    /// <summary>Nuevo nombre. Obligatorio, 1 a 120 caracteres.</summary>
++    [Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
++    [StringLength(120, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 120 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    /// <summary>Nuevo padre. Si no llega o es null -> la dependencia queda sin padre.</summary>
++    [StringLength(15, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_dependencia_padre' debe tener entre 1 y 15 caracteres.")]
++    [JsonPropertyName("fk_dependencia_padre")]
++    public string? FkDependenciaPadre { get; set; }
++
++    /// <summary>¿Está activa? Obligatorio en el PUT.</summary>
++    [Required(ErrorMessage = "El campo 'activo' es obligatorio (true o false).")]
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++}
+diff --git a/api_catedras/Peticiones/FacultadActualizar.cs b/api_catedras/Peticiones/FacultadActualizar.cs
+new file mode 100644
+index 0000000..1ecd12a
+--- /dev/null
++++ b/api_catedras/Peticiones/FacultadActualizar.cs
+@@ -0,0 +1,51 @@
++// ==========================================================================
++//  Peticiones/FacultadActualizar.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del PATCH /api/Facultad/{idFacultad}: ACTUALIZACIÓN PARCIAL.
++//  Todo opcional; solo se modifica lo que llega.
++//
++//  Convención heredada de la v1: un campo null = "no enviado". Por eso un
++//  PATCH no puede QUITAR el padre (dejarlo en null): para eso se usa PUT.
++//  El body vacío lo rechaza el SERVICIO con 400 (es regla de negocio).
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del PATCH /api/Facultad/{idFacultad}. Todo opcional.</summary>
++public class FacultadActualizar
++{
++    /// <summary>Nuevo nombre. Si llega: 1 a 120 caracteres.</summary>
++    [StringLength(120, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 120 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    /// <summary>Nuevo padre. Si llega: 1 a 10 caracteres.</summary>
++    [StringLength(10, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_facultad_padre' debe tener entre 1 y 10 caracteres.")]
++    [JsonPropertyName("fk_facultad_padre")]
++    public string? FkFacultadPadre { get; set; }
++
++    /// <summary>Nuevo valor de "activo". Si llega: true o false.</summary>
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++
++    /// <summary>
++    /// Arma el diccionario columna -> valor SOLO con los campos que llegaron
++    /// (no null). Las claves son nombres de columna fijos (lista blanca):
++    /// nunca vienen del cliente.
++    /// </summary>
++    public Dictionary<string, object?> ACamposEnviados()
++    {
++        var datos = new Dictionary<string, object?>();
++
++        if (Nombre is not null) datos["nombre"] = Nombre;
++        if (FkFacultadPadre is not null) datos["fk_facultad_padre"] = FkFacultadPadre;
++        if (Activo is not null) datos["activo"] = Activo;
++
++        return datos;
++    }
++}
+diff --git a/api_catedras/Peticiones/FacultadCrear.cs b/api_catedras/Peticiones/FacultadCrear.cs
+new file mode 100644
+index 0000000..fb10255
+--- /dev/null
++++ b/api_catedras/Peticiones/FacultadCrear.cs
+@@ -0,0 +1,49 @@
++// ==========================================================================
++//  Peticiones/FacultadCrear.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del POST /api/Facultad: CREAR una facultad nueva.
++//
++//  Aquí SOLO se valida la FORMA de cada campo (obligatorio, longitud,
++//  tipo). Si algo falla, ASP.NET responde 422 ANTES de entrar al
++//  controlador (formato definido en Program.cs) y la BD no se toca.
++//
++//  Lo que NO se valida aquí: que 'fk_facultad_padre' sea distinto de
++//  'id_facultad'. Esa regla CRUZA dos campos del mismo body -> es de
++//  NEGOCIO y le toca al servicio (ServicioFacultad -> 400). Tampoco se
++//  valida que el padre exista: eso lo garantiza la FK de la BD (-> 500,
++//  decisión D9 de version2/4_research.md).
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++// Espacio donde viven [Required], [StringLength], etc.
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del POST /api/Facultad.</summary>
++public class FacultadCrear
++{
++    /// <summary>Código de la facultad. Obligatorio, 1 a 10 caracteres.</summary>
++    [Required(ErrorMessage = "El campo 'id_facultad' es obligatorio.")]
++    [StringLength(10, MinimumLength = 1,
++        ErrorMessage = "El campo 'id_facultad' debe tener entre 1 y 10 caracteres.")]
++    [JsonPropertyName("id_facultad")]
++    public string? IdFacultad { get; set; }
++
++    /// <summary>Nombre. Obligatorio, 1 a 120 caracteres (único en la tabla).</summary>
++    [Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
++    [StringLength(120, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 120 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    /// <summary>Código de la facultad padre. Opcional (null = raíz).</summary>
++    [StringLength(10, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_facultad_padre' debe tener entre 1 y 10 caracteres.")]
++    [JsonPropertyName("fk_facultad_padre")]
++    public string? FkFacultadPadre { get; set; }
++
++    /// <summary>¿Está activa? Opcional: si no llega, true (DEFAULT de la columna).</summary>
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }   // 'bool?': un texto o número aquí -> 422 sin escribir un 'if'
++}
+diff --git a/api_catedras/Peticiones/FacultadReemplazo.cs b/api_catedras/Peticiones/FacultadReemplazo.cs
+new file mode 100644
+index 0000000..d8651b8
+--- /dev/null
++++ b/api_catedras/Peticiones/FacultadReemplazo.cs
+@@ -0,0 +1,37 @@
++// ==========================================================================
++//  Peticiones/FacultadReemplazo.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del PUT /api/Facultad/{idFacultad}: REEMPLAZO COMPLETO.
++//
++//  'nombre' y 'activo' son obligatorios (falta uno -> 422). El padre se
++//  escribe SIEMPRE: si no llega (o llega null), la facultad queda SIN
++//  padre — eso es lo que significa "reemplazar todo" (igual que
++//  'direccion' de Sede en la v1). El 'id_facultad' viaja en la URL, no aquí.
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del PUT /api/Facultad/{idFacultad}.</summary>
++public class FacultadReemplazo
++{
++    /// <summary>Nuevo nombre. Obligatorio, 1 a 120 caracteres.</summary>
++    [Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
++    [StringLength(120, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 120 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    /// <summary>Nuevo padre. Si no llega o es null -> la facultad queda sin padre.</summary>
++    [StringLength(10, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_facultad_padre' debe tener entre 1 y 10 caracteres.")]
++    [JsonPropertyName("fk_facultad_padre")]
++    public string? FkFacultadPadre { get; set; }
++
++    /// <summary>¿Está activa? Obligatorio en el PUT.</summary>
++    [Required(ErrorMessage = "El campo 'activo' es obligatorio (true o false).")]
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++}
+diff --git a/api_catedras/Program.cs b/api_catedras/Program.cs
+index 7cf957e..59a3af9 100644
+--- a/api_catedras/Program.cs
++++ b/api_catedras/Program.cs
+@@ -1,5 +1,5 @@
+ // ==========================================================================
+-//  Program.cs  ·  Proyecto Cátedras · Versión 1
++//  Program.cs  ·  Proyecto Cátedras · Versión 2
+ // --------------------------------------------------------------------------
+ //  Punto de entrada de la API. Aquí ocurren CUATRO cosas y nada más:
+ //    1. Se registran los controladores y se personaliza el 422.
+@@ -217,6 +217,36 @@ builder.Services.AddScoped<IRepositorioTipoEvento>(
+     _ => new RepositorioTipoEventoPostgres(cadenaConexion));
+ builder.Services.AddScoped<IServicioTipoEvento, ServicioTipoEvento>();
+ 
++// IRepositorioTipoPregunta -> RepositorioTipoPreguntaPostgres,
++// IServicioTipoPregunta -> ServicioTipoPregunta.
++// (Cierre de la v1: el controlador existía pero faltaba este registro, y
++//  sin él cada petición a /api/TipoPregunta respondía 500.)
++builder.Services.AddScoped<IRepositorioTipoPregunta>(
++    _ => new RepositorioTipoPreguntaPostgres(cadenaConexion));
++builder.Services.AddScoped<IServicioTipoPregunta, ServicioTipoPregunta>();
++
++// IRepositorioTipoVinculacion -> RepositorioTipoVinculacionPostgres,
++// IServicioTipoVinculacion -> ServicioTipoVinculacion. (Cierre de la v1.)
++builder.Services.AddScoped<IRepositorioTipoVinculacion>(
++    _ => new RepositorioTipoVinculacionPostgres(cadenaConexion));
++builder.Services.AddScoped<IServicioTipoVinculacion, ServicioTipoVinculacion>();
++
++// ---------------------------- Versión 2 ---------------------------------
++// Las tablas de la v2 tienen foreign keys, pero eso NO cambia el
++// ensamblador: cada entidad sigue siendo una pareja interfaz -> clase.
++
++// IRepositorioFacultad -> RepositorioFacultadPostgres,
++// IServicioFacultad -> ServicioFacultad (valida la autorreferencia).
++builder.Services.AddScoped<IRepositorioFacultad>(
++    _ => new RepositorioFacultadPostgres(cadenaConexion));
++builder.Services.AddScoped<IServicioFacultad, ServicioFacultad>();
++
++// IRepositorioDependencia -> RepositorioDependenciaPostgres,
++// IServicioDependencia -> ServicioDependencia (misma regla).
++builder.Services.AddScoped<IRepositorioDependencia>(
++    _ => new RepositorioDependenciaPostgres(cadenaConexion));
++builder.Services.AddScoped<IServicioDependencia, ServicioDependencia>();
++
+ // --------------------------------------------------------------------------
+ //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
+ // --------------------------------------------------------------------------
+@@ -230,8 +260,8 @@ app.UseSwaggerUI();
+ app.MapGet("/", () => Results.Json(new
+ {
+     mensaje = "API Cátedras en línea.",
+-    version = "v1",
+-    contratos = "docs/spec_kit/6_contracts.md",
++    version = "v2",
++    contratos = "docs/spec_kit/Versiones/version2/6_contracts.md",
+ }));
+ 
+ // Conecta las rutas de los controladores ([Route("api/Sede")]...).
+diff --git a/api_catedras/Repositorios/IRepositorioDependencia.cs b/api_catedras/Repositorios/IRepositorioDependencia.cs
+new file mode 100644
+index 0000000..7a68033
+--- /dev/null
++++ b/api_catedras/Repositorios/IRepositorioDependencia.cs
+@@ -0,0 +1,35 @@
++// ==========================================================================
++//  Repositorios/IRepositorioDependencia.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  CONTRATO de acceso a datos de 'catedras.dependencia'. El servicio depende
++//  de esta interfaz y NO sabe qué motor hay detrás (Artículo 3). Por eso
++//  'pruebas/' puede darle un repositorio FALSO en memoria.
++//
++//  Mismo molde de 5 operaciones que IRepositorioSede (v1).
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++
++/// <summary>Operaciones de datos sobre la tabla 'catedras.dependencia'.</summary>
++public interface IRepositorioDependencia
++{
++    /// <summary>Devuelve las dependencias ordenadas por código, hasta 'limite' filas.</summary>
++    Task<List<Dependencia>> ObtenerTodosAsync(int limite);
++
++    /// <summary>Devuelve la dependencia con ese código, o null si no existe.</summary>
++    Task<Dependencia?> ObtenerPorIdAsync(string idDependencia);
++
++    /// <summary>Inserta una dependencia. Código/nombre duplicado o padre inexistente
++    /// -> el motor lanza NpgsqlException (la API responde 500).</summary>
++    Task CrearAsync(Dependencia dependencia);
++
++    /// <summary>Actualiza las columnas de 'datos' (columna -> valor). Sirve para
++    /// PUT y PATCH. Devuelve filas afectadas (0 = no existe).</summary>
++    Task<int> ActualizarAsync(string idDependencia, Dictionary<string, object?> datos);
++
++    /// <summary>Borra la dependencia. Devuelve filas eliminadas (0 = no existe).
++    /// Hijas y cátedras que la usaban quedan con su FK en null (SET NULL).</summary>
++    Task<int> EliminarAsync(string idDependencia);
++}
+diff --git a/api_catedras/Repositorios/IRepositorioFacultad.cs b/api_catedras/Repositorios/IRepositorioFacultad.cs
+new file mode 100644
+index 0000000..6cdcbbc
+--- /dev/null
++++ b/api_catedras/Repositorios/IRepositorioFacultad.cs
+@@ -0,0 +1,35 @@
++// ==========================================================================
++//  Repositorios/IRepositorioFacultad.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  CONTRATO de acceso a datos de 'catedras.facultad'. El servicio depende
++//  de esta interfaz y NO sabe qué motor hay detrás (Artículo 3). Por eso
++//  'pruebas/' puede darle un repositorio FALSO en memoria.
++//
++//  Mismo molde de 5 operaciones que IRepositorioSede (v1).
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++
++/// <summary>Operaciones de datos sobre la tabla 'catedras.facultad'.</summary>
++public interface IRepositorioFacultad
++{
++    /// <summary>Devuelve las facultades ordenadas por código, hasta 'limite' filas.</summary>
++    Task<List<Facultad>> ObtenerTodosAsync(int limite);
++
++    /// <summary>Devuelve la facultad con ese código, o null si no existe.</summary>
++    Task<Facultad?> ObtenerPorIdAsync(string idFacultad);
++
++    /// <summary>Inserta una facultad. Código/nombre duplicado o padre inexistente
++    /// -> el motor lanza NpgsqlException (la API responde 500).</summary>
++    Task CrearAsync(Facultad facultad);
++
++    /// <summary>Actualiza las columnas de 'datos' (columna -> valor). Sirve para
++    /// PUT y PATCH. Devuelve filas afectadas (0 = no existe).</summary>
++    Task<int> ActualizarAsync(string idFacultad, Dictionary<string, object?> datos);
++
++    /// <summary>Borra la facultad. Devuelve filas eliminadas (0 = no existe).
++    /// Hijas y programas que la usaban quedan con su FK en null (SET NULL).</summary>
++    Task<int> EliminarAsync(string idFacultad);
++}
+diff --git a/api_catedras/Repositorios/RepositorioDependenciaPostgres.cs b/api_catedras/Repositorios/RepositorioDependenciaPostgres.cs
+new file mode 100644
+index 0000000..b7b7b61
+--- /dev/null
++++ b/api_catedras/Repositorios/RepositorioDependenciaPostgres.cs
+@@ -0,0 +1,123 @@
++// ==========================================================================
++//  Repositorios/RepositorioDependenciaPostgres.cs  ·  Proyecto Cátedras · v2
++// --------------------------------------------------------------------------
++//  Implementación de IRepositorioDependencia para PostgreSQL con DAPPER.
++//  SQL escrito A MANO, visible y SIEMPRE parametrizado (@parametro). Una
++//  conexión por operación con 'await using'. Mismo molde que
++//  RepositorioSedePostgres (v1).
++//
++//  NOVEDAD v2 — LAS FK LAS APLICA EL MOTOR, NO ESTE CÓDIGO:
++//   · Un 'fk_dependencia_padre' que no existe -> el INSERT/UPDATE viola la FK
++//     'fk_dependencia_padre' y PostgreSQL lanza NpgsqlException (-> 500). Aquí
++//     NO se hace un SELECT previo para comprobarlo (decisión D9).
++//   · DELETE: las dependencias hijas y las cátedras que apuntaban a la
++//     borrada quedan con su FK en NULL (ON DELETE SET NULL). Lo hace el
++//     motor dentro de la MISMA sentencia (ACID · A).
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++using Dapper;      // QueryAsync, ExecuteAsync, DynamicParameters
++using Npgsql;      // NpgsqlConnection
++
++/// <summary>Acceso a 'catedras.dependencia' en PostgreSQL mediante Dapper.</summary>
++public class RepositorioDependenciaPostgres : IRepositorioDependencia
++{
++    // 'readonly': se asigna una vez en el constructor y no cambia más.
++    private readonly string _cadenaConexion;
++
++    // [ACID · C] LISTA BLANCA de columnas que un UPDATE puede tocar. La PK
++    // 'id_dependencia' NO está: el código de una dependencia no se cambia.
++    private static readonly HashSet<string> ColumnasActualizables =
++        new() { "nombre", "fk_dependencia_padre", "activo" };
++
++    /// <summary>Recibe la cadena de conexión (la inyecta el ensamblador de Program.cs).</summary>
++    public RepositorioDependenciaPostgres(string cadenaConexion)
++    {
++        _cadenaConexion = cadenaConexion;
++    }
++
++    public async Task<List<Dependencia>> ObtenerTodosAsync(int limite)
++    {
++        // 'LIMIT @limite' = Top-N de PostgreSQL, parametrizado.
++        const string sql = @"
++            SELECT id_dependencia, nombre, fk_dependencia_padre, activo
++            FROM catedras.dependencia
++            ORDER BY id_dependencia
++            LIMIT @limite;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Dapper mapea cada fila a un Dependencia (fk_dependencia_padre -> FkDependenciaPadre
++        // gracias a MatchNamesWithUnderscores, configurado en Program.cs).
++        var filas = await conexion.QueryAsync<Dependencia>(sql, new { limite });
++        return filas.ToList();
++    }
++
++    public async Task<Dependencia?> ObtenerPorIdAsync(string idDependencia)
++    {
++        const string sql = @"
++            SELECT id_dependencia, nombre, fk_dependencia_padre, activo
++            FROM catedras.dependencia
++            WHERE id_dependencia = @idDependencia;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Una fila, o null si no existe.
++        return await conexion.QuerySingleOrDefaultAsync<Dependencia>(sql, new { idDependencia });
++    }
++
++    public async Task CrearAsync(Dependencia dependencia)
++    {
++        const string sql = @"
++            INSERT INTO catedras.dependencia (id_dependencia, nombre, fk_dependencia_padre, activo)
++            VALUES (@IdDependencia, @Nombre, @FkDependenciaPadre, @Activo);";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Dapper toma cada @Parametro de la propiedad homónima de 'dependencia'.
++        // Duplicado o padre inexistente -> NpgsqlException sube tal cual.
++        await conexion.ExecuteAsync(sql, dependencia);
++    }
++
++    public async Task<int> ActualizarAsync(string idDependencia, Dictionary<string, object?> datos)
++    {
++        // Se arma 'SET col = @col, ...' SOLO con columnas de la lista blanca.
++        var asignaciones = new List<string>();
++        var parametros = new DynamicParameters();
++        parametros.Add("id_clave", idDependencia);
++
++        foreach (var (columna, valor) in datos)
++        {
++            if (!ColumnasActualizables.Contains(columna))
++                continue; // clave no permitida: nunca llega al texto SQL
++
++            asignaciones.Add($"{columna} = @{columna}");
++            parametros.Add(columna, valor); // el VALOR siempre como parámetro
++        }
++
++        if (asignaciones.Count == 0)
++            return 0;
++
++        var sql =
++            $"UPDATE catedras.dependencia SET {string.Join(", ", asignaciones)} " +
++            "WHERE id_dependencia = @id_clave;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Filas que cumplieron el WHERE: 0 = esa dependencia no existe.
++        return await conexion.ExecuteAsync(sql, parametros);
++    }
++
++    public async Task<int> EliminarAsync(string idDependencia)
++    {
++        const string sql = "DELETE FROM catedras.dependencia WHERE id_dependencia = @idDependencia;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Las FK entrantes son SET NULL: el borrado no falla por tener hijas
++        // o cátedras; el motor les pone el campo en NULL en la misma sentencia.
++        return await conexion.ExecuteAsync(sql, new { idDependencia });
++    }
++}
+diff --git a/api_catedras/Repositorios/RepositorioFacultadPostgres.cs b/api_catedras/Repositorios/RepositorioFacultadPostgres.cs
+new file mode 100644
+index 0000000..044eca2
+--- /dev/null
++++ b/api_catedras/Repositorios/RepositorioFacultadPostgres.cs
+@@ -0,0 +1,123 @@
++// ==========================================================================
++//  Repositorios/RepositorioFacultadPostgres.cs  ·  Proyecto Cátedras · v2
++// --------------------------------------------------------------------------
++//  Implementación de IRepositorioFacultad para PostgreSQL con DAPPER.
++//  SQL escrito A MANO, visible y SIEMPRE parametrizado (@parametro). Una
++//  conexión por operación con 'await using'. Mismo molde que
++//  RepositorioSedePostgres (v1).
++//
++//  NOVEDAD v2 — LAS FK LAS APLICA EL MOTOR, NO ESTE CÓDIGO:
++//   · Un 'fk_facultad_padre' que no existe -> el INSERT/UPDATE viola la FK
++//     'fk_facultad_padre' y PostgreSQL lanza NpgsqlException (-> 500). Aquí
++//     NO se hace un SELECT previo para comprobarlo (decisión D9).
++//   · DELETE: las facultades hijas y los programas que apuntaban a la
++//     borrada quedan con su FK en NULL (ON DELETE SET NULL). Lo hace el
++//     motor dentro de la MISMA sentencia (ACID · A).
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++using Dapper;      // QueryAsync, ExecuteAsync, DynamicParameters
++using Npgsql;      // NpgsqlConnection
++
++/// <summary>Acceso a 'catedras.facultad' en PostgreSQL mediante Dapper.</summary>
++public class RepositorioFacultadPostgres : IRepositorioFacultad
++{
++    // 'readonly': se asigna una vez en el constructor y no cambia más.
++    private readonly string _cadenaConexion;
++
++    // [ACID · C] LISTA BLANCA de columnas que un UPDATE puede tocar. La PK
++    // 'id_facultad' NO está: el código de una facultad no se cambia.
++    private static readonly HashSet<string> ColumnasActualizables =
++        new() { "nombre", "fk_facultad_padre", "activo" };
++
++    /// <summary>Recibe la cadena de conexión (la inyecta el ensamblador de Program.cs).</summary>
++    public RepositorioFacultadPostgres(string cadenaConexion)
++    {
++        _cadenaConexion = cadenaConexion;
++    }
++
++    public async Task<List<Facultad>> ObtenerTodosAsync(int limite)
++    {
++        // 'LIMIT @limite' = Top-N de PostgreSQL, parametrizado.
++        const string sql = @"
++            SELECT id_facultad, nombre, fk_facultad_padre, activo
++            FROM catedras.facultad
++            ORDER BY id_facultad
++            LIMIT @limite;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Dapper mapea cada fila a un Facultad (fk_facultad_padre -> FkFacultadPadre
++        // gracias a MatchNamesWithUnderscores, configurado en Program.cs).
++        var filas = await conexion.QueryAsync<Facultad>(sql, new { limite });
++        return filas.ToList();
++    }
++
++    public async Task<Facultad?> ObtenerPorIdAsync(string idFacultad)
++    {
++        const string sql = @"
++            SELECT id_facultad, nombre, fk_facultad_padre, activo
++            FROM catedras.facultad
++            WHERE id_facultad = @idFacultad;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Una fila, o null si no existe.
++        return await conexion.QuerySingleOrDefaultAsync<Facultad>(sql, new { idFacultad });
++    }
++
++    public async Task CrearAsync(Facultad facultad)
++    {
++        const string sql = @"
++            INSERT INTO catedras.facultad (id_facultad, nombre, fk_facultad_padre, activo)
++            VALUES (@IdFacultad, @Nombre, @FkFacultadPadre, @Activo);";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Dapper toma cada @Parametro de la propiedad homónima de 'facultad'.
++        // Duplicado o padre inexistente -> NpgsqlException sube tal cual.
++        await conexion.ExecuteAsync(sql, facultad);
++    }
++
++    public async Task<int> ActualizarAsync(string idFacultad, Dictionary<string, object?> datos)
++    {
++        // Se arma 'SET col = @col, ...' SOLO con columnas de la lista blanca.
++        var asignaciones = new List<string>();
++        var parametros = new DynamicParameters();
++        parametros.Add("id_clave", idFacultad);
++
++        foreach (var (columna, valor) in datos)
++        {
++            if (!ColumnasActualizables.Contains(columna))
++                continue; // clave no permitida: nunca llega al texto SQL
++
++            asignaciones.Add($"{columna} = @{columna}");
++            parametros.Add(columna, valor); // el VALOR siempre como parámetro
++        }
++
++        if (asignaciones.Count == 0)
++            return 0;
++
++        var sql =
++            $"UPDATE catedras.facultad SET {string.Join(", ", asignaciones)} " +
++            "WHERE id_facultad = @id_clave;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Filas que cumplieron el WHERE: 0 = esa facultad no existe.
++        return await conexion.ExecuteAsync(sql, parametros);
++    }
++
++    public async Task<int> EliminarAsync(string idFacultad)
++    {
++        const string sql = "DELETE FROM catedras.facultad WHERE id_facultad = @idFacultad;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Las FK entrantes son SET NULL: el borrado no falla por tener hijas
++        // o programas; el motor les pone el campo en NULL en la misma sentencia.
++        return await conexion.ExecuteAsync(sql, new { idFacultad });
++    }
++}
+diff --git a/api_catedras/Servicios/IServicioDependencia.cs b/api_catedras/Servicios/IServicioDependencia.cs
+new file mode 100644
+index 0000000..d64b7a5
+--- /dev/null
++++ b/api_catedras/Servicios/IServicioDependencia.cs
+@@ -0,0 +1,36 @@
++// ==========================================================================
++//  Servicios/IServicioDependencia.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Contrato de la capa de NEGOCIO de 'Dependencia'. El controlador depende de
++//  esta interfaz. Problemas -> excepciones:
++//     ArgumentException     -> 400 (límite inválido, PATCH vacío,
++//                                   dependencia que se apunta a sí misma)
++//     NoEncontradoExcepcion -> 404
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++
++/// <summary>Reglas de negocio del recurso 'Dependencia'.</summary>
++public interface IServicioDependencia
++{
++    /// <summary>Lista dependencias. 'limite' nulo -> 1000; &lt;= 0 -> ArgumentException.</summary>
++    Task<(List<Dependencia> Datos, int Total)> ListarAsync(int? limite);
++
++    /// <summary>Devuelve la dependencia o lanza NoEncontradoExcepcion.</summary>
++    Task<Dependencia> ObtenerAsync(string idDependencia);
++
++    /// <summary>Crea la dependencia. Padre igual al propio id -> ArgumentException.</summary>
++    Task CrearAsync(DependenciaCrear peticion);
++
++    /// <summary>PUT. Autorreferencia -> 400; 0 filas -> 404.</summary>
++    Task<int> ReemplazarAsync(string idDependencia, DependenciaReemplazo peticion);
++
++    /// <summary>PATCH. Body vacío o autorreferencia -> 400; 0 filas -> 404.</summary>
++    Task<int> ActualizarAsync(string idDependencia, DependenciaActualizar peticion);
++
++    /// <summary>DELETE. 0 filas -> 404.</summary>
++    Task<int> EliminarAsync(string idDependencia);
++}
+diff --git a/api_catedras/Servicios/IServicioFacultad.cs b/api_catedras/Servicios/IServicioFacultad.cs
+new file mode 100644
+index 0000000..72cdb99
+--- /dev/null
++++ b/api_catedras/Servicios/IServicioFacultad.cs
+@@ -0,0 +1,36 @@
++// ==========================================================================
++//  Servicios/IServicioFacultad.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Contrato de la capa de NEGOCIO de 'Facultad'. El controlador depende de
++//  esta interfaz. Problemas -> excepciones:
++//     ArgumentException     -> 400 (límite inválido, PATCH vacío,
++//                                   facultad que se apunta a sí misma)
++//     NoEncontradoExcepcion -> 404
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++
++/// <summary>Reglas de negocio del recurso 'Facultad'.</summary>
++public interface IServicioFacultad
++{
++    /// <summary>Lista facultades. 'limite' nulo -> 1000; &lt;= 0 -> ArgumentException.</summary>
++    Task<(List<Facultad> Datos, int Total)> ListarAsync(int? limite);
++
++    /// <summary>Devuelve la facultad o lanza NoEncontradoExcepcion.</summary>
++    Task<Facultad> ObtenerAsync(string idFacultad);
++
++    /// <summary>Crea la facultad. Padre igual al propio id -> ArgumentException.</summary>
++    Task CrearAsync(FacultadCrear peticion);
++
++    /// <summary>PUT. Autorreferencia -> 400; 0 filas -> 404.</summary>
++    Task<int> ReemplazarAsync(string idFacultad, FacultadReemplazo peticion);
++
++    /// <summary>PATCH. Body vacío o autorreferencia -> 400; 0 filas -> 404.</summary>
++    Task<int> ActualizarAsync(string idFacultad, FacultadActualizar peticion);
++
++    /// <summary>DELETE. 0 filas -> 404.</summary>
++    Task<int> EliminarAsync(string idFacultad);
++}
+diff --git a/api_catedras/Servicios/ServicioDependencia.cs b/api_catedras/Servicios/ServicioDependencia.cs
+new file mode 100644
+index 0000000..62edae0
+--- /dev/null
++++ b/api_catedras/Servicios/ServicioDependencia.cs
+@@ -0,0 +1,141 @@
++// ==========================================================================
++//  Servicios/ServicioDependencia.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Reglas de negocio de 'Dependencia'. Recibe IRepositorioDependencia por
++//  constructor (lo inyecta Program.cs); no conoce HTTP ni el motor.
++//
++//  REGLA NUEVA DE LA v2 — AUTORREFERENCIA (3_plan.md §4.2, ADR D10 — misma regla que Facultad):
++//  una dependencia no puede ser su propio padre. La BD tiene el CHECK
++//  'chk_dependencia_padre', pero aquí se valida ANTES de tocar la BD para
++//  responder un 400 claro (en vez de un 500 con el texto del motor):
++//    · en POST se compara 'fk_dependencia_padre' con 'id_dependencia' del body;
++//    · en PUT/PATCH el id viene de la URL, así que se compara con ese.
++//  Solo se valida UN nivel (A -> A). Un ciclo largo (A -> B -> A) no se
++//  detecta: es un riesgo documentado en D10, no un olvido.
++//
++//  Lo que NO hace: comprobar que el padre exista. Eso es una FK y la vigila
++//  el motor (-> NpgsqlException -> 500, ADR D9).
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Repositorios;
++
++/// <summary>Reglas de negocio de 'Dependencia'.</summary>
++public class ServicioDependencia : IServicioDependencia
++{
++    // Límite por defecto de la lista cuando no llega '?limite='.
++    private const int LimitePorDefecto = 1000;
++
++    // [SOLID · D] Depende de la INTERFAZ, nunca de RepositorioDependenciaPostgres.
++    private readonly IRepositorioDependencia _repositorio;
++
++    public ServicioDependencia(IRepositorioDependencia repositorio)
++    {
++        _repositorio = repositorio;
++    }
++
++    // Regla de negocio compartida por POST, PUT y PATCH.
++    // 'static' = no usa ningún campo de la instancia.
++    private static void ValidarNoEsSuPropioPadre(string idDependencia, string? fkDependenciaPadre)
++    {
++        // string.Equals con Ordinal: comparación exacta, carácter a carácter
++        // (igual que el '<>' de PostgreSQL sobre VARCHAR).
++        if (fkDependenciaPadre is not null && string.Equals(fkDependenciaPadre, idDependencia, StringComparison.Ordinal))
++            throw new ArgumentException(
++                "Una dependencia no puede ser su propio padre ('fk_dependencia_padre').");
++    }
++
++    public async Task<(List<Dependencia> Datos, int Total)> ListarAsync(int? limite)
++    {
++        // '??' = si 'limite' es null, usa el valor de la derecha.
++        int limiteEfectivo = limite ?? LimitePorDefecto;
++
++        if (limiteEfectivo <= 0)
++            throw new ArgumentException(
++                "El parámetro 'limite' debe ser un entero mayor que 0.");
++
++        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo);
++        return (datos, datos.Count);
++    }
++
++    public async Task<Dependencia> ObtenerAsync(string idDependencia)
++    {
++        var dependencia = await _repositorio.ObtenerPorIdAsync(idDependencia);
++
++        if (dependencia is null)
++            throw new NoEncontradoExcepcion($"No existe la dependencia '{idDependencia}'.");
++
++        return dependencia;
++    }
++
++    public async Task CrearAsync(DependenciaCrear peticion)
++    {
++        // La petición ya pasó la validación de forma: 'id_dependencia' y
++        // 'nombre' NO son null (el '!' se lo asegura al compilador).
++        ValidarNoEsSuPropioPadre(peticion.IdDependencia!, peticion.FkDependenciaPadre);
++
++        var dependencia = new Dependencia
++        {
++            IdDependencia = peticion.IdDependencia!,
++            Nombre = peticion.Nombre!,
++            FkDependenciaPadre = peticion.FkDependenciaPadre, // opcional: null = raíz
++            Activo = peticion.Activo ?? true,           // DEFAULT de la columna
++        };
++
++        await _repositorio.CrearAsync(dependencia);
++    }
++
++    public async Task<int> ReemplazarAsync(string idDependencia, DependenciaReemplazo peticion)
++    {
++        ValidarNoEsSuPropioPadre(idDependencia, peticion.FkDependenciaPadre);
++
++        // Reemplazo COMPLETO: se escriben las 3 columnas, padre incluido
++        // (si no llegó, queda NULL).
++        var datos = new Dictionary<string, object?>
++        {
++            ["nombre"] = peticion.Nombre!,
++            ["fk_dependencia_padre"] = peticion.FkDependenciaPadre,
++            ["activo"] = peticion.Activo!.Value,
++        };
++
++        int filas = await _repositorio.ActualizarAsync(idDependencia, datos);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe la dependencia '{idDependencia}'.");
++
++        return filas;
++    }
++
++    public async Task<int> ActualizarAsync(string idDependencia, DependenciaActualizar peticion)
++    {
++        var datos = peticion.ACamposEnviados();
++
++        // Body sin campos -> regla de negocio -> 400.
++        if (datos.Count == 0)
++            throw new ArgumentException(
++                "El cuerpo del PATCH no trae ningún campo para actualizar.");
++
++        ValidarNoEsSuPropioPadre(idDependencia, peticion.FkDependenciaPadre);
++
++        int filas = await _repositorio.ActualizarAsync(idDependencia, datos);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe la dependencia '{idDependencia}'.");
++
++        return filas;
++    }
++
++    public async Task<int> EliminarAsync(string idDependencia)
++    {
++        int filas = await _repositorio.EliminarAsync(idDependencia);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe la dependencia '{idDependencia}'.");
++
++        return filas;
++    }
++}
+diff --git a/api_catedras/Servicios/ServicioFacultad.cs b/api_catedras/Servicios/ServicioFacultad.cs
+new file mode 100644
+index 0000000..bf29bba
+--- /dev/null
++++ b/api_catedras/Servicios/ServicioFacultad.cs
+@@ -0,0 +1,141 @@
++// ==========================================================================
++//  Servicios/ServicioFacultad.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Reglas de negocio de 'Facultad'. Recibe IRepositorioFacultad por
++//  constructor (lo inyecta Program.cs); no conoce HTTP ni el motor.
++//
++//  REGLA NUEVA DE LA v2 — AUTORREFERENCIA (3_plan.md §4.2, ADR D10):
++//  una facultad no puede ser su propio padre. La BD tiene el CHECK
++//  'chk_facultad_padre', pero aquí se valida ANTES de tocar la BD para
++//  responder un 400 claro (en vez de un 500 con el texto del motor):
++//    · en POST se compara 'fk_facultad_padre' con 'id_facultad' del body;
++//    · en PUT/PATCH el id viene de la URL, así que se compara con ese.
++//  Solo se valida UN nivel (A -> A). Un ciclo largo (A -> B -> A) no se
++//  detecta: es un riesgo documentado en D10, no un olvido.
++//
++//  Lo que NO hace: comprobar que el padre exista. Eso es una FK y la vigila
++//  el motor (-> NpgsqlException -> 500, ADR D9).
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Repositorios;
++
++/// <summary>Reglas de negocio de 'Facultad'.</summary>
++public class ServicioFacultad : IServicioFacultad
++{
++    // Límite por defecto de la lista cuando no llega '?limite='.
++    private const int LimitePorDefecto = 1000;
++
++    // [SOLID · D] Depende de la INTERFAZ, nunca de RepositorioFacultadPostgres.
++    private readonly IRepositorioFacultad _repositorio;
++
++    public ServicioFacultad(IRepositorioFacultad repositorio)
++    {
++        _repositorio = repositorio;
++    }
++
++    // Regla de negocio compartida por POST, PUT y PATCH.
++    // 'static' = no usa ningún campo de la instancia.
++    private static void ValidarNoEsSuPropioPadre(string idFacultad, string? fkFacultadPadre)
++    {
++        // string.Equals con Ordinal: comparación exacta, carácter a carácter
++        // (igual que el '<>' de PostgreSQL sobre VARCHAR).
++        if (fkFacultadPadre is not null && string.Equals(fkFacultadPadre, idFacultad, StringComparison.Ordinal))
++            throw new ArgumentException(
++                "Una facultad no puede ser su propio padre ('fk_facultad_padre').");
++    }
++
++    public async Task<(List<Facultad> Datos, int Total)> ListarAsync(int? limite)
++    {
++        // '??' = si 'limite' es null, usa el valor de la derecha.
++        int limiteEfectivo = limite ?? LimitePorDefecto;
++
++        if (limiteEfectivo <= 0)
++            throw new ArgumentException(
++                "El parámetro 'limite' debe ser un entero mayor que 0.");
++
++        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo);
++        return (datos, datos.Count);
++    }
++
++    public async Task<Facultad> ObtenerAsync(string idFacultad)
++    {
++        var facultad = await _repositorio.ObtenerPorIdAsync(idFacultad);
++
++        if (facultad is null)
++            throw new NoEncontradoExcepcion($"No existe la facultad '{idFacultad}'.");
++
++        return facultad;
++    }
++
++    public async Task CrearAsync(FacultadCrear peticion)
++    {
++        // La petición ya pasó la validación de forma: 'id_facultad' y
++        // 'nombre' NO son null (el '!' se lo asegura al compilador).
++        ValidarNoEsSuPropioPadre(peticion.IdFacultad!, peticion.FkFacultadPadre);
++
++        var facultad = new Facultad
++        {
++            IdFacultad = peticion.IdFacultad!,
++            Nombre = peticion.Nombre!,
++            FkFacultadPadre = peticion.FkFacultadPadre, // opcional: null = raíz
++            Activo = peticion.Activo ?? true,           // DEFAULT de la columna
++        };
++
++        await _repositorio.CrearAsync(facultad);
++    }
++
++    public async Task<int> ReemplazarAsync(string idFacultad, FacultadReemplazo peticion)
++    {
++        ValidarNoEsSuPropioPadre(idFacultad, peticion.FkFacultadPadre);
++
++        // Reemplazo COMPLETO: se escriben las 3 columnas, padre incluido
++        // (si no llegó, queda NULL).
++        var datos = new Dictionary<string, object?>
++        {
++            ["nombre"] = peticion.Nombre!,
++            ["fk_facultad_padre"] = peticion.FkFacultadPadre,
++            ["activo"] = peticion.Activo!.Value,
++        };
++
++        int filas = await _repositorio.ActualizarAsync(idFacultad, datos);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe la facultad '{idFacultad}'.");
++
++        return filas;
++    }
++
++    public async Task<int> ActualizarAsync(string idFacultad, FacultadActualizar peticion)
++    {
++        var datos = peticion.ACamposEnviados();
++
++        // Body sin campos -> regla de negocio -> 400.
++        if (datos.Count == 0)
++            throw new ArgumentException(
++                "El cuerpo del PATCH no trae ningún campo para actualizar.");
++
++        ValidarNoEsSuPropioPadre(idFacultad, peticion.FkFacultadPadre);
++
++        int filas = await _repositorio.ActualizarAsync(idFacultad, datos);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe la facultad '{idFacultad}'.");
++
++        return filas;
++    }
++
++    public async Task<int> EliminarAsync(string idFacultad)
++    {
++        int filas = await _repositorio.EliminarAsync(idFacultad);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe la facultad '{idFacultad}'.");
++
++        return filas;
++    }
++}
+diff --git a/api_catedras/pruebas/Programa.cs b/api_catedras/pruebas/Programa.cs
+index fcb445c..fbf8ec9 100644
+--- a/api_catedras/pruebas/Programa.cs
++++ b/api_catedras/pruebas/Programa.cs
+@@ -1,5 +1,6 @@
+ // ==========================================================================
+-//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versión 1 · Criterio 6
++//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versiones 1 y 2
++//  (criterio 6 de la v1 · criterio 8 de la v2)
+ // --------------------------------------------------------------------------
+ //  "Prueba de capas": se construye ServicioSede pasándole un repositorio
+ //  FALSO que guarda las sedes en un diccionario en memoria (implementa
+@@ -580,6 +581,153 @@ await AfirmarLanza<NoEncontradoExcepcion>(
+     "segundo DELETE lanza NoEncontradoExcepcion",
+     () => servicioTipoEvt.EliminarAsync("TEST"));
+ 
++// ============================================================================
++//  Prueba de capas: ServicioTipoPregunta + repositorio falso (cierre de la v1)
++// ============================================================================
++var servicioTipoPreg = new ServicioTipoPregunta(new RepositorioTipoPreguntaFalso());
++
++Console.WriteLine("\n== Prueba de capas: ServicioTipoPregunta + repositorio falso en memoria ==\n");
++
++var (datosTpreg, totalTpreg) = await servicioTipoPreg.ListarAsync(null);
++Afirmar("Listar() devuelve los 2 tipos de pregunta semilla", totalTpreg == 2 && datosTpreg.Count == 2);
++
++await AfirmarLanza<ArgumentException>(
++    "Listar(0) lanza ArgumentException", () => servicioTipoPreg.ListarAsync(0));
++
++// Regla de negocio: exactamente UNO de los tres destinos en true.
++await AfirmarLanza<ArgumentException>(
++    "Crear() con los tres destinos en false lanza ArgumentException",
++    () => servicioTipoPreg.CrearAsync(new TipoPreguntaCrear { IdTipoPregunta = "MALA", Nombre = "Mala" }));
++await AfirmarLanza<ArgumentException>(
++    "Crear() con dos destinos en true lanza ArgumentException",
++    () => servicioTipoPreg.CrearAsync(new TipoPreguntaCrear
++    { IdTipoPregunta = "MALA", Nombre = "Mala", GuardaNumero = true, GuardaTexto = true }));
++
++await servicioTipoPreg.CrearAsync(new TipoPreguntaCrear { IdTipoPregunta = "SI_NO", Nombre = "Sí o no", GuardaOpcion = true });
++var tpregCreado = await servicioTipoPreg.ObtenerAsync("SI_NO");
++Afirmar("Crear() inserta y Obtener() lo encuentra", tpregCreado.GuardaOpcion && !tpregCreado.GuardaNumero);
++
++int filasPatchTpreg = await servicioTipoPreg.ActualizarAsync("SI_NO", new TipoPreguntaActualizar { Nombre = "Sí/No" });
++Afirmar("PATCH cambia solo 'nombre'", filasPatchTpreg == 1 && (await servicioTipoPreg.ObtenerAsync("SI_NO")).Nombre == "Sí/No");
++
++await AfirmarLanza<ArgumentException>(
++    "PATCH sin campos lanza ArgumentException",
++    () => servicioTipoPreg.ActualizarAsync("SI_NO", new TipoPreguntaActualizar()));
++
++Afirmar("DELETE elimina 1 fila", await servicioTipoPreg.EliminarAsync("SI_NO") == 1);
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioTipoPreg.EliminarAsync("SI_NO"));
++
++// ============================================================================
++//  Prueba de capas: ServicioTipoVinculacion + repositorio falso (cierre de la v1)
++// ============================================================================
++var servicioTipoVinc = new ServicioTipoVinculacion(new RepositorioTipoVinculacionFalso());
++
++Console.WriteLine("\n== Prueba de capas: ServicioTipoVinculacion + repositorio falso en memoria ==\n");
++
++var (datosTvin, totalTvin) = await servicioTipoVinc.ListarAsync(null);
++Afirmar("Listar() devuelve los 2 tipos de vinculación semilla", totalTvin == 2 && datosTvin.Count == 2);
++
++await servicioTipoVinc.CrearAsync(new TipoVinculacionCrear { IdTipoVinculacion = "EGRESADO", Nombre = "Egresado", EsInterno = true });
++var tvinCreado = await servicioTipoVinc.ObtenerAsync("EGRESADO");
++Afirmar("Crear() aplica los valores por defecto (exige_programa y activo = true)",
++    tvinCreado.EsInterno && tvinCreado.ExigePrograma && tvinCreado.Activo);
++
++int filasPutTvin = await servicioTipoVinc.ReemplazarAsync("EGRESADO", new TipoVinculacionReemplazo
++{ Nombre = "Egresado USB", EsInterno = false, ExigePrograma = false, Activo = false });
++var trasPutTvin = await servicioTipoVinc.ObtenerAsync("EGRESADO");
++Afirmar("PUT reemplaza todo", filasPutTvin == 1 && !trasPutTvin.EsInterno && !trasPutTvin.ExigePrograma && !trasPutTvin.Activo);
++
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "PATCH a \"NO_VA\" lanza NoEncontradoExcepcion",
++    () => servicioTipoVinc.ActualizarAsync("NO_VA", new TipoVinculacionActualizar { Activo = true }));
++
++Afirmar("DELETE elimina 1 fila", await servicioTipoVinc.EliminarAsync("EGRESADO") == 1);
++
++// ============================================================================
++//  v2 · Prueba de capas: ServicioFacultad + repositorio falso
++//  Lo nuevo: la AUTORREFERENCIA. El servicio debe rechazar (400) una
++//  facultad que se nombra a sí misma como padre, SIN llegar al repositorio.
++// ============================================================================
++var repoFacultadFalso = new RepositorioFacultadFalso();
++var servicioFacultad = new ServicioFacultad(repoFacultadFalso);
++
++Console.WriteLine("\n== v2 · Prueba de capas: ServicioFacultad + repositorio falso en memoria ==\n");
++
++var (datosFac, totalFac) = await servicioFacultad.ListarAsync(null);
++Afirmar("Listar() devuelve las 2 facultades semilla", totalFac == 2 && datosFac.Count == 2);
++
++await AfirmarLanza<ArgumentException>(
++    "Listar(0) lanza ArgumentException", () => servicioFacultad.ListarAsync(0));
++
++await AfirmarLanza<ArgumentException>(
++    "POST con fk_facultad_padre == id_facultad lanza ArgumentException (400)",
++    () => servicioFacultad.CrearAsync(new FacultadCrear { IdFacultad = "X", Nombre = "X", FkFacultadPadre = "X" }));
++Afirmar("...y la autorreferencia NO llegó al repositorio", repoFacultadFalso.Inserciones == 0);
++
++await servicioFacultad.CrearAsync(new FacultadCrear { IdFacultad = "F_ING", Nombre = "Ingenierias", FkFacultadPadre = "USB" });
++var facCreada = await servicioFacultad.ObtenerAsync("F_ING");
++Afirmar("Crear() inserta con padre y activo = true por defecto",
++    facCreada.FkFacultadPadre == "USB" && facCreada.Activo);
++
++await AfirmarLanza<ArgumentException>(
++    "PUT con padre == id de la URL lanza ArgumentException",
++    () => servicioFacultad.ReemplazarAsync("F_ING", new FacultadReemplazo { Nombre = "Ing", FkFacultadPadre = "F_ING", Activo = true }));
++await AfirmarLanza<ArgumentException>(
++    "PATCH con padre == id de la URL lanza ArgumentException",
++    () => servicioFacultad.ActualizarAsync("F_ING", new FacultadActualizar { FkFacultadPadre = "F_ING" }));
++
++int filasPutFac = await servicioFacultad.ReemplazarAsync("F_ING", new FacultadReemplazo { Nombre = "Ingenierías", Activo = false });
++var trasPutFac = await servicioFacultad.ObtenerAsync("F_ING");
++Afirmar("PUT sin padre deja fk_facultad_padre en null (reemplazo completo)",
++    filasPutFac == 1 && trasPutFac.FkFacultadPadre is null && !trasPutFac.Activo);
++
++int filasPatchFac = await servicioFacultad.ActualizarAsync("F_ING", new FacultadActualizar { FkFacultadPadre = "USB" });
++var trasPatchFac = await servicioFacultad.ObtenerAsync("F_ING");
++Afirmar("PATCH cambia solo el padre y deja 'nombre' igual",
++    filasPatchFac == 1 && trasPatchFac.FkFacultadPadre == "USB" && trasPatchFac.Nombre == "Ingenierías");
++
++await AfirmarLanza<ArgumentException>(
++    "PATCH sin campos lanza ArgumentException",
++    () => servicioFacultad.ActualizarAsync("F_ING", new FacultadActualizar()));
++
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "Obtener(\"NO_VA\") lanza NoEncontradoExcepcion", () => servicioFacultad.ObtenerAsync("NO_VA"));
++
++Afirmar("DELETE elimina 1 fila", await servicioFacultad.EliminarAsync("F_ING") == 1);
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioFacultad.EliminarAsync("F_ING"));
++
++// ============================================================================
++//  v2 · Prueba de capas: ServicioDependencia + repositorio falso
++// ============================================================================
++var repoDependenciaFalso = new RepositorioDependenciaFalso();
++var servicioDependencia = new ServicioDependencia(repoDependenciaFalso);
++
++Console.WriteLine("\n== v2 · Prueba de capas: ServicioDependencia + repositorio falso en memoria ==\n");
++
++var (datosDep, totalDep) = await servicioDependencia.ListarAsync(null);
++Afirmar("Listar() devuelve las 2 dependencias raíz semilla", totalDep == 2 && datosDep.Count == 2);
++
++await AfirmarLanza<ArgumentException>(
++    "POST con fk_dependencia_padre == id_dependencia lanza ArgumentException (400)",
++    () => servicioDependencia.CrearAsync(new DependenciaCrear { IdDependencia = "Y", Nombre = "Y", FkDependenciaPadre = "Y" }));
++Afirmar("...y la autorreferencia NO llegó al repositorio", repoDependenciaFalso.Inserciones == 0);
++
++await servicioDependencia.CrearAsync(new DependenciaCrear { IdDependencia = "PASTORAL", Nombre = "Pastoral", FkDependenciaPadre = "BIENESTAR" });
++Afirmar("Crear() inserta la hija con su padre",
++    (await servicioDependencia.ObtenerAsync("PASTORAL")).FkDependenciaPadre == "BIENESTAR");
++
++await AfirmarLanza<ArgumentException>(
++    "PATCH con padre == id de la URL lanza ArgumentException",
++    () => servicioDependencia.ActualizarAsync("PASTORAL", new DependenciaActualizar { FkDependenciaPadre = "PASTORAL" }));
++
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "PUT a \"NO_VA\" lanza NoEncontradoExcepcion",
++    () => servicioDependencia.ReemplazarAsync("NO_VA", new DependenciaReemplazo { Nombre = "N", Activo = true }));
++
++Afirmar("DELETE elimina 1 fila", await servicioDependencia.EliminarAsync("PASTORAL") == 1);
++
+ // --------------------------------------------------------------------------
+ //  Resultado final -> código de salida del proceso.
+ // --------------------------------------------------------------------------
+@@ -1004,3 +1152,184 @@ class RepositorioTipoEventoFalso : IRepositorioTipoEvento
+     public Task<int> EliminarAsync(string idTipoEvento) =>
+         Task.FromResult(_tabla.Remove(idTipoEvento) ? 1 : 0);
+ }
++
++
++// ==========================================================================
++//  Repositorio FALSO de 'TipoPregunta' (cierre de la v1). NO valida la regla
++//  "un solo destino": es de negocio y la prueba verifica justo eso.
++// ==========================================================================
++class RepositorioTipoPreguntaFalso : IRepositorioTipoPregunta
++{
++    private readonly Dictionary<string, TipoPregunta> _tabla = new();
++
++    public RepositorioTipoPreguntaFalso()
++    {
++        _tabla["ESCALA"] = new TipoPregunta { IdTipoPregunta = "ESCALA", Nombre = "Escala", GuardaNumero = true };
++        _tabla["ABIERTA"] = new TipoPregunta { IdTipoPregunta = "ABIERTA", Nombre = "Abierta", GuardaTexto = true };
++    }
++
++    public Task<List<TipoPregunta>> ObtenerTodosAsync(int limite) =>
++        Task.FromResult(_tabla.Values.OrderBy(t => t.IdTipoPregunta).Take(limite).ToList());
++
++    public Task<TipoPregunta?> ObtenerPorIdAsync(string idTipoPregunta) =>
++        Task.FromResult(_tabla.TryGetValue(idTipoPregunta, out var tipo) ? tipo : null);
++
++    public Task CrearAsync(TipoPregunta tipoPregunta)
++    {
++        if (_tabla.ContainsKey(tipoPregunta.IdTipoPregunta))
++            throw new InvalidOperationException("id_tipo_pregunta duplicado (simulado).");
++        _tabla[tipoPregunta.IdTipoPregunta] = tipoPregunta;
++        return Task.CompletedTask;
++    }
++
++    public Task<int> ActualizarAsync(string idTipoPregunta, Dictionary<string, object?> datos)
++    {
++        if (!_tabla.TryGetValue(idTipoPregunta, out var tipo))
++            return Task.FromResult(0);
++
++        if (datos.TryGetValue("nombre", out var n)) tipo.Nombre = (string)n!;
++        if (datos.TryGetValue("guarda_numero", out var gn)) tipo.GuardaNumero = (bool)gn!;
++        if (datos.TryGetValue("guarda_texto", out var gt)) tipo.GuardaTexto = (bool)gt!;
++        if (datos.TryGetValue("guarda_opcion", out var go)) tipo.GuardaOpcion = (bool)go!;
++        return Task.FromResult(1);
++    }
++
++    public Task<int> EliminarAsync(string idTipoPregunta) =>
++        Task.FromResult(_tabla.Remove(idTipoPregunta) ? 1 : 0);
++}
++
++// ==========================================================================
++//  Repositorio FALSO de 'TipoVinculacion' (cierre de la v1).
++// ==========================================================================
++class RepositorioTipoVinculacionFalso : IRepositorioTipoVinculacion
++{
++    private readonly Dictionary<string, TipoVinculacion> _tabla = new();
++
++    public RepositorioTipoVinculacionFalso()
++    {
++        _tabla["ESTUDIANTE"] = new TipoVinculacion { IdTipoVinculacion = "ESTUDIANTE", Nombre = "Estudiante", EsInterno = true };
++        _tabla["EXTERNO"] = new TipoVinculacion { IdTipoVinculacion = "EXTERNO", Nombre = "Externo", EsInterno = false, ExigePrograma = false };
++    }
++
++    public Task<List<TipoVinculacion>> ObtenerTodosAsync(int limite) =>
++        Task.FromResult(_tabla.Values.OrderBy(t => t.IdTipoVinculacion).Take(limite).ToList());
++
++    public Task<TipoVinculacion?> ObtenerPorIdAsync(string idTipoVinculacion) =>
++        Task.FromResult(_tabla.TryGetValue(idTipoVinculacion, out var tipo) ? tipo : null);
++
++    public Task CrearAsync(TipoVinculacion tipoVinculacion)
++    {
++        if (_tabla.ContainsKey(tipoVinculacion.IdTipoVinculacion))
++            throw new InvalidOperationException("id_tipo_vinculacion duplicado (simulado).");
++        _tabla[tipoVinculacion.IdTipoVinculacion] = tipoVinculacion;
++        return Task.CompletedTask;
++    }
++
++    public Task<int> ActualizarAsync(string idTipoVinculacion, Dictionary<string, object?> datos)
++    {
++        if (!_tabla.TryGetValue(idTipoVinculacion, out var tipo))
++            return Task.FromResult(0);
++
++        if (datos.TryGetValue("nombre", out var n)) tipo.Nombre = (string)n!;
++        if (datos.TryGetValue("es_interno", out var ei)) tipo.EsInterno = (bool)ei!;
++        if (datos.TryGetValue("exige_programa", out var ep)) tipo.ExigePrograma = (bool)ep!;
++        if (datos.TryGetValue("activo", out var a)) tipo.Activo = (bool)a!;
++        return Task.FromResult(1);
++    }
++
++    public Task<int> EliminarAsync(string idTipoVinculacion) =>
++        Task.FromResult(_tabla.Remove(idTipoVinculacion) ? 1 : 0);
++}
++
++// ==========================================================================
++//  v2 · Repositorio FALSO de 'Facultad'. Cuenta las inserciones para poder
++//  comprobar que una autorreferencia se detuvo en el SERVICIO (nunca llegó
++//  aquí). NO simula la FK del padre: eso es trabajo del motor real.
++// ==========================================================================
++class RepositorioFacultadFalso : IRepositorioFacultad
++{
++    private readonly Dictionary<string, Facultad> _tabla = new();
++
++    /// <summary>Cuántas veces se llamó a CrearAsync.</summary>
++    public int Inserciones { get; private set; }
++
++    public RepositorioFacultadFalso()
++    {
++        _tabla["USB"] = new Facultad { IdFacultad = "USB", Nombre = "Universidad de San Buenaventura" };
++        _tabla["F_OTRA"] = new Facultad { IdFacultad = "F_OTRA", Nombre = "Otra", FkFacultadPadre = "USB" };
++    }
++
++    public Task<List<Facultad>> ObtenerTodosAsync(int limite) =>
++        Task.FromResult(_tabla.Values.OrderBy(f => f.IdFacultad).Take(limite).ToList());
++
++    public Task<Facultad?> ObtenerPorIdAsync(string idFacultad) =>
++        Task.FromResult(_tabla.TryGetValue(idFacultad, out var facultad) ? facultad : null);
++
++    public Task CrearAsync(Facultad facultad)
++    {
++        Inserciones++;
++        if (_tabla.ContainsKey(facultad.IdFacultad))
++            throw new InvalidOperationException("id_facultad duplicado (simulado).");
++        _tabla[facultad.IdFacultad] = facultad;
++        return Task.CompletedTask;
++    }
++
++    public Task<int> ActualizarAsync(string idFacultad, Dictionary<string, object?> datos)
++    {
++        if (!_tabla.TryGetValue(idFacultad, out var facultad))
++            return Task.FromResult(0);
++
++        if (datos.TryGetValue("nombre", out var n)) facultad.Nombre = (string)n!;
++        if (datos.TryGetValue("fk_facultad_padre", out var p)) facultad.FkFacultadPadre = (string?)p;
++        if (datos.TryGetValue("activo", out var a)) facultad.Activo = (bool)a!;
++        return Task.FromResult(1);
++    }
++
++    public Task<int> EliminarAsync(string idFacultad) =>
++        Task.FromResult(_tabla.Remove(idFacultad) ? 1 : 0);
++}
++
++// ==========================================================================
++//  v2 · Repositorio FALSO de 'Dependencia'. Mismo patrón que el de Facultad.
++// ==========================================================================
++class RepositorioDependenciaFalso : IRepositorioDependencia
++{
++    private readonly Dictionary<string, Dependencia> _tabla = new();
++
++    public int Inserciones { get; private set; }
++
++    public RepositorioDependenciaFalso()
++    {
++        _tabla["VICE_ACAD"] = new Dependencia { IdDependencia = "VICE_ACAD", Nombre = "Vicerrectoria Academica" };
++        _tabla["BIENESTAR"] = new Dependencia { IdDependencia = "BIENESTAR", Nombre = "Bienestar Institucional" };
++    }
++
++    public Task<List<Dependencia>> ObtenerTodosAsync(int limite) =>
++        Task.FromResult(_tabla.Values.OrderBy(d => d.IdDependencia).Take(limite).ToList());
++
++    public Task<Dependencia?> ObtenerPorIdAsync(string idDependencia) =>
++        Task.FromResult(_tabla.TryGetValue(idDependencia, out var dependencia) ? dependencia : null);
++
++    public Task CrearAsync(Dependencia dependencia)
++    {
++        Inserciones++;
++        if (_tabla.ContainsKey(dependencia.IdDependencia))
++            throw new InvalidOperationException("id_dependencia duplicado (simulado).");
++        _tabla[dependencia.IdDependencia] = dependencia;
++        return Task.CompletedTask;
++    }
++
++    public Task<int> ActualizarAsync(string idDependencia, Dictionary<string, object?> datos)
++    {
++        if (!_tabla.TryGetValue(idDependencia, out var dependencia))
++            return Task.FromResult(0);
++
++        if (datos.TryGetValue("nombre", out var n)) dependencia.Nombre = (string)n!;
++        if (datos.TryGetValue("fk_dependencia_padre", out var p)) dependencia.FkDependenciaPadre = (string?)p;
++        if (datos.TryGetValue("activo", out var a)) dependencia.Activo = (bool)a!;
++        return Task.FromResult(1);
++    }
++
++    public Task<int> EliminarAsync(string idDependencia) =>
++        Task.FromResult(_tabla.Remove(idDependencia) ? 1 : 0);
++}
+diff --git a/docs/spec_kit/Versiones/version1/8_tasks.md b/docs/spec_kit/Versiones/version1/8_tasks.md
+index f8ccd8c..01141b7 100644
+--- a/docs/spec_kit/Versiones/version1/8_tasks.md
++++ b/docs/spec_kit/Versiones/version1/8_tasks.md
+@@ -10,10 +10,7 @@
+ >
+ > **Nota de alcance (v1):** sin segundo motor, sin cambio de proveedor —
+ > un solo servicio `api` (C#/ASP.NET Core) + PostgreSQL. El código hoy
+-> solo toca `Sede`, `Encuesta`, `EstadoProceso` y `Modalidad`;
+-> `PeriodoAcademico`, `Rol`, `TipoDocumento`, `TipoEvento`,
+-> `TipoPregunta` y `TipoVinculacion` ya están especificadas (Fase 12,
+-> pendiente) para el próximo commit. Ya existe un frontend
++> cubre las **10 tablas sin FK** (Fases 9-12, cerradas al iniciar la v2). Ya existe un frontend
+ > (`front_catedras/`, Flask) — Fase 13.
+ 
+ ---
+@@ -151,35 +148,38 @@ solo sus filas de siembra tras las pruebas.
+ **Verificado:** `dotnet run --project pruebas` → **45 pasadas, 0
+ fallidas**, código de salida 0.
+ 
+-## Fase 12 — La aplicación (capas de las 6 tablas sin FK restantes) ⏳
++## Fase 12 — La aplicación (capas de las 6 tablas sin FK restantes) ✅
+ > Especificadas en RF26-RF61 de [2_spec.md](2_spec.md) y §2.5-2.10 de
+-> [5_data_model.md](5_data_model.md); **nada de esto está creado
+-> todavía** — es la guía para el próximo commit de v1.
++> [5_data_model.md](5_data_model.md). **Cerrada al iniciar la v2:** el
++> código de las 6 entidades ya existía, pero `Program.cs` no registraba
++> `TipoPregunta` ni `TipoVinculacion` (sus endpoints respondían 500) y
++> `pruebas/` no las cubría. Ambas cosas se corrigieron en el primer
++> commit de la v2.
+ 
+-- [ ] `Modelos/PeriodoAcademico.cs`, `Rol.cs`, `TipoDocumento.cs`,
++- [x] `Modelos/PeriodoAcademico.cs`, `Rol.cs`, `TipoDocumento.cs`,
+       `TipoEvento.cs`, `TipoPregunta.cs`, `TipoVinculacion.cs`.
+-- [ ] Las 3 peticiones por entidad (`...Crear`, `...Reemplazo`,
++- [x] Las 3 peticiones por entidad (`...Crear`, `...Reemplazo`,
+       `...Actualizar`) — `PeriodoAcademicoCrear` valida el formato de
+       `id_periodo` con `[RegularExpression("^[0-9]{4}-[1-3]$")]`;
+       `TipoEventoCrear` usa `[StringLength(4, MinimumLength = 4)]`
+       (longitud fija, no "hasta 4").
+-- [ ] Repositorios (`IRepositorioXxx` + `RepositorioXxxPostgres`) para
++- [x] Repositorios (`IRepositorioXxx` + `RepositorioXxxPostgres`) para
+       las 6. `RepositorioPeriodoAcademicoPostgres` reutiliza
+       `ManejadorTipoDateOnly.cs` (ya existe) para `fecha_ini`/`fecha_fin`.
+-- [ ] Servicios: `ServicioPeriodoAcademico` valida `fecha_fin > fecha_ini`
++- [x] Servicios: `ServicioPeriodoAcademico` valida `fecha_fin > fecha_ini`
+       (mismo criterio que `Encuesta`, §4.8 de [3_plan.md](3_plan.md));
+       `ServicioTipoPregunta` valida que exactamente una de
+       `guarda_numero`/`guarda_texto`/`guarda_opcion` sea `true`
+       (extensión a TRES campos de la misma regla).
+-- [ ] Controllers (6 endpoints cada uno, mismo patrón que
++- [x] Controllers (6 endpoints cada uno, mismo patrón que
+       `SedeController`).
+-- [ ] `Program.cs` — registrar las 6 parejas interfaz/implementación
++- [x] `Program.cs` — registrar las 6 parejas interfaz/implementación
+       nuevas en el ensamblador.
+-- [ ] Extender `pruebas/Programa.cs` con un repositorio FALSO y sus
++- [x] Extender `pruebas/Programa.cs` con un repositorio FALSO y sus
+       verificaciones por cada una de las 6 (mismo patrón que
+       `RepositorioModalidadFalso`).
+ 
+-**Verificar (cuando se implemente):** los 6 recursos aparecen en
++**Verificado** (contra PostgreSQL real): los 6 recursos aparecen en
+ `/swagger`; `POST /api/PeriodoAcademico` con `fecha_fin <= fecha_ini` →
+ 400; `POST /api/TipoPregunta` con las tres columnas en `false` (o dos en
+ `true`) → 400; `POST /api/TipoVinculacion` sin `es_interno` → 422 (es
+diff --git a/docs/spec_kit/Versiones/version2/2_spec.md b/docs/spec_kit/Versiones/version2/2_spec.md
+new file mode 100644
+index 0000000..adf1d32
+--- /dev/null
++++ b/docs/spec_kit/Versiones/version2/2_spec.md
+@@ -0,0 +1,385 @@
++# Especificación — Versión 2 del proyecto: estructura académica y catálogo de cátedras
++
++> **Versión 2** del desarrollo incremental. Rige la constitución del
++> proyecto: [../1_constitution.md](../1_constitution.md). Mapa completo
++> de versiones: [../versiones/0_mapa_versiones.md](../versiones/0_mapa_versiones.md).
++>
++> En v2 el sistema ES esto: la API agrega las **5 tablas** cuyas foreign
++> keys salientes solo apuntan a tablas que ya existen en la API (las 10
++> de la v1) o a sí mismas: `facultad`, `dependencia`,
++> `programa_academico`, `alias_programa` y `catedra`. Con esto queda
++> expuesto un **catálogo de cátedras real**, que el front consume.
++>
++> **Frontend:** `front_catedras/` (Flask) recibe en esta versión el
++> diseño definitivo de plantilla (base, navbar, CSS, footer) y dos
++> páginas públicas nuevas (`catedras.html`, `detalle_catedra.html`); el
++> CRUD de administración se extiende a las 5 tablas nuevas, con el mismo
++> patrón que ya usa para las 10 de la v1.
++>
++> | Documento de esta versión | Contenido |
++> |---|---|
++> | **2_spec.md** (este) | QUÉ construir en v2 y sus criterios de aceptación |
++> | [3_plan.md](3_plan.md) | CÓMO: capas de la API y plan de integración del front |
++> | [4_research.md](4_research.md) | Decisiones y alternativas *(lectura opcional)* |
++> | [5_data_model.md](5_data_model.md) | Las 5 tablas de esta versión, documentadas |
++> | [6_contracts.md](6_contracts.md) | Contratos de integración (sin cambios de puertos/healthchecks respecto a v1) |
++> | [7_quickstart.md](7_quickstart.md) | Arranque y smoke test de v2 |
++> | [8_tasks.md](8_tasks.md) | Orden de construcción |
++
++---
++
++## 1. Propósito de la v2
++
++La v1 dejó el esqueleto arquitectónico validado con 10 tablas sin ninguna
++relación entre sí. La v2 agrega la primera **cadena de foreign keys**:
++
++```
++facultad (↺ jerarquía propia)
++   ↑
++programa_academico ── alias_programa
++
++dependencia (↺ jerarquía propia)
++   ↑
++catedra ──→ tipo_evento (v1, ya existe)
++```
++
++Esto obliga a resolver, por primera vez en el proyecto, tres problemas
++nuevos que la v1 no tenía:
++
++1. **Autorreferencia** (`facultad`/`dependencia` apuntan a sí mismas):
++   el servicio debe impedir que una fila sea su propio padre, además de
++   lo que ya vigila el `CHECK` de la BD.
++2. **FK hacia otra tabla de la misma versión** (`programa_academico →
++   facultad`, `alias_programa → programa_academico`, `catedra →
++   dependencia`): un id que no existe en la tabla padre lo rechaza el
++   motor (`500`), igual que un duplicado — la API no revalida lo que la
++   BD ya garantiza.
++3. **Columna generada por la BD** (`catedra.nombre_asis`, `GENERATED
++   ALWAYS AS (left(nombre, 30)) STORED`): es de solo lectura; no
++   aparece en ninguna petición, solo en la respuesta.
++
++Al terminar la v2, el catálogo de cátedras (5502 filas reales, ya
++sembradas por el script de la v1) es consultable por API y navegable
++desde el front.
++
++## 2. Alcance
++
++**Incluye:**
++- CRUD completo de `Facultad`, `Dependencia`, `ProgramaAcademico`,
++  `AliasPrograma` y `Catedra`, mismo patrón de 5 verbos que la v1
++  (`GET` lista, `GET/{id}`, `POST`, `PUT`, `PATCH`, `DELETE`).
++- Validación de autorreferencia en `Facultad` y `Dependencia` (servicio).
++- `Catedra.NombreAsis` expuesto en las respuestas, nunca aceptado en
++  una petición.
++- Frontend: diseño de plantilla aplicado a `front_catedras/`
++  (correcciones del §4) y catálogo público de cátedras
++  (`catedras.html` con buscador/filtro simple, `detalle_catedra.html`).
++  El CRUD de administración existente se extiende a las 5 tablas nuevas.
++
++**No incluye (es de otra versión):**
++- `sesion`, `ponencia` y cualquier otra tabla con FK hacia `catedra`
++  — v4 (ver mapa de versiones).
++- `asistente` y las 6 tablas de carga — v3.
++- Importar o depurar los datos de `alias_programa` más allá del CRUD
++  simple; la tabla ya trae 3 filas de ejemplo y es, por diseño, una
++  tabla viva que se llena con el tiempo (comentario del propio esquema).
++- Un árbol interactivo (plegable) para `facultad`/`dependencia` en el
++  front; el listado y el formulario muestran el padre, pero la
++  navegación jerárquica visual queda para cuando haya una necesidad
++  concreta que la pida (Artículo 1, YAGNI).
++
++## 3. Requisitos funcionales — API
++
++> Mismo formato de sobre que la v1 (Artículo 8): lecturas
++> `{tabla, limite, total, datos}`; errores `{estado, mensaje, detalle}`
++> (+ `errores:[…]` en el 422). `POST`/`PUT` sin un campo obligatorio →
++> 422; valor que no existe en la tabla referenciada → 500 (violación de
++> FK, igual que un duplicado); `ArgumentException` del servicio → 400;
++> no encontrado → 404.
++
++### Facultad
++
++> **Nota de diseño (autorreferencia):** `fk_facultad_padre` es opcional
++> (la raíz `USB` no tiene padre). El `CHECK
++> (fk_facultad_padre <> id_facultad)` de la BD impide que una fila sea
++> su propio padre, pero solo lo nota si el cliente repite el mismo
++> `id_facultad` que ya existe — en un `POST` nuevo eso es imposible
++> porque el id todavía no existe. El servicio valida explícitamente,
++> antes del `INSERT`, que `fk_facultad_padre` (si llega) sea distinto de
++> `id_facultad` del mismo body, para dar un `400` claro en vez de
++> depender del `CHECK` en un caso donde nunca se dispararía por sí solo.
++> Un `fk_facultad_padre` que no exista como facultad → 500 (viola la FK).
++
++- **RF62 — Listar** (`GET /api/Facultad`): 200
++  `{tabla, limite, total, datos}`; `limite` opcional; vacía → 204.
++- **RF63 — Obtener por código** (`GET /api/Facultad/{idFacultad}`): 200;
++  inexistente → 404.
++- **RF64 — Crear** (`POST /api/Facultad` con **FacultadCrear**):
++  `id_facultad` obligatorio (1–10), `nombre` obligatorio (1–120),
++  `fk_facultad_padre` opcional, `activo` opcional (por defecto `true`).
++  Autorreferencia → 400. Duplicado (`id` o `uq_facultad_nombre`) → 500.
++  `fk_facultad_padre` inexistente → 500.
++- **RF65 — Reemplazar** (`PUT /api/Facultad/{idFacultad}` con
++  **FacultadReemplazo**): `nombre` y `activo` obligatorios;
++  `fk_facultad_padre` se envía siempre, aunque sea `null` (reemplazo
++  completo). Autorreferencia → 400; inexistente → 404.
++- **RF66 — Actualizar parcialmente** (`PATCH /api/Facultad/{idFacultad}`
++  con **FacultadActualizar**): todo opcional. Autorreferencia (si llega
++  `fk_facultad_padre`) → 400. Body vacío → 400; inexistente → 404.
++- **RF67 — Eliminar** (`DELETE /api/Facultad/{idFacultad}`):
++  `filasEliminadas`; inexistente → 404. **No falla por tener
++  dependientes**: tanto `fk_facultad_padre` (en facultades hijas) como
++  `fk_facultad` (en `ProgramaAcademico`) son `ON DELETE SET NULL` en el
++  esquema — al borrar una facultad, sus hijas y los programas que la
++  tenían asignada quedan con ese campo en `null`, no se bloquea el
++  borrado ni se arrastran filas.
++
++### Dependencia
++
++> Misma forma y misma regla de autorreferencia que `Facultad` —
++> `fk_dependencia_padre <> id_dependencia`, validada en el servicio
++> antes del `INSERT`/`UPDATE`.
++
++- **RF68 — Listar** (`GET /api/Dependencia`): 200; vacía → 204.
++- **RF69 — Obtener por código** (`GET /api/Dependencia/{idDependencia}`):
++  200; inexistente → 404.
++- **RF70 — Crear** (`POST /api/Dependencia` con **DependenciaCrear**):
++  `id_dependencia` obligatorio (1–15), `nombre` obligatorio (1–120),
++  `fk_dependencia_padre` opcional, `activo` opcional (por defecto
++  `true`). Autorreferencia → 400. Duplicado → 500. Padre inexistente →
++  500.
++- **RF71 — Reemplazar** (`PUT .../{idDependencia}` con
++  **DependenciaReemplazo**): `nombre` y `activo` obligatorios;
++  `fk_dependencia_padre` siempre presente (o `null`). Autorreferencia →
++  400; inexistente → 404.
++- **RF72 — Actualizar parcialmente** (`PATCH .../{idDependencia}` con
++  **DependenciaActualizar**): todo opcional. Body vacío → 400;
++  inexistente → 404.
++- **RF73 — Eliminar** (`DELETE .../{idDependencia}`): `filasEliminadas`;
++  inexistente → 404. Mismo criterio que `Facultad`: `fk_dependencia_padre`
++  y `Catedra.fk_dependencia` son `ON DELETE SET NULL` — borrar una
++  dependencia con hijas o con cátedras asociadas no falla, las deja con
++  ese campo en `null`.
++
++### ProgramaAcademico
++
++> **Nota de diseño (formato del código):** `codigo` es `VARCHAR(5)` con
++> `CHECK (codigo ~ '^[A-Z][0-9A-Z]{3,4}$')` — una letra mayúscula
++> seguida de 3 o 4 alfanuméricos (p. ej. `M0286`). Es una comprobación de
++> **forma**, igual que `id_periodo` de `PeriodoAcademico` (v1): se valida
++> en la PETICIÓN con `[RegularExpression]`, no en el servicio.
++>
++> **Nota de diseño (lista cerrada):** `nivel` acepta solo `PREGRADO`,
++> `ESPECIALIZACION`, `MAESTRIA`, `DOCTORADO`, `EDUCACION_CONTINUA` u
++> `OTRO` (`CHECK` del esquema) — mismo patrón que `canal_difusion` de
++> `Modalidad` (v1): la petición valida con `[RegularExpression]` sobre
++> la lista exacta, no con un `enum` de C# (la BD no usa un tipo `ENUM`,
++> así que el valor viaja como texto).
++
++- **RF74 — Listar** (`GET /api/ProgramaAcademico`): 200; vacía → 204.
++- **RF75 — Obtener por código** (`GET /api/ProgramaAcademico/{codigo}`):
++  200; inexistente → 404.
++- **RF76 — Crear** (`POST /api/ProgramaAcademico` con
++  **ProgramaAcademicoCrear**): `codigo` obligatorio (formato validado),
++  `nombre` obligatorio (1–150), `fk_facultad` opcional, `nivel` opcional
++  (por defecto `PREGRADO`, validado contra la lista si llega), `activo`
++  opcional (por defecto `true`). `codigo` con formato inválido → 422;
++  `nivel` fuera de la lista → 422; duplicado → 500; `fk_facultad`
++  inexistente → 500.
++- **RF77 — Reemplazar** (`PUT .../{codigo}` con
++  **ProgramaAcademicoReemplazo**): `nombre`, `nivel` y `activo`
++  obligatorios; `fk_facultad` siempre presente (o `null`). Inexistente →
++  404.
++- **RF78 — Actualizar parcialmente** (`PATCH .../{codigo}` con
++  **ProgramaAcademicoActualizar**): todo opcional. Body vacío → 400;
++  inexistente → 404.
++- **RF79 — Eliminar** (`DELETE .../{codigo}`): `filasEliminadas`;
++  inexistente → 404. **Dos FK entrantes con reglas distintas:**
++  `alias_programa.fk_programa` es `ON DELETE CASCADE` (borrar el
++  programa borraría también sus alias, sin aviso), pero
++  `programa_asistente.fk_programa` —de la v3, aunque la tabla ya viene
++  sembrada por el script de la v1— es `ON DELETE RESTRICT`. Postgres
++  evalúa ambas FK en la misma sentencia: si el programa tiene algún
++  `programa_asistente`, el `DELETE` completo falla con 500 **antes** de
++  que la cascada hacia `alias_programa` llegue a ejecutarse. En la
++  práctica, con los datos de ejemplo, casi ningún `ProgramaAcademico` se
++  puede borrar hoy por esta razón — ver el criterio de aceptación 7.
++
++### AliasPrograma
++
++> **Nota de diseño (tabla de solo-anexo):** `creado_en` es
++> `TIMESTAMPTZ DEFAULT now()` — la BD la asigna; **no se acepta en
++> ninguna petición**, ni siquiera opcional (igual criterio que
++> `id_alias`, que es `IDENTITY`). Esta tabla es, por el comentario del
++> propio esquema, un registro histórico de texto libre: no tiene verbo
++> `PUT`/`PATCH` de actualización de contenido en v2 — si un alias quedó
++> mal escrito, se borra y se crea de nuevo (mantiene `creado_en`
++> honesto). Esto es una restricción deliberada, no un olvido.
++
++- **RF80 — Listar** (`GET /api/AliasPrograma`): 200; vacía → 204.
++- **RF81 — Obtener por id** (`GET /api/AliasPrograma/{idAlias}`): 200;
++  inexistente → 404.
++- **RF82 — Crear** (`POST /api/AliasPrograma` con
++  **AliasProgramaCrear**): `texto_normalizado` obligatorio (1–200,
++  único), `fk_programa` obligatorio, `origen` opcional (por defecto
++  `FORMULARIO`). Duplicado de `texto_normalizado` → 500; `fk_programa`
++  inexistente → 500. Responde el `id_alias` generado por la BD.
++- **RF83 — Eliminar** (`DELETE /api/AliasPrograma/{idAlias}`):
++  `filasEliminadas`; inexistente → 404.
++
++### Catedra
++
++> **Nota de diseño (columna generada):** `nombre_asis` es `GENERATED
++> ALWAYS AS (left(nombre, 30)) STORED` — la BD la calcula a partir de
++> `nombre` en cada `INSERT`/`UPDATE`. No existe en **ninguna** de las 3
++> peticiones (`CatedraCrear`, `CatedraReemplazo`, `CatedraActualizar`);
++> sí viaja en el modelo de respuesta. Enviarla en un body no es un error
++> (el `[JsonPropertyName]` simplemente no está declarado en la
++> petición: el campo, si llega, se ignora al deserializar).
++>
++> **Nota de diseño (formato ASIS):** `id_evento_asis` es `CHAR(9)` con
++> `CHECK (id_evento_asis ~ '^[0-9]{9}$')` — 9 dígitos con ceros a la
++> izquierda (comentario del propio esquema: como entero pierde los
++> ceros y deja de servir para la carga). Se valida en la petición con
++> `[RegularExpression]`, nunca como `int`.
++>
++> **Nota de diseño (FK a dos tablas, una de otra versión):**
++> `fk_tipo_evento` referencia `tipo_evento`, que ya existe en la API
++> desde la v1 — un código que no exista ahí → 500, igual que cualquier
++> otra FK. `fk_dependencia` es **opcional** (en los datos reales, 5501
++> de las 5502 cátedras no tienen dependencia asignada todavía).
++
++- **RF84 — Listar** (`GET /api/Catedra`): 200 `{tabla, limite, total,
++  datos}`; `limite` opcional — con 5502 filas, el front SIEMPRE pagina
++  con `limite` en el catálogo público; vacía → 204.
++- **RF85 — Obtener por id** (`GET /api/Catedra/{idCatedra}`): 200;
++  inexistente → 404.
++- **RF86 — Crear** (`POST /api/Catedra` con **CatedraCrear**):
++  `id_evento_asis` obligatorio (formato validado, único), `nombre`
++  obligatorio (1–200), `fk_tipo_evento` obligatorio, `fk_dependencia`
++  opcional, `activo` opcional (por defecto `true`). Formato de
++  `id_evento_asis` inválido → 422; duplicado → 500; `fk_tipo_evento` o
++  `fk_dependencia` inexistente → 500. Responde el `id_catedra` generado
++  por la BD y el `nombre_asis` ya calculado.
++- **RF87 — Reemplazar** (`PUT .../{idCatedra}` con
++  **CatedraReemplazo**): `id_evento_asis`, `nombre`, `fk_tipo_evento` y
++  `activo` obligatorios; `fk_dependencia` siempre presente (o `null`).
++  Inexistente → 404.
++- **RF88 — Actualizar parcialmente** (`PATCH .../{idCatedra}` con
++  **CatedraActualizar**): todo opcional. Body vacío → 400; inexistente →
++  404.
++- **RF89 — Eliminar** (`DELETE .../{idCatedra}`): `filasEliminadas`;
++  inexistente → 404. **Advertencia (dato verificado, no hipotético):**
++  `sesion.fk_catedra` es `ON DELETE CASCADE`, y la BD ya trae 5714
++  sesiones sembradas desde la v1 (son de la v4, que la API todavía no
++  expone). De las 5502 cátedras de ejemplo, **5497 ya tienen al menos
++  una sesión**: borrarlas borra en cascada, sin aviso, esas sesiones
++  ocultas. Solo las cátedras con `id_catedra` 5498 a 5502 no tienen
++  ninguna. El smoke test (`7_quickstart.md`) prueba este verbo contra
++  una cátedra creada por el propio test, nunca contra una de las 5502
++  sembradas.
++
++## 4. Requisitos funcionales — Frontend
++
++> **Supuesto a confirmar:** el "diseño de plantilla" de este bloque es
++> un proyecto externo del estudiante (`Desktop/Front`, mencionado en el
++> plan de v2), que **no viene en este repositorio** y que yo no he
++> podido inspeccionar. Las tres correcciones de abajo (RF91) las doy
++> por ciertas porque las describiste tú; si al traer la plantilla real
++> alguna no aplica, se ajusta `8_tasks.md` sin tocar este documento.
++> El front *actual* (`front_catedras/`, ya con Bootstrap 5 + identidad
++> USB) sigue siendo la base sobre la que se integra.
++
++- **RF90 — Catálogo público de cátedras** (`GET /catedras`,
++  blueprint `catedras`, reemplaza el placeholder de la inicio): lista
++  paginada contra `GET /api/Catedra?limite=…`, con buscador de texto
++  libre por `nombre` (filtrado en el propio template, sin un endpoint
++  nuevo en la API) y filtro por `fk_tipo_evento`.
++- **RF91 — Detalle de cátedra** (`GET /catedras/{idCatedra}`,
++  `detalle_catedra.html`): consume `GET /api/Catedra/{id}` y, si
++  `fk_dependencia` no es nulo, el nombre de la dependencia
++  (`GET /api/Dependencia/{id}`).
++- **RF92 — Integración de la plantilla** (corrige lo heredado del
++  proyecto externo antes de fusionarlo):
++  - Completar `auth_helpers.py` (hoy vacío en la plantilla) con, como
++    mínimo, el helper que el `base.html` de la plantilla espera para
++    saber si hay sesión — en v2 siempre devuelve "sin sesión", porque
++    el login real es de la v5 (mapa de versiones).
++  - Corregir en el navbar de la plantilla los `endpoint` que no existen
++    en este proyecto, apuntándolos a los blueprints reales
++    (`catedras.inicio`, `admin.panel`, etc.).
++  - Puerto: la plantilla trae `5001` cableado; se reemplaza por el
++    puerto del front de este proyecto (hoy `5000` en `run.py`, Artículo
++    8 reserva `8142` para la API).
++- **RF93 — Quitar el respaldo a datos mock**: cualquier `try/except` en
++  `servicios/api_catedras.py` o en las rutas que, ante un error de la
++  API, sirva datos de ejemplo en vez de propagar el error — se elimina;
++  un error de la API se muestra como error en pantalla (mismo criterio
++  de "la validación es la frontera" que ya rige en el backend, RF5 de
++  la v1).
++- **RF94 — CRUD de administración de las 5 tablas nuevas**: mismo
++  patrón que las 10 de la v1 (`admin_bp`, formularios HTML que traducen
++  a PUT/DELETE). Para `Facultad` y `Dependencia`, el formulario incluye
++  un `<select>` con las filas existentes como posible padre (y la
++  opción "ninguno"). `AliasPrograma` solo tiene listar/crear/eliminar
++  (RF80-83: no hay verbo de actualización).
++
++## 5. Requisitos no funcionales
++
++Rigen los mismos RNF1-RNF6 de la v1 ([2_spec.md](../version1/2_spec.md)
++§4), sin cambios. Se añade uno nuevo, específico de v2:
++
++- **RNF7 — Columnas generadas, de solo lectura:** una columna
++  `GENERATED ALWAYS ... STORED` (hoy solo `catedra.nombre_asis`) nunca
++  se declara en una clase de `Peticiones/`; solo en el `Modelo/` de
++  respuesta. Si una versión futura agrega otra columna generada, se
++  trata igual.
++
++## 6. Criterios de aceptación
++
++1. `docker compose up -d --build` deja los 15 recursos (10 de v1 + 5 de
++   v2) respondiendo en `/swagger`.
++2. `GET /api/Facultad` devuelve 9 facultades de ejemplo, con `USB` como
++   raíz (`fk_facultad_padre: null`); un `POST` con
++   `fk_facultad_padre` igual al propio `id_facultad` → 400.
++3. `GET /api/Dependencia` devuelve 8 dependencias de ejemplo, con
++   `VICE_ACAD` y `BIENESTAR` como raíces.
++4. `GET /api/ProgramaAcademico` devuelve 105 programas; un `POST` con
++   `codigo: "m0286"` (minúscula) → 422; uno con `nivel: "TECNICO"` →
++   422 (no está en la lista cerrada).
++5. `GET /api/AliasPrograma` devuelve 3 alias de ejemplo, los tres con
++   `fk_programa: "M0286"`; un `POST` exitoso devuelve el `id_alias`
++   generado y no acepta `creado_en` en el body (si se manda, se
++   ignora).
++6. `GET /api/Catedra?limite=10` devuelve 10 de las 5502 cátedras de
++   ejemplo con `total: 5502`; `GET /api/Catedra/1` devuelve la cátedra
++   `000023636` con `nombre_asis: "PELICULA:LA MIRADA DEL AMOR"[:30]` ya
++   calculado por la BD; un `POST` con `id_evento_asis: "123"` → 422
++   (no son 9 dígitos).
++7. Integridad referencial, con comportamiento verificado contra los
++   datos de ejemplo reales (no asumido):
++   - `DELETE /api/Facultad/F_ING` → **200** (`filasEliminadas: 1`);
++     después, `GET /api/ProgramaAcademico/M0286` muestra
++     `fk_facultad: null` (`F_ING` era su única facultad).
++   - `DELETE /api/Dependencia/DESA_HUM` → **200**; es a la vez hija de
++     `BIENESTAR` y la única dependencia usada por una cátedra de
++     ejemplo — ambas quedan con el campo en `null`, no se bloquea nada.
++   - `DELETE /api/ProgramaAcademico/M0286` → **500**: tiene 58 filas en
++     `programa_asistente` (sembradas desde la v1 aunque esa tabla es de
++     la v3), y esa FK es `RESTRICT`. Sus 3 `alias_programa` NO se
++     borran (la sentencia completa se revierte).
++   - `DELETE /api/Catedra/5502` → **200**, sin efectos secundarios (es
++     una de las 5 sin sesiones asociadas). Repetir contra
++     `/api/Catedra/1` NO forma parte de este criterio — borraría una
++     sesión sembrada de la v4 (ver RF89).
++8. **Prueba de capas ampliada:** `dotnet run --project pruebas` cubre
++   las 15 entidades sin PostgreSQL (incluye la validación de
++   autorreferencia de `Facultad`/`Dependencia` con un repositorio
++   FALSO).
++9. El catálogo público (`http://localhost:5000/catedras`) muestra el
++   listado paginado y el buscador filtra por nombre sin recargar la
++   lista completa del servidor; `http://localhost:5000/catedras/1`
++   muestra el detalle de la primera cátedra de ejemplo.
++10. El panel de administración (`/admin`) muestra las 5 tarjetas
++    nuevas, con CRUD funcional de punta a punta contra Docker/PostgreSQL
++    reales, igual que las 10 de la v1.
+diff --git a/docs/spec_kit/Versiones/version2/3_plan.md b/docs/spec_kit/Versiones/version2/3_plan.md
+new file mode 100644
+index 0000000..4d22ffe
+--- /dev/null
++++ b/docs/spec_kit/Versiones/version2/3_plan.md
+@@ -0,0 +1,260 @@
++# Plan técnico — Versión 2: Facultad, Dependencia, ProgramaAcademico, AliasPrograma, Catedra + front
++
++> **Versión 2** · CÓMO construir lo especificado en [2_spec.md](2_spec.md).
++> El porqué de cada decisión: [4_research.md](4_research.md) · contratos
++> de integración: [6_contracts.md](6_contracts.md) · orden:
++> [8_tasks.md](8_tasks.md).
++
++---
++
++## 1. Stack
++
++Sin cambios respecto a la v1 ([version1/3_plan.md](../version1/3_plan.md)
++§1): C#/ASP.NET Core, Dapper sobre `Npgsql`, PostgreSQL, validación por
++petición. La v2 no agrega ningún paquete nuevo (Artículo 2: nada se
++agrega sin que una spec lo pida, y esta no lo pide).
++
++## 2. Estructura de carpetas
++
++Mismo patrón de 5 archivos por entidad que ya probó la v1, repetido para
++las 5 tablas nuevas — con dos excepciones señaladas abajo.
++
++```
++api_catedras/
++├── Modelos/
++│   ├── Facultad.cs            # 4 propiedades
++│   ├── Dependencia.cs         # 4 propiedades
++│   ├── ProgramaAcademico.cs   # 5 propiedades
++│   ├── AliasPrograma.cs       # 5 propiedades; IdAlias y CreadoEn los pone la BD
++│   └── Catedra.cs             # 8 propiedades; IdCatedra y NombreAsis los pone la BD
++├── Peticiones/
++│   ├── FacultadCrear.cs / FacultadReemplazo.cs / FacultadActualizar.cs
++│   ├── DependenciaCrear.cs / DependenciaReemplazo.cs / DependenciaActualizar.cs
++│   ├── ProgramaAcademicoCrear.cs / ProgramaAcademicoReemplazo.cs / ProgramaAcademicoActualizar.cs
++│   ├── AliasProgramaCrear.cs           # ⚠️ ÚNICA petición de AliasPrograma — no hay Reemplazo ni Actualizar (§4.6)
++│   └── CatedraCrear.cs / CatedraReemplazo.cs / CatedraActualizar.cs   # ninguna de las 3 incluye NombreAsis
++├── Controllers/
++│   ├── FacultadController.cs
++│   ├── DependenciaController.cs
++│   ├── ProgramaAcademicoController.cs
++│   ├── AliasProgramaController.cs      # solo 4 endpoints: GET lista, GET/{id}, POST, DELETE
++│   └── CatedraController.cs
++├── Servicios/
++│   ├── IServicioFacultad.cs / ServicioFacultad.cs      # valida autorreferencia (§4.2)
++│   ├── IServicioDependencia.cs / ServicioDependencia.cs # misma validación
++│   ├── IServicioProgramaAcademico.cs / ServicioProgramaAcademico.cs
++│   ├── IServicioAliasPrograma.cs / ServicioAliasPrograma.cs
++│   └── IServicioCatedra.cs / ServicioCatedra.cs
++└── Repositorios/
++    ├── IRepositorioFacultad.cs / RepositorioFacultadPostgres.cs
++    ├── IRepositorioDependencia.cs / RepositorioDependenciaPostgres.cs
++    ├── IRepositorioProgramaAcademico.cs / RepositorioProgramaAcademicoPostgres.cs
++    ├── IRepositorioAliasPrograma.cs / RepositorioAliasProgramaPostgres.cs  # sin ActualizarAsync (§4.6)
++    └── IRepositorioCatedra.cs / RepositorioCatedraPostgres.cs             # CrearAsync devuelve (id, nombreAsis) (§4.3)
++```
++
++No se toca `Excepciones/NoEncontradoExcepcion.cs` ni
++`ManejadorTipoDateOnly.cs` (ninguna columna `DATE`/`DateOnly` en estas 5
++tablas) — se reutilizan tal cual.
++
++**`front_catedras/`** (fuera del alcance de `ApiCatedras`, mismo
++proyecto Flask aparte):
++
++```
++front_catedras/
++├── auth_helpers.py            # NUEVO — llega con la plantilla, se completa (§4.7)
++├── routes/
++│   ├── catedras.py            # deja de ser placeholder: catálogo + detalle (RF90-91)
++│   └── admin.py                # +5 bloques CRUD (mismo patrón que las 10 de v1)
++├── templates/
++│   ├── base.html, partials/navbar.html, partials/footer.html   # reemplazados por la plantilla (§4.7)
++│   ├── catedras.html           # NUEVO
++│   ├── detalle_catedra.html    # NUEVO
++│   └── admin/
++│       ├── facultad_form.html / facultad_lista.html
++│       ├── dependencia_form.html / dependencia_lista.html
++│       ├── programa_form.html / programa_lista.html
++│       ├── alias_form.html / alias_lista.html       # sin editar, solo crear/eliminar
++│       └── catedra_form.html / catedra_lista.html
++└── static/
++    └── (CSS/activos de la plantilla, reemplazan a estilo.css)
++```
++
++## 3. Arquitectura en capas
++
++Sin cambios respecto a la v1 ([version1/3_plan.md](../version1/3_plan.md)
++§3): controller → `IServicio` → `IRepositorio` → `RepositorioPostgres`.
++Las 5 tablas nuevas entran por el mismo molde; lo único que cambia entre
++ellas y `Sede` son las reglas de negocio concretas (§4 de aquí) y, en
++`AliasPrograma`, que el molde se usa incompleto a propósito.
++
++## 4. Decisiones de diseño clave
++
++### 4.1 FK hacia otra tabla ya expuesta: no se revalida, se deja fallar
++
++`programa_academico.fk_facultad`, `alias_programa.fk_programa` y
++`catedra.fk_tipo_evento`/`fk_dependencia` apuntan a tablas que la API ya
++expone (de esta misma versión o de la v1). El servicio **no** hace un
++`SELECT` previo para confirmar que el padre existe — sería una segunda
++fuente de verdad que puede desincronizarse. Se deja que el `INSERT` lo
++intente y, si el motor rechaza la FK, el repositorio deja subir la
++`NpgsqlException` tal cual; el controller la traduce a 500 con el
++mensaje del motor en `detalle` (mismo camino que ya existe para un
++`id_sede` duplicado en v1 — no es un camino nuevo, es el mismo aplicado
++a una FK en vez de a un `UNIQUE`).
++
++### 4.2 Autorreferencia (`Facultad`, `Dependencia`): se valida en el servicio
++
++El `CHECK` de la BD (`fk_facultad_padre <> id_facultad`) no alcanza a
++proteger un `POST`: en el momento de validar, la fila todavía no existe,
++así que compararla contra sí misma en la BD no tiene con qué comparar
++hasta DESPUÉS del `INSERT` — y para entonces ya sería tarde. El servicio
++hace la comparación en memoria, con los dos valores que ya tiene en la
++petición, antes de llamar al repositorio:
++
++```csharp
++// ServicioFacultad.CrearAsync
++if (peticion.FkFacultadPadre == peticion.IdFacultad)
++    throw new ArgumentException(
++        "Una facultad no puede ser su propio padre ('fk_facultad_padre').");
++
++// ServicioFacultad.ReemplazarAsync / ActualizarAsync — el id viene de la URL,
++// no del body, así que se compara contra el parámetro de ruta:
++if (peticion.FkFacultadPadre == idFacultad)
++    throw new ArgumentException(
++        "Una facultad no puede ser su propio padre ('fk_facultad_padre').");
++```
++
++`ServicioDependencia` repite exactamente el mismo patrón sobre
++`fk_dependencia_padre`/`id_dependencia`. El `CHECK` de la BD queda como
++**última muralla** para el caso que el servicio no cubre (un `PATCH` a
++un hijo que termine apuntándose a sí mismo por una fila ya existente que
++cambió de id — no aplica aquí porque los PK de estas tablas no se
++actualizan, pero se documenta por qué el `CHECK` sigue ahí: no estorba y
++es la red de seguridad final).
++
++### 4.3 `Catedra`: dos valores que pone la BD en el mismo `INSERT`
++
++`id_catedra` es `IDENTITY` (igual que `encuesta.id_encuesta` en v1,
++§4.7 de [version1/3_plan.md](../version1/3_plan.md)) y `nombre_asis` es
++una columna **generada** (`GENERATED ALWAYS AS (left(nombre, 30))
++STORED`). PostgreSQL permite devolver ambas con un solo `RETURNING`:
++
++```sql
++INSERT INTO catedras.catedra
++    (id_evento_asis, nombre, fk_tipo_evento, fk_dependencia, activo)
++VALUES (@IdEventoAsis, @Nombre, @FkTipoEvento, @FkDependencia, @Activo)
++RETURNING id_catedra, nombre_asis;
++```
++
++`IRepositorioCatedra.CrearAsync` devuelve una tupla
++`Task<(long IdCatedra, string NombreAsis)>` (no un `long` solo, a
++diferencia de `IRepositorioEncuesta.CrearAsync`); el servicio asigna
++ambos valores al modelo antes de devolverlo. `CatedraReemplazo` y
++`CatedraActualizar` tampoco tocan `nombre_asis`: un `UPDATE` sobre
++`nombre` hace que la BD la recalcule sola, así que esos dos verbos
++devuelven solo `filasEliminadas`/confirmación, igual que el resto —
++si el cliente necesita ver el `nombre_asis` recalculado, hace un `GET`
++después (mismo criterio que un `PATCH` de `Sede` no devuelve la fila
++completa).
++
++### 4.4 `AliasPrograma`: el molde de 5 verbos se usa incompleto, a propósito
++
++Por diseño (RF80-83 de [2_spec.md](2_spec.md)), esta tabla no tiene
++`PUT` ni `PATCH`. Eso se refleja en la interfaz, no se simula:
++
++```csharp
++public interface IRepositorioAliasPrograma
++{
++    Task<List<AliasPrograma>> ObtenerTodosAsync(int limite);
++    Task<AliasPrograma?> ObtenerPorIdAsync(long idAlias);
++    Task<long> CrearAsync(AliasPrograma alias);   // RETURNING id_alias, creado_en
++    Task<int> EliminarAsync(long idAlias);
++}
++```
++
++No existe `ActualizarAsync`: `IServicioAliasPrograma` tampoco lo
++declara, y `AliasProgramaController` no tiene métodos `[HttpPut]` ni
++`[HttpPatch]`. Esto es deliberado (Artículo 1, YAGNI) y no una omisión:
++agregar esos verbos sin que una spec los pida sería anticipar.
++
++`creado_en` sigue el mismo criterio que `id_alias`: la BD la asigna
++(`DEFAULT now()`), el repositorio la lee con el mismo `RETURNING
++id_alias, creado_en` y el modelo la expone de solo lectura.
++
++### 4.5 Listas cerradas y formato: mismo criterio que v1
++
++`ProgramaAcademico.nivel` (lista cerrada: `PREGRADO`,
++`ESPECIALIZACION`, `MAESTRIA`, `DOCTORADO`, `EDUCACION_CONTINUA`,
++`OTRO`) y los formatos de `codigo` e `id_evento_asis` se validan en la
++PETICIÓN con `[RegularExpression]`, exactamente como
++`Modalidad.canal_difusion` en v1 (§4.9 de
++[version1/3_plan.md](../version1/3_plan.md)) — no son reglas nuevas,
++son la misma regla aplicada a tres campos distintos.
++
++### 4.6 Integración de la plantilla en `front_catedras/`
++
++> Basado en lo que describiste del proyecto externo (`Desktop/Front`),
++> que no pude inspeccionar — ver el supuesto en §4 de
++> [2_spec.md](2_spec.md).
++
++Pasos, en este orden, para no dejar el front roto a medio camino:
++
++1. Copiar `base.html`, `partials/navbar.html`, `partials/footer.html` y
++   los estáticos (CSS) de la plantilla **sobre** los actuales de
++   `front_catedras/` (que hoy ya tienen Bootstrap 5 + identidad USB,
++   así que es un reemplazo de diseño, no una integración desde cero).
++2. Copiar `auth_helpers.py` a la raíz de `front_catedras/` y completar
++   SOLO lo que el `base.html` de la plantilla necesita para renderizar
++   (típicamente, si hay un usuario en sesión). En v2 esa función
++   siempre devuelve "sin sesión" — no hay `usuario` en la API todavía
++   (login real es v5, mapa de versiones).
++3. Recorrer `navbar.html` y corregir cada `url_for(...)` que apunte a
++   un endpoint que no existe en este proyecto, mapeándolo al blueprint
++   real más parecido (`catedras.inicio`, `admin.panel`, `auth.login`,
++   `ponente.inicio`, `estudiante.inicio`, `registro.inicio` — los 6 que
++   `app.py` ya registra).
++4. Reemplazar el puerto `5001` cableado en la plantilla por el que usa
++   este proyecto (`run.py`, hoy `5000`; no se cambia a `8142` porque ese
++   puerto es de `ApiCatedras`, Artículo 8).
++5. Buscar y eliminar cualquier `try/except` en
++   `servicios/api_catedras.py` o en las rutas que sirva datos de
++   ejemplo cuando la API falla (RF93) — un error de la API debe
++   mostrarse como error, no esconderse.
++6. Recién con la plantilla integrada y corregida, construir
++   `catedras.py` (catálogo + detalle, RF90-91) y las 5 extensiones de
++   `admin.py` sobre la base nueva — así no se construye dos veces.
++
++### 4.7 Paginación del catálogo público (5502 filas): una sola llamada, resuelta en Flask
++
++`GET /api/Catedra` sin `limite` sigue devolviendo todas las filas (igual
++que en v1 — no se cambia el contrato de la API por conveniencia del
++front, Artículo 7). La ruta `catedras.inicio` del front llama a la API
++**una sola vez por visita**, sin `limite`, y resuelve ahí mismo, en
++Python, las dos cosas que la pantalla necesita:
++
++```python
++# routes/catedras.py (forma, no código final)
++datos = listar('Catedra')['datos']                     # las 5502, una sola llamada
++if texto_busqueda:
++    datos = [c for c in datos if texto_busqueda.lower() in c['nombre'].lower()]
++total_filtrado = len(datos)
++inicio = (pagina - 1) * POR_PAGINA
++pagina_actual = datos[inicio:inicio + POR_PAGINA]       # el slicing pagina
++```
++
++Así el buscador de texto libre (RF90) filtra sobre el catálogo
++**completo**, no solo sobre la página visible, y no hace falta
++JavaScript ni un `offset` nuevo en la API — ver el ADR D13 de
++[4_research.md](4_research.md) para las alternativas descartadas (una
++API con `offset`, o filtrar en JavaScript en el navegador).
++
++## 5. Docker: sin cambios
++
++La v2 no agrega servicios: sigue siendo `postgres` + `api`
++([version1/3_plan.md](../version1/3_plan.md) §5, [6_contracts.md](6_contracts.md)
++§1). Las 5 tablas nuevas ya existen en el script de la BD desde la v1
++(Artículo 5); lo único que crece es el código de `api_catedras/` montado
++en el mismo contenedor `api`. `front_catedras/` sigue fuera de
++`docker-compose.yml` (se arranca aparte con `python run.py`), como en
++v1 — integrarlo al compose no lo pide ninguna spec todavía.
+diff --git a/docs/spec_kit/Versiones/version2/4_research.md b/docs/spec_kit/Versiones/version2/4_research.md
+new file mode 100644
+index 0000000..6ac1187
+--- /dev/null
++++ b/docs/spec_kit/Versiones/version2/4_research.md
+@@ -0,0 +1,180 @@
++# Investigación y decisiones — Versión 2: estructura académica y catálogo de cátedras
++
++> **Versión 2** · **Lectura opcional** (el porqué de las decisiones del
++> plan, con las alternativas que se evaluaron y descartaron). Complementa
++> a [3_plan.md](3_plan.md); el orden de trabajo está en
++> [8_tasks.md](8_tasks.md). Continúa la numeración de ADRs de
++> [version1/4_research.md](../version1/4_research.md) (D1-D8).
++
++---
++
++## D9 — FK hacia tablas que ya existen: no se revalida, se deja fallar
++
++**Contexto.** Es la primera vez en el proyecto que un `INSERT` de una
++tabla puede violar una foreign key hacia otra (`programa_academico →
++facultad`, `alias_programa → programa_academico`, `catedra →
++tipo_evento`/`dependencia`). Hay que decidir dónde se detecta un padre
++inexistente.
++
++**Opciones evaluadas:**
++(a) el servicio hace un `SELECT` al repositorio padre antes de insertar,
++y lanza `ArgumentException` (400) si no existe;
++(b) el repositorio deja que el `INSERT` falle y la `NpgsqlException` sube
++tal cual al controller (500);
++(c) un trigger de la BD que traduzca el error a un formato propio.
++
++**Criterios:** una sola fuente de verdad · número de ida y vueltas a la
++BD por `POST` · consistencia con cómo ya se trata un `UNIQUE` violado en
++v1.
++
++| Criterio | (a) SELECT previo | (b) dejar fallar | (c) trigger |
++|---|---|---|---|
++| Una sola fuente de verdad | ✗ (dos consultas pueden desincronizarse en condiciones de carrera) | ✓ (la FK del motor es la única autoridad) | ✓, pero añade lógica a la BD que la constitución no autoriza para v2 |
++| Viajes a la BD por `POST` | 2 | 1 | 1 |
++| Consistencia con `UNIQUE` en v1 | distinta (ahí también se deja fallar) | ✓ misma regla aplicada dos veces | — |
++| Código nuevo | un método de verificación por cada FK | ninguno | un trigger por tabla |
++
++**Decisión: (b).** El repositorio no verifica nada que la BD ya vaya a
++verificar. Es el mismo criterio que ya rige para un `id_sede` duplicado
++en v1 (§5, criterio 5 de [version1/2_spec.md](../version1/2_spec.md)):
++el error del motor sube como 500 con el mensaje en `detalle`.
++
++**Consecuencias.** (+) Un solo camino de error para "algo que el motor
++rechazó" (duplicado o FK), fácil de explicar y de probar. (+) Sin
++condición de carrera entre el `SELECT` de verificación y el `INSERT`
++real. (−) El mensaje de un 500 por FK es el texto crudo de Npgsql
++(`violates foreign key constraint "fk_programa_academico_facultad"`),
++menos amigable que un 400 a medida — costo aceptado, igual que ya se
++aceptó para los duplicados en v1.
++
++## D10 — Autorreferencia: se valida un nivel, no toda la cadena
++
++**Contexto.** `facultad.fk_facultad_padre` y
++`dependencia.fk_dependencia_padre` apuntan a la misma tabla. Una fila no
++puede ser su propio padre (`CHECK` de la BD), pero nada impide, en
++teoría, un ciclo más largo (`A` es padre de `B`, `B` es padre de `A`) si
++alguien edita el padre de una fila ya existente.
++
++**Opciones evaluadas:**
++(a) validar solo que `fk_padre ≠ id` (un nivel), en el servicio;
++(b) recorrer la cadena de padres en cada escritura para detectar
++ciclos de cualquier longitud;
++(c) no validar nada en el servicio y confiar solo en el `CHECK` de la BD.
++
++**Decisión: (a).** Un ciclo de más de un nivel exigiría una consulta
++recursiva (`WITH RECURSIVE`) en cada `POST`/`PUT`/`PATCH` de
++`Facultad`/`Dependencia`, para un caso que ni la jerarquía real de la
++universidad (9 facultades, 8 dependencias, ambas de 2 niveles) ni los
++datos de ejemplo necesitan hoy. (c) se descarta porque, como se explica
++en §4.2 de [3_plan.md](3_plan.md), el `CHECK` no protege un `POST`
++nuevo — dejar solo el `CHECK` deja pasar el caso más común (una fila
++que se apunta a sí misma al crearse) sin aviso claro.
++
++**Consecuencias.** (+) Validación simple, consistente con el resto del
++proyecto (nada de recursión en v2). (−) Un ciclo de 2 o más niveles,
++creado editando el padre de una fila existente, no lo detecta el
++servicio — lo detendría el `CHECK` solo si alguno de los pasos
++intermedios vuelve a apuntar literalmente a sí mismo, lo cual un ciclo
++largo no hace. **Riesgo documentado, no resuelto**: si una versión
++futura necesita jerarquías más profundas con esta garantía, es un buen
++candidato para su propia spec (Artículo 1).
++
++## D11 — La columna generada de `Catedra`: un solo `RETURNING`
++
++**Contexto.** `nombre_asis` es `GENERATED ALWAYS AS (left(nombre, 30))
++STORED` — existe en la BD, no en el C#. Hay que decidir cómo el
++repositorio obtiene su valor justo después de crear una cátedra.
++
++**Opciones evaluadas:**
++(a) duplicar la lógica en C# (`nombre.Length > 30 ? nombre[..30] :
++nombre`) y asumir que coincide con lo que calculó Postgres;
++(b) un `INSERT ... RETURNING id_catedra, nombre_asis` en una sola
++sentencia;
++(c) `INSERT` normal seguido de un `SELECT` aparte por el `id_catedra`
++recién creado.
++
++**Decisión: (b).** PostgreSQL permite devolver columnas generadas en el
++mismo `RETURNING` que una `IDENTITY`, así que no hay motivo para (c) —
++sería un viaje extra a la BD sin ninguna ventaja. (a) se descarta porque
++duplica una regla que ya vive en la BD (viola el mismo principio por el
++que `canal_difusion` no se revalida en dos sitios): si el `LEFT(...,
++30)` cambiara algún día (p. ej. por tildes o normalización Unicode), el
++C# quedaría desincronizado en silencio.
++
++**Consecuencias.** (+) Una sola fuente de verdad para `nombre_asis`: la
++BD. (+) Un solo viaje a la base. (−) `IRepositorioCatedra.CrearAsync`
++devuelve una tupla en vez de un solo valor, un poco menos uniforme que
++`IRepositorioEncuesta.CrearAsync` de v1 — diferencia aceptada porque
++refleja una diferencia real entre las dos tablas (una columna más que
++la BD calcula).
++
++## D12 — `AliasPrograma`: verbos incompletos a propósito
++
++**Contexto.** El molde de 5 verbos (listar, obtener, crear, reemplazar,
++actualizar, eliminar — en realidad 6 incluyendo "obtener por id") se usó
++igual en las 15 entidades hasta ahora. `alias_programa` es la primera
++tabla sin necesidad real de `PUT`/`PATCH`: el propio comentario del
++esquema la describe como un registro histórico de texto libre que crece
++con el tiempo, no una fila que se "corrija" in situ.
++
++**Opciones evaluadas:**
++(a) implementar los 6 verbos en los 15 recursos por igual, "por
++consistencia de la API";
++(b) implementar solo listar, obtener, crear y eliminar — sin `PUT` ni
++`PATCH` — para esta tabla específicamente.
++
++**Decisión: (b).** El Artículo 1 (YAGNI) pesa más que la uniformidad
++superficial: agregar un `PUT`/`PATCH` que ninguna historia de usuario
++pide, solo para que las 15 tablas "se vean iguales" en Swagger, es
++construir código que nadie va a ejercitar y que however, al existir,
++alguien terminaría usando para "corregir" un alias — exactamente lo que
++el diseño de la tabla quiere evitar (perder el rastro de qué se
++escribió realmente en el formulario).
++
++**Consecuencias.** (+) El código documenta la regla de negocio con su
++propia forma: quien lea `IRepositorioAliasPrograma` ve, sin leer la
++spec, que esta tabla es de solo-anexo. (−) Es la primera asimetría del
++proyecto entre tablas — se señala explícitamente en 3 documentos
++(`2_spec.md`, `3_plan.md`, aquí) para que no se lea como un olvido en
++ningún momento futuro.
++
++## D13 — Paginación del catálogo público: una sola llamada, filtrado y paginado en el front
++
++**Contexto.** `Catedra` tiene 5502 filas de ejemplo. El catálogo público
++(RF90) necesita mostrar la lista en páginas manejables Y permitir buscar
++por texto libre — y la spec exige que la búsqueda no agregue un
++endpoint nuevo a la API (RF90: "filtrado en el propio template").
++
++**Opciones evaluadas:**
++(a) agregar `offset` al contrato de `GET /api/Catedra` y que el front
++pida página por página a la API;
++(b) el front pide TODA la lista una vez (`GET /api/Catedra`, sin
++`limite`) y filtra + pagina en JavaScript, en el navegador;
++(c) el front pide TODA la lista una vez y filtra + pagina en la propia
++ruta Flask (Python), antes de renderizar la plantilla — sin JavaScript
++nuevo.
++
++**Decisión: (c).** (a) se descarta porque cambia el contrato de la API
++por conveniencia de una sola pantalla (Artículo 7: los contratos de
++cada versión son los que su `6_contracts.md`/`2_spec.md` ya fijaron; no
++se amplían a mitad de versión). Entre (b) y (c), (c) gana porque el
++proyecto no tiene un framework de JavaScript y el front ya resuelve todo
++del lado del servidor (Flask + Jinja, sin fetch desde el navegador) —
++agregar JavaScript solo para esta pantalla rompería la consistencia del
++resto de `front_catedras/`. El tamaño de la respuesta (5502 filas,
++~800 KB de JSON) es aceptable para una sola llamada por visita al
++catálogo en un proyecto didáctico.
++
++**Consecuencias.** (+) El contrato de la API no cambia. (+) Cero
++JavaScript nuevo: la ruta Flask recibe `?q=` y `?pagina=`, filtra la
++lista en memoria con una comprensión simple y corta con slicing antes de
++pasarla a la plantilla. (−) Cada visita al catálogo descarga las 5502
++filas aunque solo se muestren 24 — costo aceptado para v2; si el
++catálogo demuestra ser lento en uso real, cachear esa lista en el front
++(con invalidación simple por tiempo) es candidato para una spec futura,
++no para resolver aquí por anticipado.
++
++> **Nota de consistencia:** esta decisión reemplaza la idea de "límite
++> creciente" que había quedado esbozada en una versión anterior del §4.7
++> de [3_plan.md](3_plan.md); ese documento ya se corrigió para que
++> ambos queden alineados.
+diff --git a/docs/spec_kit/Versiones/version2/5_data_model.md b/docs/spec_kit/Versiones/version2/5_data_model.md
+new file mode 100644
+index 0000000..2c629dc
+--- /dev/null
++++ b/docs/spec_kit/Versiones/version2/5_data_model.md
+@@ -0,0 +1,300 @@
++# Modelo de datos — Versión 2: estructura académica y catálogo de cátedras
++
++> **Versión 2** · La base de datos sigue sin tocarse (Artículo 5: viene
++> dada desde la v1, completa). Este documento describe las **5 tablas**
++> que esta versión agrega a la API y, sobre todo, documenta sus
++> relaciones **reales** — verificadas contra
++> `db/postgres/script_bdcatedras.sql`, no asumidas por nombre de columna.
++>
++> **Nota de alcance:** la BD ya trae datos de ejemplo para TODO el
++> dominio, incluidas tablas de versiones futuras (`sesion`:
++> **5714 filas**; `asistente`: **14811**; `programa_asistente`:
++> **15349** — ninguna expuesta todavía por la API). Esto importa en v2
++> porque algunas de esas tablas futuras ya tienen foreign keys hacia las
++> 5 de esta versión, y sus reglas `ON DELETE` producen efectos reales
++> desde HOY, aunque esas tablas no tengan controlador propio todavía.
++> Se documentan explícitamente en cada sección (§2.1-2.5) para que nadie
++> las descubra por accidente borrando una fila de ejemplo.
++
++---
++
++## 1. Las 5 tablas de esta versión y su cadena de FK
++
++```
++facultad ↺ (fk_facultad_padre, autorreferencia)
++   ↑ SET NULL
++programa_academico ──→ facultad
++   │ ↑ CASCADE                  ↑ RESTRICT (v3, ya sembrada)
++   │ alias_programa      programa_asistente (v3, 15349 filas ya sembradas)
++   │                      registro_asistencia (v5, aún sin sembrar)
++   ↑ RESTRICT (v3)
++(nada en v2 referencia programa_academico salvo lo de arriba)
++
++dependencia ↺ (fk_dependencia_padre, autorreferencia)
++   ↑ SET NULL
++catedra ──→ tipo_evento (v1, ya existe en la API)
++   ↑ CASCADE (v4, 5714 filas ya sembradas)
++sesion
++```
++
++Las 5 tablas de v2 no tienen ninguna FK **saliente** hacia tablas de
++versiones futuras (serían imposibles de construir: esas tablas no
++existen en la API todavía). Las flechas marcadas "v3"/"v4"/"v5" son FK
++**entrantes**: ya existen en el esquema (Artículo 5, la BD es completa
++desde la v1) y, en el caso de `programa_asistente` y `sesion`, ya tienen
++filas — así que sus reglas de borrado actúan desde ahora, aunque esas
++tablas no tengan API propia hasta su versión.
++
++## 2. Las 5 tablas
++
++### 2.1 `facultad`
++
++Sin comentario propio en el esquema.
++
++| Columna | Tipo (PostgreSQL) | Regla |
++|---|---|---|
++| `id_facultad` | `VARCHAR(10)` | **PK** — texto de 1 a 10 caracteres |
++| `nombre` | `VARCHAR(120)` | No nulo, **único** (`uq_facultad_nombre`) |
++| `fk_facultad_padre` | `VARCHAR(10)` | Opcional — FK a `facultad.id_facultad` |
++| `activo` | `BOOLEAN` | No nulo, `DEFAULT true` |
++
++Restricción adicional:
++- `chk_facultad_padre` — `fk_facultad_padre <> id_facultad`: una
++  facultad no puede ser su propio padre (ver §4.2 de
++  [3_plan.md](3_plan.md) sobre por qué esto NO alcanza a proteger un
++  `POST`, y por qué el servicio valida lo mismo antes de llegar aquí).
++
++```csharp
++public class Facultad
++{
++    public required string IdFacultad { get; set; }
++    public required string Nombre { get; set; }
++    public string? FkFacultadPadre { get; set; }
++    public bool Activo { get; set; } = true;
++}
++```
++
++**FK saliente:** `fk_facultad_padre → facultad.id_facultad`,
++`ON UPDATE CASCADE ON DELETE SET NULL` — **no** `RESTRICT`: borrar una
++facultad con hijas no falla, las hijas quedan con `fk_facultad_padre:
++null`.
++
++**FK entrante:** `programa_academico.fk_facultad → facultad.id_facultad`,
++también `ON DELETE SET NULL` — borrar una facultad usada por programas
++tampoco falla; esos programas quedan con `fk_facultad: null`.
++
++**Datos de ejemplo (9 filas):** `USB` (raíz, `Universidad de San
++Buenaventura`) y 8 facultades hijas de `USB`: `F_ING`, `F_ARTES`,
++`F_PSICO`, `F_DERECHO`, `F_EDU`, `F_CIENCIAS`, `F_SALUD`, `F_OTRA`.
++
++### 2.2 `dependencia`
++
++Sin comentario propio en el esquema. Misma forma que `facultad`, pero
++sin relación con `programa_academico`.
++
++| Columna | Tipo (PostgreSQL) | Regla |
++|---|---|---|
++| `id_dependencia` | `VARCHAR(15)` | **PK** — texto de 1 a 15 caracteres |
++| `nombre` | `VARCHAR(120)` | No nulo, **único** (`uq_dependencia_nombre`) |
++| `fk_dependencia_padre` | `VARCHAR(15)` | Opcional — FK a `dependencia.id_dependencia` |
++| `activo` | `BOOLEAN` | No nulo, `DEFAULT true` |
++
++Restricción adicional:
++- `chk_dependencia_padre` — `fk_dependencia_padre <> id_dependencia`.
++
++```csharp
++public class Dependencia
++{
++    public required string IdDependencia { get; set; }
++    public required string Nombre { get; set; }
++    public string? FkDependenciaPadre { get; set; }
++    public bool Activo { get; set; } = true;
++}
++```
++
++**FK saliente:** `fk_dependencia_padre → dependencia.id_dependencia`,
++`ON DELETE SET NULL`.
++
++**FK entrante:** `catedra.fk_dependencia → dependencia.id_dependencia`,
++también `ON DELETE SET NULL` — borrar una dependencia usada por una
++cátedra no falla, la cátedra queda con `fk_dependencia: null`.
++
++**Datos de ejemplo (8 filas):** `VICE_ACAD` y `BIENESTAR` (raíces, sin
++padre); hijas de `BIENESTAR`: `PASTORAL`, `DEPORTES`, `CULTURA`,
++`SALUD`, `DESA_HUM`; hija de `VICE_ACAD`: `INVESTIG`. De las 5502
++cátedras de ejemplo, **solo 1** tiene `fk_dependencia` distinto de
++`null`, y es justamente `DESA_HUM`.
++
++### 2.3 `programa_academico`
++
++Sin comentario propio en el esquema.
++
++| Columna | Tipo (PostgreSQL) | Regla |
++|---|---|---|
++| `codigo` | `VARCHAR(5)` | **PK** — `CHECK (codigo ~ '^[A-Z][0-9A-Z]{3,4}$')` |
++| `nombre` | `VARCHAR(150)` | No nulo — sin restricción de unicidad |
++| `fk_facultad` | `VARCHAR(10)` | Opcional — FK a `facultad.id_facultad` |
++| `nivel` | `VARCHAR(25)` | No nulo, `DEFAULT 'PREGRADO'`, lista cerrada |
++| `activo` | `BOOLEAN` | No nulo, `DEFAULT true` |
++
++Restricciones adicionales:
++- `chk_programa_codigo` — el formato de arriba (una letra + 3 o 4
++  alfanuméricos).
++- `chk_programa_nivel` — `nivel IN ('PREGRADO', 'ESPECIALIZACION',
++  'MAESTRIA', 'DOCTORADO', 'EDUCACION_CONTINUA', 'OTRO')`.
++
++```csharp
++public class ProgramaAcademico
++{
++    public required string Codigo { get; set; }
++    public required string Nombre { get; set; }
++    public string? FkFacultad { get; set; }
++    public string Nivel { get; set; } = "PREGRADO";
++    public bool Activo { get; set; } = true;
++}
++```
++
++**FK saliente:** `fk_facultad → facultad.id_facultad`, `ON DELETE SET
++NULL` (§2.1).
++
++**FK entrantes (3, con reglas distintas — la más importante de esta
++versión):**
++| Tabla (versión) | FK | Regla |
++|---|---|---|
++| `alias_programa` (v2, esta misma) | `fk_programa` | `ON DELETE CASCADE` |
++| `programa_asistente` (v3, **ya sembrada**: 15349 filas) | `fk_programa` | `ON DELETE RESTRICT` |
++| `registro_asistencia` (v5, aún sin datos) | `fk_programa_snapshot` | `ON DELETE RESTRICT` |
++
++Como Postgres aplica todas las FK de una tabla en la misma sentencia,
++`RESTRICT` gana: si un programa tiene asistentes vinculados (lo normal,
++con 15349 filas repartidas en 105 programas), su `DELETE` falla con 500
++**antes** de que la cascada hacia `alias_programa` llegue a ejecutarse.
++La cascada solo se vería en un programa sin ningún
++`programa_asistente` — raro en los datos reales, pero posible en uno
++creado nuevo durante una prueba.
++
++**Datos de ejemplo (105 filas):** 104 con `fk_facultad: 'F_OTRA'` y 1
++(`M0286`, "Ingenieria de Datos y Software") con `fk_facultad: 'F_ING'`
++— el único caso de ejemplo con una facultad real asignada.
++
++### 2.4 `alias_programa`
++
++> Comentario del propio esquema (`COMMENT ON TABLE`): texto libre con
++> que se ha escrito un programa, y el código al que corresponde. Nace
++> de la calidad real del formulario actual, que trae variantes como
++> "Psicologica" o "Ingenieria de datos y software" sin un código
++> asociado directo. Es una tabla **viva**: los formularios en texto
++> libre seguirán llegando durante toda la transición.
++
++| Columna | Tipo (PostgreSQL) | Regla |
++|---|---|---|
++| `id_alias` | `BIGINT` | **PK**, respaldado por secuencia (`alias_programa_id_alias_seq`) — la BD lo genera, el cliente nunca lo manda |
++| `texto_normalizado` | `VARCHAR(200)` | No nulo, **único** (`uq_alias_texto`) |
++| `fk_programa` | `VARCHAR(5)` | No nulo — FK a `programa_academico.codigo` |
++| `origen` | `VARCHAR(30)` | No nulo, `DEFAULT 'FORMULARIO'` |
++| `creado_en` | `TIMESTAMPTZ` | No nulo, `DEFAULT now()` — **de solo lectura en la API**, ninguna petición la acepta (§4.4 de [3_plan.md](3_plan.md)) |
++
++Sin `CHECK` de lista cerrada sobre `origen` (es texto libre con un
++valor por defecto, no un catálogo).
++
++```csharp
++public class AliasPrograma
++{
++    public long IdAlias { get; set; }                 // lo pone la BD
++    public required string TextoNormalizado { get; set; }
++    public required string FkPrograma { get; set; }
++    public string Origen { get; set; } = "FORMULARIO";
++    public DateTimeOffset CreadoEn { get; set; }       // lo pone la BD
++}
++```
++
++**Sin FK saliente propia distinta de `fk_programa` (ya descrita en
++§2.3) y sin ninguna FK entrante:** ninguna tabla del esquema referencia
++`alias_programa`. Es, en ese sentido, una tabla "hoja" — y por eso su
++`DELETE` (RF83) nunca puede fallar por integridad referencial, solo por
++no encontrarse (404).
++
++**Datos de ejemplo (3 filas),** todas con `fk_programa: 'M0286'`:
++`"ingenieria de datos y software"`, `"ingenieria de datos"`, `"ing.
++datos y software"`.
++
++### 2.5 `catedra`
++
++> Comentario del propio esquema sobre `id_evento_asis`: identificador
++> del evento en el ASIS, `CHAR(9)` **con ceros a la izquierda** — como
++> entero perdería los ceros y dejaría de servir para la carga.
++
++| Columna | Tipo (PostgreSQL) | Regla |
++|---|---|---|
++| `id_catedra` | `BIGINT` | **PK**, respaldado por secuencia (`catedra_id_catedra_seq`) — la BD lo genera |
++| `id_evento_asis` | `CHAR(9)` | No nulo, **único** (`uq_catedra_asis`), `CHECK (id_evento_asis ~ '^[0-9]{9}$')` |
++| `nombre` | `VARCHAR(200)` | No nulo |
++| `nombre_asis` | `VARCHAR(30)` | **Columna generada:** `GENERATED ALWAYS AS (left(nombre, 30)) STORED` — nunca en una petición, solo en la respuesta |
++| `fk_tipo_evento` | `CHAR(4)` | No nulo — FK a `tipo_evento.id_tipo_evento` (v1) |
++| `fk_dependencia` | `VARCHAR(15)` | Opcional — FK a `dependencia.id_dependencia` |
++| `activo` | `BOOLEAN` | No nulo, `DEFAULT true` |
++| `creado_en` | `TIMESTAMPTZ` | No nulo, `DEFAULT now()` — de solo lectura, mismo criterio que en `alias_programa` |
++
++```csharp
++public class Catedra
++{
++    public long IdCatedra { get; set; }               // lo pone la BD
++    public required string IdEventoAsis { get; set; } // CHAR(9), con ceros a la izq.
++    public required string Nombre { get; set; }
++    public string NombreAsis { get; set; } = "";       // lo pone la BD (generada)
++    public required string FkTipoEvento { get; set; }
++    public string? FkDependencia { get; set; }
++    public bool Activo { get; set; } = true;
++    public DateTimeOffset CreadoEn { get; set; }       // lo pone la BD
++}
++```
++
++**FK salientes:**
++- `fk_tipo_evento → tipo_evento.id_tipo_evento` (v1, ya existe en la
++  API), `ON DELETE RESTRICT` — borrar un `TipoEvento` en uso por alguna
++  cátedra fallaría con 500 (no es un caso que v2 pruebe: el catálogo de
++  `TipoEvento` de v1 no se toca en esta versión).
++- `fk_dependencia → dependencia.id_dependencia` (§2.2), `ON DELETE SET
++  NULL`.
++
++**FK entrante — advertencia (dato verificado, no hipotético):**
++`sesion.fk_catedra → catedra.id_catedra` (v4), `ON DELETE CASCADE`, y
++`sesion` **ya tiene 5714 filas sembradas** desde el script de la v1.
++De las 5502 cátedras de ejemplo, **5497 tienen al menos una sesión**
++asociada; borrar cualquiera de esas 5497 borra en cascada, sin aviso,
++sesiones de una tabla que la API de v2 ni siquiera expone todavía. Solo
++los `id_catedra` **5498 a 5502** no tienen ninguna sesión — son las
++únicas cátedras de ejemplo seguras para probar `DELETE` sin arrastrar
++nada (ver RF89 de [2_spec.md](2_spec.md) y el smoke test de
++[7_quickstart.md](7_quickstart.md)).
++
++**Datos de ejemplo (5502 filas).** Distribución por `fk_tipo_evento`:
++`CAAB` 5460 · `DLLH` 14 · `DEPR` 12 · `SLDI` 7 · `ARCU` 5 · `DIIB` 3 ·
++`EIIC` 1 (`MTG` de v1 no se usa en ningún ejemplo de `catedra`).
++`fk_dependencia` es `null` en 5501 de las 5502; la única excepción
++apunta a `DESA_HUM` (§2.2).
++
++## 3. Las dos murallas de validación (sin cambios de criterio respecto a v1)
++
++Igual que en v1 ([version1/5_data_model.md](../version1/5_data_model.md)
++§3): la PETICIÓN detiene errores de forma (422) antes de tocar la BD; el
++SERVICIO detiene reglas de negocio que cruzan campos (400) — en v2, la
++autorreferencia de `Facultad`/`Dependencia`; la BD es la última muralla,
++y en v2 esa muralla incluye por primera vez **FK reales entre tablas**,
++no solo `PK`/`UNIQUE`/`CHECK` de una sola tabla.
++
++## 4. Reglas de esta versión
++
++- El código de esta versión solo nombra `Facultad`, `Dependencia`,
++  `ProgramaAcademico`, `AliasPrograma` y `Catedra`. Ninguna otra tabla
++  con FK saliente hacia estas 5 (`sesion`, `programa_asistente`,
++  `asistente`, etc.) se construye en v2, aunque algunas ya tengan datos
++  de ejemplo cargados — ese dato es relevante para entender el
++  comportamiento de `DELETE`, no una invitación a adelantar su API.
++- La BD **no se modifica**: cero columnas, índices o datos nuevos. Los
++  5714 registros de `sesion` y los 15349 de `programa_asistente` que se
++  mencionan aquí **ya existían** desde el script de la v1 (Artículo 5,
++  "completa desde el día 1") — v2 no los siembra, solo los descubre al
++  documentar las FK entrantes.
++- Reset completo: igual que en v1,
++  `docker compose down -v && docker compose up -d --build`.
+diff --git a/docs/spec_kit/Versiones/version2/6_contracts.md b/docs/spec_kit/Versiones/version2/6_contracts.md
+new file mode 100644
+index 0000000..c89bb88
+--- /dev/null
++++ b/docs/spec_kit/Versiones/version2/6_contracts.md
+@@ -0,0 +1,114 @@
++# Contratos de integración — Versión 2: Facultad, Dependencia, ProgramaAcademico, AliasPrograma, Catedra
++
++> **Documento 6 de 8** del spec kit: cómo se hablan las piezas entre sí
++> (puertos, hosts, variables, healthchecks). Los endpoints HTTP de la
++> API (verbos, formatos exactos) están en [2_spec.md](2_spec.md)
++> (RF62-RF94) y se navegan en vivo desde `/swagger`.
++>
++> **Nota de alcance (v2):** la v2 **no cambia ningún contrato de
++> infraestructura** de la v1 — mismo mapa de puertos, mismas variables de
++> entorno, mismos dos servicios (`api` + `postgres`), mismo healthcheck.
++> Lo único que crece es el **contrato de la API** (§3): 5 recursos más.
++> Por eso este documento es más corto que el de v1: las secciones sin
++> cambios enlazan directamente a [version1/6_contracts.md](../version1/6_contracts.md)
++> en vez de repetirlas.
++
++---
++
++## 1. Mapa de puertos
++
++Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §1
++(`api` → `8142`, `postgres` → `15542`). La v2 no agrega servicios.
++
++## 2. Variables de entorno
++
++Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §2.
++Ninguna de las 5 tablas nuevas necesita configuración propia (no hay
++credenciales, URLs externas ni *feature flags* involucrados).
++
++## 3. Contrato de la API (lo que crece en v2)
++
++- CRUD sobre `Facultad`, `Dependencia`, `ProgramaAcademico` y `Catedra`:
++  mismo patrón de 5 verbos que v1
++  (`GET/POST /api/{Recurso}`, `GET/PUT/PATCH/DELETE /api/{Recurso}/{id}`).
++  `{id}` es texto para las tres primeras (`id_facultad`,
++  `id_dependencia`, `codigo`) y numérico para `Catedra` (su PK la genera
++  la BD, igual que `Encuesta` en v1).
++- `AliasPrograma` expone **4 verbos, no 5**: `GET /api/AliasPrograma`,
++  `GET /api/AliasPrograma/{id}`, `POST /api/AliasPrograma`,
++  `DELETE /api/AliasPrograma/{id}`. No existen `PUT` ni `PATCH` para
++  este recurso — una llamada a cualquiera de los dos responde **404**
++  de ASP.NET (ruta inexistente, no un 405 fabricado a mano: el
++  `Controller` simplemente no declara esos métodos).
++- Errores: mismo sobre que v1 — 422 (petición inválida, antes de la
++  BD), 400 (`ArgumentException`, incluida la autorreferencia de
++  `Facultad`/`Dependencia`), 404 (`NoEncontradoExcepcion`), 500
++  (`NpgsqlException`, incluida cualquier violación de FK —
++  `RESTRICT` o un formato que ni siquiera llegó a validarse en la
++  petición).
++- **Nuevo en v2 — un verbo puede tener éxito y, aun así, modificar
++  filas que el cliente no pidió tocar:** `DELETE` sobre `Facultad` o
++  `Dependencia` puede dejar otras filas con una FK en `null`
++  (`ON DELETE SET NULL`); `DELETE` sobre `Catedra` puede además borrar
++  en cascada sesiones de una tabla que esta misma API todavía no
++  expone (`ON DELETE CASCADE` hacia `sesion`, ver
++  [5_data_model.md](5_data_model.md) §2.5). No hay forma de advertirlo
++  en la respuesta del `DELETE` (sigue siendo `{estado, mensaje,
++  filasEliminadas}`, igual que v1) — queda documentado aquí y en el
++  smoke test, no en el contrato HTTP en sí.
++
++## 4. Contrato API ↔ BD
++
++Sin cambios de mecánica: [version1/6_contracts.md](../version1/6_contracts.md)
++§4 (una conexión `Npgsql` por operación, `await using`, sin pool
++propio). Lo que cambia es que, por primera vez, **la BD participa
++activamente en el resultado de un `DELETE`** más allá de aceptarlo o
++rechazarlo: las reglas `SET NULL`/`CASCADE`/`RESTRICT` de §3 las aplica
++el motor, no la API — el repositorio no las implementa ni las simula,
++solo propaga lo que Postgres decida (éxito con filas afectadas en otras
++tablas, o `NpgsqlException` → 500).
++
++## 5. Healthchecks y arranque
++
++Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §5.
++
++## 6. Contratos de volúmenes y montajes
++
++Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §6.
++Las 5 tablas de v2 ya estaban en `script_bdcatedras.sql` desde el
++montaje de la v1 — no hay un script nuevo que montar.
++
++## 7. Devcontainer
++
++Sin cambios: no existe en v2, igual que en v1.
++
++## 8. Credenciales
++
++Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §8.
++
++## 9. Contrato del front (`front_catedras/`) con la API — nuevo en v2
++
++A diferencia de v1 (donde el front solo hacía CRUD simple), en v2 el
++front hace una lectura que el contrato de la API debe soportar sin
++cambios:
++
++- `GET /api/Catedra` **sin `limite`** devuelve las 5502 filas en una
++  sola respuesta (§4.7 y ADR D13 de [3_plan.md](3_plan.md) /
++  [4_research.md](4_research.md)) — el catálogo público depende de que
++  este verbo siga aceptando "sin límite" como "todas"; si una versión
++  futura cambiara ese comportamiento por defecto, rompería el catálogo
++  de v2 sin que ninguna spec de esa versión lo haya pedido
++  explícitamente (Artículo 7: los contratos se cumplen al pie de la
++  letra).
++- El front sigue sin estar en `docker-compose.yml`
++  ([version1/6_contracts.md](../version1/6_contracts.md) §3, nota de
++  alcance) y se arranca aparte con `python run.py`; `API_BASE_URL`
++  sigue apuntando a `http://localhost:8142/api`, sin cambios.
++
++## 10. Reset completo
++
++Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §9.
++`docker compose down -v && docker compose up -d --build` recrea las 37
++tablas con sus datos de ejemplo — incluidas las 5714 filas de `sesion`
++y las 15349 de `programa_asistente` que [5_data_model.md](5_data_model.md)
++documenta como relevantes para v2 aunque sean de otras versiones.
+diff --git a/docs/spec_kit/Versiones/version2/7_quickstart.md b/docs/spec_kit/Versiones/version2/7_quickstart.md
+new file mode 100644
+index 0000000..30230f7
+--- /dev/null
++++ b/docs/spec_kit/Versiones/version2/7_quickstart.md
+@@ -0,0 +1,135 @@
++# Quickstart — Versión 2: estructura académica y catálogo de cátedras
++
++> **Documento 7 de 8** del spec kit. Validación del sistema ya
++> construido en v2 (API + front), sobre lo que ya dejó la v1.
++>
++> **Nota de alcance (v2):** mismo backend que v1 (`api` +
++> `postgres`, sin cambios de infraestructura — ver
++> [6_contracts.md](6_contracts.md)). Hoy la API expone 15 recursos: los
++> 10 de v1 más `Facultad`, `Dependencia`, `ProgramaAcademico`,
++> `AliasPrograma` y `Catedra`. El front (`front_catedras/`) sigue aparte
++> de `docker compose`, con el catálogo público y el panel de
++> administración ya extendidos a las 5 tablas nuevas.
++
++---
++
++## 1. Levantar
++
++Sin cambios respecto a v1
++([version1/7_quickstart.md](../version1/7_quickstart.md) §1):
++
++```powershell
++git clone https://github.com/INFAME23/proyecto_catedras.git
++cd proyecto_catedras
++docker compose up -d --build
++```
++
++## 2. Verificación de la API — 10 pasos
++
++```powershell
++docker compose ps
++# Esperado: mi_v1_catedras_api, mi_v1_catedras_postgres corriendo (Up / healthy)
++```
++
++1. **http://localhost:8142/swagger** → ahora muestra **15** recursos;
++   los 5 nuevos son `Facultad`, `Dependencia`, `ProgramaAcademico`,
++   `AliasPrograma` (solo 4 verbos — sin `PUT`/`PATCH`, ver
++   [6_contracts.md](6_contracts.md) §3) y `Catedra`.
++2. **GET /api/Facultad** → 9 filas, con `USB` como única raíz
++   (`fk_facultad_padre: null`). **GET /api/Dependencia** → 8 filas, con
++   `VICE_ACAD` y `BIENESTAR` como raíces.
++3. **GET /api/ProgramaAcademico** → 105 filas; **GET
++   /api/ProgramaAcademico/M0286** → `"Ingenieria de Datos y Software"`,
++   `fk_facultad: "F_ING"`. **GET /api/AliasPrograma** → 3 filas, las
++   tres con `fk_programa: "M0286"`.
++4. **GET /api/Catedra?limite=5** → 5 de las 5502 cátedras, con
++   `total: 5502`; **GET /api/Catedra/1** → `id_evento_asis:
++   "000023636"`, `nombre_asis: "PELICULA:LA MIRADA DEL AMOR"` (ya
++   calculado por la BD, sin que ningún `POST` lo haya enviado).
++5. **Autorreferencia:** `POST /api/Facultad` con
++   `{"id_facultad": "X", "fk_facultad_padre": "X", ...}` → `400`
++   ("Una facultad no puede ser su propio padre"), sin tocar la BD.
++6. **Formato y listas cerradas:** `POST /api/ProgramaAcademico` con
++   `codigo: "m0001"` (minúscula) → `422`; con `nivel: "TECNICO"` → `422`.
++   `POST /api/Catedra` con `id_evento_asis: "12345"` (5 dígitos, no 9)
++   → `422`.
++7. **`SET NULL`, verificado (no falla):**
++   `DELETE /api/Facultad/F_ING` → `200`; luego
++   `GET /api/ProgramaAcademico/M0286` → `fk_facultad: null`. Repetir el
++   mismo patrón con `DELETE /api/Dependencia/DESA_HUM` → `200`; la
++   única cátedra de ejemplo que la usaba queda con `fk_dependencia:
++   null`. **Importante:** este paso modifica datos de ejemplo; si se
++   sigue probando después, usar el reset del paso 10 para dejar todo
++   como estaba.
++8. **`RESTRICT`, verificado (si falla):** `DELETE
++   /api/ProgramaAcademico/M0286` → `500` (bloqueado por sus 58 filas en
++   `programa_asistente`, una tabla de v3 que la BD ya trae sembrada —
++   ver [5_data_model.md](5_data_model.md) §2.3). Sus 3 `AliasPrograma`
++   siguen intactos: la cascada hacia ellos nunca llegó a ejecutarse.
++9. **`CASCADE` oculto hacia v4 — probar SOLO con una cátedra segura:**
++   `DELETE /api/Catedra/5502` → `200`, sin efectos en otras tablas (es
++   una de las 5 cátedras de ejemplo sin sesiones). **No** probar este
++   verbo contra `id_catedra` 1-5497: tienen sesiones de v4 ya
++   sembradas y `DELETE` las borraría en cascada sin aviso (ver
++   [5_data_model.md](5_data_model.md) §2.5). Para probar el verbo sobre
++   datos propios, crear una cátedra con `POST` primero y borrar esa.
++10. **Reset** (recomendado después de los pasos 7-9, que modifican
++    datos de ejemplo): `docker compose down -v && docker compose up -d
++    --build` → las 15 tablas vuelven a sus datos originales.
++
++**Prueba de capas (criterio de aceptación 8):**
++```powershell
++cd api_catedras
++dotnet run --project pruebas
++```
++Ahora cubre las **15** entidades con repositorios FALSOS en memoria,
++incluida la verificación de autorreferencia de `Facultad`/`Dependencia`.
++Termina con código 0 si todo pasa.
++
++## 3. Frontend (`front_catedras/`, aparte del `docker compose` de arriba)
++
++Arranque sin cambios respecto a v1
++([version1/7_quickstart.md](../version1/7_quickstart.md) §3):
++
++```powershell
++cd front_catedras
++python -m venv venv
++venv\Scripts\activate
++pip install -r requirements.txt
++python run.py
++```
++
++Con la API corriendo (§1-2 de aquí):
++
++1. **http://localhost:5000** → la plantilla ya integrada (RF92 de
++   [2_spec.md](2_spec.md)): mismo navbar, ahora con los endpoints
++   corregidos; ningún enlace rota a un `BuildError` de Flask.
++2. **http://localhost:5000/catedras** → catálogo público: lista
++   paginada de las 5502 cátedras (24 por página, o el tamaño que fije
++   `3_plan.md` §4.7), con un buscador de texto por `nombre` que filtra
++   sobre el catálogo completo, no solo sobre la página visible.
++   Buscar `"amor"` debe incluir `000023636` ("PELICULA:LA MIRADA DEL
++   AMOR"), esté en la página que esté.
++3. **http://localhost:5000/catedras/1** → detalle de la cátedra
++   `000023636`: nombre completo, tipo de evento (`CAAB`) y, si
++   `fk_dependencia` no es nulo, el nombre de la dependencia.
++4. **http://localhost:5000/admin/** → 5 tarjetas nuevas
++   (`Facultad`, `Dependencia`, `ProgramaAcademico`, `AliasPrograma`,
++   `Catedra`); los formularios de `Facultad`/`Dependencia` muestran un
++   `<select>` con las filas existentes como posible padre.
++   `AliasPrograma` solo ofrece crear y eliminar (sin "editar"), acorde
++   a RF80-83.
++5. **Datos mock eliminados (RF93):** apagar la API
++   (`docker compose stop api`) y recargar `/catedras` → debe mostrar un
++   error claro, nunca una lista de ejemplo inventada por el front.
++
++## 4. Problemas frecuentes
++
++| Síntoma | Diagnóstico |
++|---|---|
++| `DELETE /api/Facultad/{id}` responde 500 en vez de 200 | Revisar que no se esté probando sobre una facultad que, además de hijos/programas, tenga alguna otra FK que esta versión no documentó — repasar [5_data_model.md](5_data_model.md) §1 antes de asumir un bug |
++| `DELETE /api/Catedra/1` "borró algo que no pedí" | Es `ON DELETE CASCADE` hacia `sesion` (v4, ya sembrada) — comportamiento esperado y documentado, no un bug; usar `id_catedra` 5498-5502 para pruebas limpias (§2, paso 9) |
++| `GET /catedras` del front tarda varios segundos | Está trayendo las 5502 filas en una sola llamada a propósito (ADR D13 de [4_research.md](4_research.md)); no es un error, es el costo aceptado de esa decisión |
++| `POST /api/AliasPrograma` funciona pero no hay forma de editarlo | Correcto: esta tabla no tiene `PUT`/`PATCH` (RF80-83); para corregir un alias, se borra y se crea de nuevo |
++| El navbar del front da `werkzeug.routing.BuildError` | La integración de la plantilla (RF92) dejó algún `url_for` sin corregir — revisar `templates/partials/navbar.html` contra los blueprints reales de `app.py` |
++| Todo roto | `docker compose down -v && docker compose up -d --build` (API); para el front, confirmar que `API_BASE_URL` siga en `http://localhost:8142/api` |
+diff --git a/docs/spec_kit/Versiones/version2/8_tasks.md b/docs/spec_kit/Versiones/version2/8_tasks.md
+new file mode 100644
+index 0000000..c75f368
+--- /dev/null
++++ b/docs/spec_kit/Versiones/version2/8_tasks.md
+@@ -0,0 +1,241 @@
++# Tareas — Versión 2: estructura académica y catálogo de cátedras
++
++> **Documento 8 de 8** del spec kit · Orden de construcción. Continúa la
++> numeración de fases de [version1/8_tasks.md](../version1/8_tasks.md)
++> (termina en Fase 13). Cada fase se verifica contra Docker + PostgreSQL
++> reales antes de pasar a la siguiente (Artículo 1: no se avanza sobre
++> una fase sin verificar).
++>
++> **Nota de alcance (v2):** sin segundo motor, sin devcontainer, sin
++> cambios de infraestructura — ver [6_contracts.md](6_contracts.md). La
++> BD ya tiene las 5 tablas de esta versión (y sus datos de ejemplo)
++> desde el script de la v1 (Artículo 5); aquí solo se construye la API y
++> el front que las usan.
++
++---
++
++## Fase 14 — La aplicación (capas de `Facultad` y `Dependencia`)
++> Especificadas en RF62-RF73 de [2_spec.md](2_spec.md) y §2.1-2.2 de
++> [5_data_model.md](5_data_model.md). Primera vez en el proyecto con
++> autorreferencia (§4.2 de [3_plan.md](3_plan.md)).
++
++- [x] `Modelos/Facultad.cs`, `Dependencia.cs`.
++- [x] `Peticiones/Facultad{Crear,Reemplazo,Actualizar}.cs`,
++      `Dependencia{Crear,Reemplazo,Actualizar}.cs` — anotaciones de
++      forma únicamente; la autorreferencia NO se valida aquí (es
++      cruce de dos campos del mismo body, le toca al servicio).
++- [x] `Repositorios/IRepositorioFacultad.cs` +
++      `RepositorioFacultadPostgres.cs`,
++      `IRepositorioDependencia.cs` + `RepositorioDependenciaPostgres.cs`
++      — CRUD estándar, mismo molde que `RepositorioSedePostgres` de v1.
++- [x] `Servicios/IServicioFacultad.cs` + `ServicioFacultad.cs`,
++      `IServicioDependencia.cs` + `ServicioDependencia.cs` — cada uno
++      valida, en `CrearAsync`/`ReemplazarAsync`/`ActualizarAsync`, que
++      el padre propuesto no sea la propia fila (código exacto en §4.2
++      de [3_plan.md](3_plan.md)).
++- [x] `Controllers/FacultadController.cs`,
++      `DependenciaController.cs` — 6 endpoints cada uno, mismo
++      try/catch → código HTTP que `SedeController`.
++- [x] `Program.cs` — registrar las 2 parejas nuevas (`AddScoped`).
++
++**Verificado** (contra PostgreSQL real): `GET /api/Facultad`
++devuelve 9 filas con `USB` como raíz; `GET /api/Dependencia` devuelve 8
++con `VICE_ACAD` y `BIENESTAR` como raíces; `POST /api/Facultad` con
++`fk_facultad_padre` igual al propio `id_facultad` → 400; `POST
++/api/Dependencia` con el mismo patrón → 400; un `fk_padre` que no
++existe → 500 (FK). **No** ejecutar todavía los `DELETE` de prueba de
++§2 de [7_quickstart.md](7_quickstart.md) — eso se deja para la Fase 18,
++cuando también exista `ProgramaAcademico` y `Catedra` y se pueda
++verificar `SET NULL` de punta a punta.
++
++## Fase 15 — La aplicación (capas de `ProgramaAcademico` y `AliasPrograma`)
++> RF74-RF83 de [2_spec.md](2_spec.md), §2.3-2.4 de
++> [5_data_model.md](5_data_model.md). Depende de la Fase 14
++> (`fk_facultad`).
++
++- [ ] `Modelos/ProgramaAcademico.cs`, `AliasPrograma.cs` — en
++      `AliasPrograma`, `IdAlias` y `CreadoEn` sin `required` (los pone
++      la BD).
++- [ ] `Peticiones/ProgramaAcademico{Crear,Reemplazo,Actualizar}.cs` —
++      `codigo` con `[RegularExpression("^[A-Z][0-9A-Z]{3,4}$")]`,
++      `nivel` con `[RegularExpression]` sobre la lista cerrada (mismo
++      patrón que `ModalidadCrear.canal_difusion` en v1).
++- [ ] `Peticiones/AliasProgramaCrear.cs` — **única** petición de esta
++      entidad; `texto_normalizado` y `fk_programa` obligatorios,
++      `origen` opcional. No crear `AliasProgramaReemplazo` ni
++      `AliasProgramaActualizar` (§4.4 de [3_plan.md](3_plan.md): la
++      ausencia es la especificación, no queda nada pendiente aquí).
++- [ ] `Repositorios/IRepositorioProgramaAcademico.cs` +
++      `RepositorioProgramaAcademicoPostgres.cs` — CRUD estándar.
++- [ ] `Repositorios/IRepositorioAliasPrograma.cs` +
++      `RepositorioAliasProgramaPostgres.cs` — **sin**
++      `ActualizarAsync` en la interfaz (§4.4 de [3_plan.md](3_plan.md));
++      `CrearAsync` usa `RETURNING id_alias, creado_en`.
++- [ ] `Servicios/IServicioProgramaAcademico.cs` +
++      `ServicioProgramaAcademico.cs`.
++- [ ] `Servicios/IServicioAliasPrograma.cs` + `ServicioAliasPrograma.cs`
++      — sin método de actualizar, mismo criterio que el repositorio.
++- [ ] `Controllers/ProgramaAcademicoController.cs` — 6 endpoints.
++- [ ] `Controllers/AliasProgramaController.cs` — **4** endpoints
++      (`GET` lista, `GET/{id}`, `POST`, `DELETE`); sin `[HttpPut]` ni
++      `[HttpPatch]`.
++- [ ] `Program.cs` — registrar las 2 parejas nuevas.
++
++**Verificar:** `GET /api/ProgramaAcademico` → 105 filas; `GET
++/api/ProgramaAcademico/M0286` → `fk_facultad: "F_ING"`; `POST` con
++`codigo: "m0001"` → 422; con `nivel: "TECNICO"` → 422. `GET
++/api/AliasPrograma` → 3 filas, las tres con `fk_programa: "M0286"`; un
++`POST` exitoso devuelve `id_alias` e ignora cualquier `creado_en` que
++llegue en el body; `PUT /api/AliasPrograma/1` → 404 de ASP.NET (ruta
++inexistente, confirma que el verbo de verdad no está declarado).
++
++## Fase 16 — La aplicación (capas de `Catedra`)
++> RF84-RF89 de [2_spec.md](2_spec.md), §2.5 de
++> [5_data_model.md](5_data_model.md). Depende de la Fase 14
++> (`fk_dependencia`) y de `TipoEvento`, ya construido en v1
++> (`fk_tipo_evento`).
++
++- [ ] `Modelos/Catedra.cs` — `IdCatedra`, `NombreAsis` y `CreadoEn` sin
++      `required` (los pone la BD; `NombreAsis` además nunca se asigna
++      a mano, solo la rellena el repositorio con lo que devuelve el
++      `RETURNING`).
++- [ ] `Peticiones/Catedra{Crear,Reemplazo,Actualizar}.cs` —
++      `id_evento_asis` con
++      `[RegularExpression("^[0-9]{9}$")]` y `[StringLength(9)]`;
++      **ninguna de las 3** declara `nombre_asis` (§4.3 de
++      [3_plan.md](3_plan.md): si el cliente lo manda, Dapper/ASP.NET
++      lo ignora al no existir la propiedad).
++- [ ] `Repositorios/IRepositorioCatedra.cs` +
++      `RepositorioCatedraPostgres.cs` — `CrearAsync` devuelve
++      `Task<(long IdCatedra, string NombreAsis)>` con
++      `INSERT ... RETURNING id_catedra, nombre_asis` (código exacto en
++      §4.3 de [3_plan.md](3_plan.md)).
++- [ ] `Servicios/IServicioCatedra.cs` + `ServicioCatedra.cs`.
++- [ ] `Controllers/CatedraController.cs` — 6 endpoints; el de `POST`
++      arma la respuesta con la tupla `(IdCatedra, NombreAsis)` que
++      devuelve el servicio.
++- [ ] `Program.cs` — registrar la pareja nueva.
++
++**Verificar:** `GET /api/Catedra?limite=5` → 5 filas, `total: 5502`;
++`GET /api/Catedra/1` → `nombre_asis: "PELICULA:LA MIRADA DEL AMOR"`
++(verificar que coincide con `LEFT(nombre, 30)` calculado por la BD, no
++por el C#); `POST` con `id_evento_asis: "12345"` → 422; un
++`fk_tipo_evento` que no existe en `tipo_evento` (v1) → 500.
++**No ejecutar `DELETE` sobre `id_catedra` 1-5497 todavía** — tienen
++sesiones de v4 ya sembradas (`ON DELETE CASCADE`, ver
++[5_data_model.md](5_data_model.md) §2.5); esa prueba específica se deja
++para la Fase 18, usando `id_catedra` 5498-5502.
++
++## Fase 17 — Prueba de capas extendida (criterio de aceptación 8)
++> Depende de las Fases 14-16 (las 5 entidades deben existir).
++
++- [ ] Agregar a `pruebas/Programa.cs` un repositorio FALSO y sus
++      verificaciones para `Facultad`, `Dependencia`,
++      `ProgramaAcademico`, `AliasPrograma` y `Catedra` (mismo patrón que
++      v1, Fase 11). `RepositorioFacultadFalso` y
++      `RepositorioDependenciaFalso` incluyen un caso que fuerce la
++      autorreferencia y confirmen el `400`.
++      `RepositorioAliasProgramaFalso` **no** implementa
++      `ActualizarAsync` (no existe en la interfaz — ver Fase 15).
++      `RepositorioCatedraFalso` simula el `RETURNING` devolviendo
++      `(id, nombre[..30])` desde el repositorio falso, para poder
++      verificar `NombreAsis` sin PostgreSQL.
++
++**Verificar:** `dotnet run --project pruebas` → cubre las **15**
++entidades, código de salida 0. Anotar aquí el total real de
++verificaciones (reemplaza este texto cuando se ejecute: las 45 de v1 +
++las nuevas de v2).
++
++## Fase 18 — Verificación de integridad referencial (criterios de aceptación 7 y 9)
++> Depende de las Fases 14-16. Es la única fase de v2 dedicada
++> exclusivamente a probar lo que la BD hace sola, sin código nuevo —
++> por eso va separada: mezclarla con la Fase 14/16 habría significado
++> probar `DELETE` antes de que todas las piezas relacionadas existieran.
++
++- [ ] Ejecutar, contra Docker + PostgreSQL reales y EN ESTE ORDEN
++      (cada paso depende de que el de ejemplo siga intacto hasta
++      llegar a él):
++  1. `DELETE /api/Facultad/F_ING` → 200; confirmar con `GET
++     /api/ProgramaAcademico/M0286` que `fk_facultad` quedó en `null`.
++  2. `DELETE /api/Dependencia/DESA_HUM` → 200; confirmar que la
++     cátedra de ejemplo que la usaba quedó con `fk_dependencia: null`.
++  3. `DELETE /api/ProgramaAcademico/M0286` → 500 (bloqueado por
++     `programa_asistente`, RESTRICT); confirmar con `GET
++     /api/AliasPrograma` que los 3 alias de ejemplo SIGUEN ahí (la
++     cascada no llegó a ejecutarse).
++  4. `DELETE /api/Catedra/5502` → 200, sin efectos en otras tablas
++     (una de las 5 sin sesiones).
++- [ ] `docker compose down -v && docker compose up -d --build` —
++      revertir los 4 `DELETE` de arriba antes de seguir con cualquier
++      otra prueba manual.
++
++**Verificar:** los 4 resultados de arriba coinciden exactamente con lo
++documentado en [5_data_model.md](5_data_model.md) §2.1-2.5 y en el
++criterio de aceptación 7 de [2_spec.md](2_spec.md). Si alguno no
++coincide, el modelo de datos de este documento tiene un error y hay que
++corregirlo ahí antes de seguir — no "arreglar" el comportamiento con
++código nuevo en la API (la integridad referencial es de la BD,
++Artículo 5).
++
++## Fase 19 — Frontend: integración de la plantilla
++> RF92-RF93 de [2_spec.md](2_spec.md), §4.6 de [3_plan.md](3_plan.md).
++> No depende de ninguna fase de la API — puede hacerse en paralelo con
++> las Fases 14-18, pero el catálogo (Fase 20) sí depende de que esta
++> fase termine primero (si no, se construiría dos veces, ver §4.6 de
++> [3_plan.md](3_plan.md)).
++
++- [ ] Copiar `base.html`, `partials/navbar.html`, `partials/footer.html`
++      y los estáticos de la plantilla externa sobre los actuales de
++      `front_catedras/`.
++- [ ] Copiar `auth_helpers.py` a la raíz de `front_catedras/`; completar
++      solo el helper que `base.html` necesita, devolviendo siempre "sin
++      sesión" en esta versión.
++- [ ] Corregir en `navbar.html` cada `url_for(...)` roto, mapeándolo a
++      uno de los 6 blueprints reales que `app.py` ya registra.
++- [ ] Reemplazar el puerto `5001` cableado en la plantilla por el que
++      usa `run.py` (hoy `5000`).
++- [ ] Eliminar cualquier `try/except` en `servicios/api_catedras.py` o
++      en las rutas que sirva datos mock cuando la API falla (RF93).
++
++**Verificar:** con la API apagada (`docker compose stop api`),
++`http://localhost:5000` y cualquier ruta que consuma la API muestran un
++error, nunca datos inventados; con la API prendida, el navbar no
++produce ningún `werkzeug.routing.BuildError`.
++
++## Fase 20 — Frontend: catálogo público y administración de las 5 tablas
++> RF90-RF91, RF94 de [2_spec.md](2_spec.md). Depende de la Fase 19
++> (plantilla integrada) y de las Fases 14-16 (API completa).
++
++- [ ] `routes/catedras.py` — reemplazar el placeholder: `GET /catedras`
++      llama una vez a `GET /api/Catedra` (sin `limite`, ADR D13 de
++      [4_research.md](4_research.md)), filtra por `?q=` y pagina con
++      `?pagina=` en Python, sin JavaScript nuevo (código de forma en
++      §4.7 de [3_plan.md](3_plan.md)).
++- [ ] `templates/catedras.html` — listado paginado + buscador.
++- [ ] `GET /catedras/{idCatedra}` + `templates/detalle_catedra.html` —
++      si `fk_dependencia` no es nulo, una llamada adicional a
++      `GET /api/Dependencia/{id}` para mostrar su nombre.
++- [ ] `routes/admin.py` — 5 bloques CRUD nuevos (mismo patrón que las
++      10 de v1); el de `Facultad`/`Dependencia` arma el `<select>` de
++      posibles padres con una llamada previa a `GET /api/Facultad` o
++      `GET /api/Dependencia`; el de `AliasPrograma` solo ofrece crear y
++      eliminar.
++- [ ] `templates/admin/` — 10 templates nuevos (`_form.html` +
++      `_lista.html` por cada una de las 5 tablas), reutilizando el
++      layout ya corregido en la Fase 19.
++
++**Verificar:** `http://localhost:5000/catedras` pagina las 5502
++cátedras y el buscador `"amor"` encuentra `000023636` sin importar la
++página; `http://localhost:5000/catedras/1` muestra el detalle completo;
++`http://localhost:5000/admin/` tiene 15 tarjetas en total (10 de v1 +
++5 de v2), con CRUD de punta a punta contra Docker/PostgreSQL reales.
++
++## Fase 21 — Cierre de la v2
++> Última fase. Solo entonces se escribe la spec de la v3 (Artículo 1).
++
++- [ ] Confirmar que los 10 criterios de aceptación de
++      [2_spec.md](2_spec.md) §6 pasan, en orden, sobre un entorno recién
++      reseteado (`down -v && up -d --build`).
++- [ ] `dotnet run --project pruebas` → anotar el total final de
++      verificaciones pasadas (Fase 17).
++- [ ] Commit y tag: `git tag v2`.
