@@ -247,6 +247,18 @@ builder.Services.AddScoped<IRepositorioDependencia>(
     _ => new RepositorioDependenciaPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioDependencia, ServicioDependencia>();
 
+// IRepositorioProgramaAcademico -> RepositorioProgramaAcademicoPostgres,
+// IServicioProgramaAcademico -> ServicioProgramaAcademico.
+builder.Services.AddScoped<IRepositorioProgramaAcademico>(
+    _ => new RepositorioProgramaAcademicoPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioProgramaAcademico, ServicioProgramaAcademico>();
+
+// IRepositorioAliasPrograma -> RepositorioAliasProgramaPostgres,
+// IServicioAliasPrograma -> ServicioAliasPrograma (solo-anexo: sin actualizar).
+builder.Services.AddScoped<IRepositorioAliasPrograma>(
+    _ => new RepositorioAliasProgramaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioAliasPrograma, ServicioAliasPrograma>();
+
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------

@@ -728,6 +728,80 @@ await AfirmarLanza<NoEncontradoExcepcion>(
 
 Afirmar("DELETE elimina 1 fila", await servicioDependencia.EliminarAsync("PASTORAL") == 1);
 
+// ============================================================================
+//  v2 · Prueba de capas: ServicioProgramaAcademico + repositorio falso
+//  (el formato del código y la lista de niveles son de FORMA: los prueba la
+//   petición contra Docker, no esta prueba de capas)
+// ============================================================================
+var servicioPrograma = new ServicioProgramaAcademico(new RepositorioProgramaAcademicoFalso());
+
+Console.WriteLine("\n== v2 · Prueba de capas: ServicioProgramaAcademico + repositorio falso en memoria ==\n");
+
+var (datosProg, totalProg) = await servicioPrograma.ListarAsync(null);
+Afirmar("Listar() devuelve el programa semilla", totalProg == 1 && datosProg.Count == 1);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(-1) lanza ArgumentException", () => servicioPrograma.ListarAsync(-1));
+
+await servicioPrograma.CrearAsync(new ProgramaAcademicoCrear { Codigo = "Z9999", Nombre = "Programa de prueba" });
+var progCreado = await servicioPrograma.ObtenerAsync("Z9999");
+Afirmar("Crear() aplica los DEFAULT (nivel PREGRADO, activo true, sin facultad)",
+    progCreado.Nivel == "PREGRADO" && progCreado.Activo && progCreado.FkFacultad is null);
+
+int filasPutProg = await servicioPrograma.ReemplazarAsync("Z9999", new ProgramaAcademicoReemplazo
+{ Nombre = "Maestría de prueba", FkFacultad = "F_ING", Nivel = "MAESTRIA", Activo = false });
+var trasPutProg = await servicioPrograma.ObtenerAsync("Z9999");
+Afirmar("PUT reemplaza todo", filasPutProg == 1 && trasPutProg.Nivel == "MAESTRIA"
+    && trasPutProg.FkFacultad == "F_ING" && !trasPutProg.Activo);
+
+int filasPatchProg = await servicioPrograma.ActualizarAsync("Z9999", new ProgramaAcademicoActualizar { Activo = true });
+var trasPatchProg = await servicioPrograma.ObtenerAsync("Z9999");
+Afirmar("PATCH cambia solo 'activo' y deja 'nivel' igual",
+    filasPatchProg == 1 && trasPatchProg.Activo && trasPatchProg.Nivel == "MAESTRIA");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioPrograma.ActualizarAsync("Z9999", new ProgramaAcademicoActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(\"Q0000\") lanza NoEncontradoExcepcion", () => servicioPrograma.ObtenerAsync("Q0000"));
+
+Afirmar("DELETE elimina 1 fila", await servicioPrograma.EliminarAsync("Z9999") == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioPrograma.EliminarAsync("Z9999"));
+
+// ============================================================================
+//  v2 · Prueba de capas: ServicioAliasPrograma + repositorio falso
+//  El repositorio falso simula IDENTITY (contador) y DEFAULT now().
+// ============================================================================
+var servicioAlias = new ServicioAliasPrograma(new RepositorioAliasProgramaFalso());
+
+Console.WriteLine("\n== v2 · Prueba de capas: ServicioAliasPrograma + repositorio falso en memoria ==\n");
+
+var (datosAli, totalAli) = await servicioAlias.ListarAsync(null);
+Afirmar("Listar() devuelve los 3 alias semilla de M0286",
+    totalAli == 3 && datosAli.All(a => a.FkPrograma == "M0286"));
+
+var aliasCreado = await servicioAlias.CrearAsync(new AliasProgramaCrear { TextoNormalizado = "ing de datos", FkPrograma = "M0286" });
+Afirmar("Crear() devuelve el id y la fecha generados por la 'BD'",
+    aliasCreado.IdAlias == 5 && aliasCreado.CreadoEn != default);
+Afirmar("Crear() aplica origen = FORMULARIO por defecto", aliasCreado.Origen == "FORMULARIO");
+
+var aliasLeido = await servicioAlias.ObtenerAsync(aliasCreado.IdAlias);
+Afirmar("Obtener() encuentra el alias creado", aliasLeido.TextoNormalizado == "ing de datos");
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(999) lanza NoEncontradoExcepcion", () => servicioAlias.ObtenerAsync(999));
+
+Afirmar("DELETE elimina 1 fila", await servicioAlias.EliminarAsync(aliasCreado.IdAlias) == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioAlias.EliminarAsync(aliasCreado.IdAlias));
+
+// Comprobación por REFLEXIÓN: la interfaz de verdad no declara un método
+// de actualizar (la ausencia es la especificación, ADR D12).
+Afirmar("IRepositorioAliasPrograma no declara ActualizarAsync",
+    typeof(IRepositorioAliasPrograma).GetMethod("ActualizarAsync") is null);
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -1332,4 +1406,89 @@ class RepositorioDependenciaFalso : IRepositorioDependencia
 
     public Task<int> EliminarAsync(string idDependencia) =>
         Task.FromResult(_tabla.Remove(idDependencia) ? 1 : 0);
+}
+
+
+// ==========================================================================
+//  v2 · Repositorio FALSO de 'ProgramaAcademico'.
+// ==========================================================================
+class RepositorioProgramaAcademicoFalso : IRepositorioProgramaAcademico
+{
+    private readonly Dictionary<string, ProgramaAcademico> _tabla = new();
+
+    public RepositorioProgramaAcademicoFalso()
+    {
+        _tabla["M0286"] = new ProgramaAcademico { Codigo = "M0286", Nombre = "Ingenieria de Datos y Software", FkFacultad = "F_ING" };
+    }
+
+    public Task<List<ProgramaAcademico>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(p => p.Codigo).Take(limite).ToList());
+
+    public Task<ProgramaAcademico?> ObtenerPorIdAsync(string codigo) =>
+        Task.FromResult(_tabla.TryGetValue(codigo, out var programa) ? programa : null);
+
+    public Task CrearAsync(ProgramaAcademico programa)
+    {
+        if (_tabla.ContainsKey(programa.Codigo))
+            throw new InvalidOperationException("codigo duplicado (simulado).");
+        _tabla[programa.Codigo] = programa;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string codigo, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(codigo, out var programa))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) programa.Nombre = (string)n!;
+        if (datos.TryGetValue("fk_facultad", out var f)) programa.FkFacultad = (string?)f;
+        if (datos.TryGetValue("nivel", out var nv)) programa.Nivel = (string)nv!;
+        if (datos.TryGetValue("activo", out var a)) programa.Activo = (bool)a!;
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string codigo) =>
+        Task.FromResult(_tabla.Remove(codigo) ? 1 : 0);
+}
+
+// ==========================================================================
+//  v2 · Repositorio FALSO de 'AliasPrograma'. Sin ActualizarAsync: si se
+//  escribiera, el compilador no se quejaría, pero tampoco hay a quién
+//  servirle (la interfaz no lo declara). Simula IDENTITY y DEFAULT now().
+// ==========================================================================
+class RepositorioAliasProgramaFalso : IRepositorioAliasPrograma
+{
+    private readonly Dictionary<long, AliasPrograma> _tabla = new();
+    private long _siguienteId = 5; // en el script real los ids semilla son 1, 3 y 4
+
+    public RepositorioAliasProgramaFalso()
+    {
+        _tabla[1] = new AliasPrograma { IdAlias = 1, TextoNormalizado = "ingenieria de datos y software", FkPrograma = "M0286" };
+        _tabla[3] = new AliasPrograma { IdAlias = 3, TextoNormalizado = "ingenieria de datos", FkPrograma = "M0286" };
+        _tabla[4] = new AliasPrograma { IdAlias = 4, TextoNormalizado = "ing. datos y software", FkPrograma = "M0286" };
+    }
+
+    public Task<List<AliasPrograma>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(a => a.IdAlias).Take(limite).ToList());
+
+    public Task<AliasPrograma?> ObtenerPorIdAsync(long idAlias) =>
+        Task.FromResult(_tabla.TryGetValue(idAlias, out var alias) ? alias : null);
+
+    public Task<(long IdAlias, DateTime CreadoEn)> CrearAsync(AliasPrograma alias)
+    {
+        if (_tabla.Values.Any(a => a.TextoNormalizado == alias.TextoNormalizado))
+            throw new InvalidOperationException("texto_normalizado duplicado (simulado).");
+
+        long id = _siguienteId++;          // simula IDENTITY
+        var ahora = DateTime.UtcNow;       // simula DEFAULT now()
+        _tabla[id] = new AliasPrograma
+        {
+            IdAlias = id, TextoNormalizado = alias.TextoNormalizado,
+            FkPrograma = alias.FkPrograma, Origen = alias.Origen, CreadoEn = ahora,
+        };
+        return Task.FromResult((id, ahora));
+    }
+
+    public Task<int> EliminarAsync(long idAlias) =>
+        Task.FromResult(_tabla.Remove(idAlias) ? 1 : 0);
 }
