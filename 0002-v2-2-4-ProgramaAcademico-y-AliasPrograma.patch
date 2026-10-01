@@ -1,0 +1,1523 @@
+From ee75cd668458f3643050f45599a0105d620d8254 Mon Sep 17 00:00:00 2001
+From: german <german.valencia.h04@gmail.com>
+Date: Thu, 1 Oct 2026 15:41:47 +0000
+Subject: [PATCH 2/4] v2 (2/4): ProgramaAcademico y AliasPrograma
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- ProgramaAcademico (RF74-RF79): 'codigo' y 'nivel' validados en la
+  petición con [RegularExpression] (422); DELETE bloqueado por la FK
+  RESTRICT de programa_asistente (500, y los alias no se borran).
+- AliasPrograma (RF80-RF83): tabla de solo-anexo, 4 verbos sin PUT ni
+  PATCH. INSERT ... RETURNING id_alias, creado_en en un solo viaje.
+- Repositorios falsos y verificaciones nuevas en pruebas/.
+- Fase 15 de version2/8_tasks.md marcada como hecha.
+---
+ .../Controllers/AliasProgramaController.cs    | 143 ++++++++++++
+ .../ProgramaAcademicoController.cs            | 212 ++++++++++++++++++
+ api_catedras/Modelos/AliasPrograma.cs         |  49 ++++
+ api_catedras/Modelos/ProgramaAcademico.cs     |  46 ++++
+ api_catedras/Peticiones/AliasProgramaCrear.cs |  40 ++++
+ .../Peticiones/ProgramaAcademicoActualizar.cs |  47 ++++
+ .../Peticiones/ProgramaAcademicoCrear.cs      |  52 +++++
+ .../Peticiones/ProgramaAcademicoReemplazo.cs  |  42 ++++
+ api_catedras/Program.cs                       |  12 +
+ .../Repositorios/IRepositorioAliasPrograma.cs |  34 +++
+ .../IRepositorioProgramaAcademico.cs          |  30 +++
+ .../RepositorioAliasProgramaPostgres.cs       |  73 ++++++
+ .../RepositorioProgramaAcademicoPostgres.cs   | 106 +++++++++
+ .../Servicios/IServicioAliasPrograma.cs       |  27 +++
+ .../Servicios/IServicioProgramaAcademico.cs   |  22 ++
+ .../Servicios/ServicioAliasPrograma.cs        |  80 +++++++
+ .../Servicios/ServicioProgramaAcademico.cs    | 113 ++++++++++
+ api_catedras/pruebas/Programa.cs              | 159 +++++++++++++
+ docs/spec_kit/Versiones/version2/8_tasks.md   |  28 +--
+ 19 files changed, 1302 insertions(+), 13 deletions(-)
+ create mode 100644 api_catedras/Controllers/AliasProgramaController.cs
+ create mode 100644 api_catedras/Controllers/ProgramaAcademicoController.cs
+ create mode 100644 api_catedras/Modelos/AliasPrograma.cs
+ create mode 100644 api_catedras/Modelos/ProgramaAcademico.cs
+ create mode 100644 api_catedras/Peticiones/AliasProgramaCrear.cs
+ create mode 100644 api_catedras/Peticiones/ProgramaAcademicoActualizar.cs
+ create mode 100644 api_catedras/Peticiones/ProgramaAcademicoCrear.cs
+ create mode 100644 api_catedras/Peticiones/ProgramaAcademicoReemplazo.cs
+ create mode 100644 api_catedras/Repositorios/IRepositorioAliasPrograma.cs
+ create mode 100644 api_catedras/Repositorios/IRepositorioProgramaAcademico.cs
+ create mode 100644 api_catedras/Repositorios/RepositorioAliasProgramaPostgres.cs
+ create mode 100644 api_catedras/Repositorios/RepositorioProgramaAcademicoPostgres.cs
+ create mode 100644 api_catedras/Servicios/IServicioAliasPrograma.cs
+ create mode 100644 api_catedras/Servicios/IServicioProgramaAcademico.cs
+ create mode 100644 api_catedras/Servicios/ServicioAliasPrograma.cs
+ create mode 100644 api_catedras/Servicios/ServicioProgramaAcademico.cs
+
+diff --git a/api_catedras/Controllers/AliasProgramaController.cs b/api_catedras/Controllers/AliasProgramaController.cs
+new file mode 100644
+index 0000000..9b2b8b4
+--- /dev/null
++++ b/api_catedras/Controllers/AliasProgramaController.cs
+@@ -0,0 +1,143 @@
++// ==========================================================================
++//  Controllers/AliasProgramaController.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Capa HTTP de 'AliasPrograma'. SOLO 4 endpoints: GET lista, GET/{id},
++//  POST y DELETE. NO hay [HttpPut] ni [HttpPatch] (ADR D12): una llamada a
++//  PUT/PATCH responde 404/405 del propio ASP.NET porque la ruta no existe;
++//  no se fabrica ningún error a mano.
++//
++//  El id es 'long' (lo genera la BD); la restricción de ruta '{idAlias:long}'
++//  hace que "/api/AliasPrograma/abc" ni siquiera entre a este controlador.
++// ==========================================================================
++
++namespace ApiCatedras.Controllers;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Servicios;
++using Microsoft.AspNetCore.Mvc;
++using Npgsql;
++
++[ApiController]
++[Route("api/AliasPrograma")]
++public class AliasProgramaController : ControllerBase
++{
++    private readonly IServicioAliasPrograma _servicio;
++
++    public AliasProgramaController(IServicioAliasPrograma servicio)
++    {
++        _servicio = servicio;
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF80 · GET /api/AliasPrograma?limite=N   -> 200 | 204
++    // ----------------------------------------------------------------------
++    [HttpGet]
++    public async Task<IActionResult> Listar([FromQuery] int? limite)
++    {
++        try
++        {
++            var (datos, total) = await _servicio.ListarAsync(limite);
++
++            if (total == 0)
++                return NoContent();
++
++            return Ok(new
++            {
++                tabla = "alias_programa",
++                limite = limite ?? 1000,
++                total,
++                datos,
++            });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Parámetro de consulta inválido.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al listar los alias.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF81 · GET /api/AliasPrograma/{idAlias}   -> 200 | 404
++    // ----------------------------------------------------------------------
++    [HttpGet("{idAlias:long}")]
++    public async Task<IActionResult> Obtener(long idAlias)
++    {
++        try
++        {
++            return Ok(await _servicio.ObtenerAsync(idAlias));
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Alias no encontrado.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al obtener el alias.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF82 · POST /api/AliasPrograma   -> 200 { estado, mensaje, id_alias, creado_en }
++    // ----------------------------------------------------------------------
++    [HttpPost]
++    public async Task<IActionResult> Crear([FromBody] AliasProgramaCrear peticion)
++    {
++        try
++        {
++            var alias = await _servicio.CrearAsync(peticion);
++            return Ok(new
++            {
++                estado = "creado",
++                mensaje = $"Alias '{alias.TextoNormalizado}' creado.",
++                id_alias = alias.IdAlias,     // lo generó la BD
++                creado_en = alias.CreadoEn,   // lo generó la BD
++            });
++        }
++        catch (NpgsqlException ex)
++        {
++            // Texto duplicado (uq_alias_texto) o programa inexistente (fk_alias_programa).
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al crear el alias.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF83 · DELETE /api/AliasPrograma/{idAlias}   -> 200 { filasEliminadas } | 404
++    // ----------------------------------------------------------------------
++    [HttpDelete("{idAlias:long}")]
++    public async Task<IActionResult> Eliminar(long idAlias)
++    {
++        try
++        {
++            int filas = await _servicio.EliminarAsync(idAlias);
++            return Ok(new { filasEliminadas = filas });
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Alias no encontrado.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al eliminar el alias.", ex.Message);
++        }
++    }
++
++    private ObjectResult Problema(int codigo, string estado, string mensaje, string? detalle)
++    {
++        return new ObjectResult(new { estado, mensaje, detalle })
++        {
++            StatusCode = codigo,
++        };
++    }
++}
+diff --git a/api_catedras/Controllers/ProgramaAcademicoController.cs b/api_catedras/Controllers/ProgramaAcademicoController.cs
+new file mode 100644
+index 0000000..c59742c
+--- /dev/null
++++ b/api_catedras/Controllers/ProgramaAcademicoController.cs
+@@ -0,0 +1,212 @@
++// ==========================================================================
++//  Controllers/ProgramaAcademicoController.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Capa HTTP de 'ProgramaAcademico' (la clave de la URL es el 'codigo'). Mismo
++//  patrón que SedeController (v1): recibe la
++//  petición ya validada (si no, 422 antes de llegar aquí), llama al
++//  servicio por su INTERFAZ y traduce resultado/excepción a código HTTP:
++//     ArgumentException     -> 400  (límite inválido, PATCH vacío)
++//     NoEncontradoExcepcion -> 404
++//     NpgsqlException        -> 500  (duplicado, facultad inexistente o
++//                                      borrado bloqueado por RESTRICT)
++// ==========================================================================
++
++namespace ApiCatedras.Controllers;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Servicios;
++using Microsoft.AspNetCore.Mvc;
++using Npgsql;   // NpgsqlException
++
++// [ApiController]: enlaza el body y valida la petición (422 automático).
++// [Route]: prefijo común de todos los métodos.
++[ApiController]
++[Route("api/ProgramaAcademico")]
++public class ProgramaAcademicoController : ControllerBase
++{
++    // [SOLID · D] El controlador solo conoce la interfaz del servicio.
++    private readonly IServicioProgramaAcademico _servicio;
++
++    public ProgramaAcademicoController(IServicioProgramaAcademico servicio)
++    {
++        _servicio = servicio;
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF74 · GET /api/ProgramaAcademico?limite=N   -> 200 { tabla, limite, total, datos } | 204
++    // ----------------------------------------------------------------------
++    [HttpGet]
++    public async Task<IActionResult> Listar([FromQuery] int? limite)
++    {
++        try
++        {
++            var (datos, total) = await _servicio.ListarAsync(limite);
++
++            if (total == 0)
++                return NoContent();
++
++            return Ok(new
++            {
++                tabla = "programa_academico",
++                limite = limite ?? 1000,
++                total,
++                datos,
++            });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Parámetro de consulta inválido.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al listar los programas académicos.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF75 · GET /api/ProgramaAcademico/{codigo}   -> 200 | 404
++    // ----------------------------------------------------------------------
++    [HttpGet("{codigo}")]
++    public async Task<IActionResult> Obtener(string codigo)
++    {
++        try
++        {
++            return Ok(await _servicio.ObtenerAsync(codigo));
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Programa académico no encontrado.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al obtener el programa académico.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF76 · POST /api/ProgramaAcademico   -> 200 { estado, mensaje } | 400 | 422 | 500
++    // ----------------------------------------------------------------------
++    [HttpPost]
++    public async Task<IActionResult> Crear([FromBody] ProgramaAcademicoCrear peticion)
++    {
++        try
++        {
++            await _servicio.CrearAsync(peticion);
++            return Ok(new
++            {
++                estado = "creado",
++                mensaje = $"Programa académico '{peticion.Codigo}' creado.",
++            });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            // Código duplicado (pk_programa_academico) o 'fk_facultad'
++            // inexistente (fk_programa_facultad): el motor aborta el INSERT.
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al crear el programa académico.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF77 · PUT /api/ProgramaAcademico/{codigo}   -> 200 { filasAfectadas } | 400 | 404 | 422
++    // ----------------------------------------------------------------------
++    [HttpPut("{codigo}")]
++    public async Task<IActionResult> Reemplazar(string codigo, [FromBody] ProgramaAcademicoReemplazo peticion)
++    {
++        try
++        {
++            int filas = await _servicio.ReemplazarAsync(codigo, peticion);
++            return Ok(new { filasAfectadas = filas });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Programa académico no encontrado.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al reemplazar el programa académico.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF78 · PATCH /api/ProgramaAcademico/{codigo}   -> 200 { filasAfectadas } | 400 | 404
++    // ----------------------------------------------------------------------
++    [HttpPatch("{codigo}")]
++    public async Task<IActionResult> Actualizar(string codigo, [FromBody] ProgramaAcademicoActualizar peticion)
++    {
++        try
++        {
++            int filas = await _servicio.ActualizarAsync(codigo, peticion);
++            return Ok(new { filasAfectadas = filas });
++        }
++        catch (ArgumentException ex)
++        {
++            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Programa académico no encontrado.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al actualizar el programa académico.", ex.Message);
++        }
++    }
++
++    // ----------------------------------------------------------------------
++    //  RF79 · DELETE /api/ProgramaAcademico/{codigo}   -> 200 { filasEliminadas } | 404
++    //  Si el programa tiene asistentes (programa_asistente, RESTRICT) -> 500
++    //  y NADA se borra: ni el programa ni sus alias (CASCADE no llega a ocurrir).
++    // ----------------------------------------------------------------------
++    [HttpDelete("{codigo}")]
++    public async Task<IActionResult> Eliminar(string codigo)
++    {
++        try
++        {
++            int filas = await _servicio.EliminarAsync(codigo);
++            return Ok(new { filasEliminadas = filas });
++        }
++        catch (NoEncontradoExcepcion ex)
++        {
++            return Problema(404, "no_encontrado", "Programa académico no encontrado.", ex.Message);
++        }
++        catch (NpgsqlException ex)
++        {
++            // [ACID · A] La sentencia completa se revierte: los alias siguen ahí.
++            return Problema(500, "error_motor", "No se pudo eliminar el programa académico.", ex.Message);
++        }
++        catch (Exception ex)
++        {
++            return Problema(500, "error_interno", "Error al eliminar el programa académico.", ex.Message);
++        }
++    }
++
++    // Arma el sobre de error { estado, mensaje, detalle } con el código indicado.
++    private ObjectResult Problema(int codigo, string estado, string mensaje, string? detalle)
++    {
++        return new ObjectResult(new { estado, mensaje, detalle })
++        {
++            StatusCode = codigo,
++        };
++    }
++}
+diff --git a/api_catedras/Modelos/AliasPrograma.cs b/api_catedras/Modelos/AliasPrograma.cs
+new file mode 100644
+index 0000000..e135153
+--- /dev/null
++++ b/api_catedras/Modelos/AliasPrograma.cs
+@@ -0,0 +1,49 @@
++// ==========================================================================
++//  Modelos/AliasPrograma.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Una fila de 'catedras.alias_programa': un texto libre con que alguien
++//  escribió un programa en un formulario, y el código al que corresponde.
++//
++//  Definición real de la tabla (ver version2/5_data_model.md §2.4):
++//    id_alias           BIGINT        PK  GENERATED ALWAYS AS IDENTITY
++//    texto_normalizado  VARCHAR(200)  NOT NULL  UNIQUE (uq_alias_texto)
++//    fk_programa        VARCHAR(5)    NOT NULL  FK -> programa_academico
++//                                               (ON DELETE CASCADE)
++//    origen             VARCHAR(30)   NOT NULL  DEFAULT 'FORMULARIO'
++//    creado_en          TIMESTAMPTZ   NOT NULL  DEFAULT now()
++//
++//  'IdAlias' y 'CreadoEn' NO llevan 'required': los pone la BD, el cliente
++//  nunca los manda (igual que 'id_encuesta' en la v1).
++//
++//  Es una tabla de SOLO-ANEXO (ADR D12): no tiene PUT ni PATCH. Si un alias
++//  quedó mal escrito, se borra y se crea de nuevo.
++// ==========================================================================
++
++namespace ApiCatedras.Modelos;
++
++using System.Text.Json.Serialization;
++
++/// <summary>Variante de texto libre con que se escribió un programa.</summary>
++public class AliasPrograma
++{
++    /// <summary>Identificador autogenerado por la BD.</summary>
++    [JsonPropertyName("id_alias")]
++    public long IdAlias { get; set; }
++
++    /// <summary>El texto tal como se normalizó. Obligatorio y único.</summary>
++    [JsonPropertyName("texto_normalizado")]
++    public required string TextoNormalizado { get; set; }
++
++    /// <summary>Código del programa al que corresponde el alias.</summary>
++    [JsonPropertyName("fk_programa")]
++    public required string FkPrograma { get; set; }
++
++    /// <summary>De dónde salió el alias. Por defecto 'FORMULARIO'.</summary>
++    [JsonPropertyName("origen")]
++    public string Origen { get; set; } = "FORMULARIO";
++
++    /// <summary>Cuándo se registró (lo pone la BD con now()). De solo lectura en la API.
++    /// 'DateTime' en UTC: es lo que Npgsql entrega para una columna TIMESTAMPTZ.</summary>
++    [JsonPropertyName("creado_en")]
++    public DateTime CreadoEn { get; set; }
++}
+diff --git a/api_catedras/Modelos/ProgramaAcademico.cs b/api_catedras/Modelos/ProgramaAcademico.cs
+new file mode 100644
+index 0000000..ff5bd7e
+--- /dev/null
++++ b/api_catedras/Modelos/ProgramaAcademico.cs
+@@ -0,0 +1,46 @@
++// ==========================================================================
++//  Modelos/ProgramaAcademico.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Una fila de 'catedras.programa_academico'.
++//
++//  Definición real de la tabla (ver version2/5_data_model.md §2.3):
++//    codigo       VARCHAR(5)    NOT NULL  PRIMARY KEY
++//                 CHECK (codigo ~ '^[A-Z][0-9A-Z]{3,4}$')   -- p. ej. M0286
++//    nombre       VARCHAR(150)  NOT NULL  (NO es único)
++//    fk_facultad  VARCHAR(10)             FK -> facultad (ON DELETE SET NULL)
++//    nivel        VARCHAR(25)   NOT NULL  DEFAULT 'PREGRADO'  (lista cerrada)
++//    activo       BOOLEAN       NOT NULL  DEFAULT true
++//
++//  FK ENTRANTES (las aplica el motor al borrar un programa):
++//    alias_programa.fk_programa       -> ON DELETE CASCADE
++//    programa_asistente.fk_programa   -> ON DELETE RESTRICT (v3, ya sembrada)
++//  RESTRICT gana: un programa con asistentes NO se puede borrar (500).
++// ==========================================================================
++
++namespace ApiCatedras.Modelos;
++
++using System.Text.Json.Serialization;
++
++/// <summary>Un programa académico (pregrado, maestría...).</summary>
++public class ProgramaAcademico
++{
++    /// <summary>Código del programa. Clave primaria (una letra + 3 o 4 alfanuméricos).</summary>
++    [JsonPropertyName("codigo")]
++    public required string Codigo { get; set; }
++
++    /// <summary>Nombre del programa. Obligatorio.</summary>
++    [JsonPropertyName("nombre")]
++    public required string Nombre { get; set; }
++
++    /// <summary>Facultad a la que pertenece. Opcional.</summary>
++    [JsonPropertyName("fk_facultad")]
++    public string? FkFacultad { get; set; }
++
++    /// <summary>Nivel de formación. Por defecto 'PREGRADO'.</summary>
++    [JsonPropertyName("nivel")]
++    public string Nivel { get; set; } = "PREGRADO";
++
++    /// <summary>¿Está activo? Por defecto true.</summary>
++    [JsonPropertyName("activo")]
++    public bool Activo { get; set; } = true;
++}
+diff --git a/api_catedras/Peticiones/AliasProgramaCrear.cs b/api_catedras/Peticiones/AliasProgramaCrear.cs
+new file mode 100644
+index 0000000..822341e
+--- /dev/null
++++ b/api_catedras/Peticiones/AliasProgramaCrear.cs
+@@ -0,0 +1,40 @@
++// ==========================================================================
++//  Peticiones/AliasProgramaCrear.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del POST /api/AliasPrograma. Es la ÚNICA petición de esta entidad:
++//  no existen 'AliasProgramaReemplazo' ni 'AliasProgramaActualizar' porque
++//  la tabla es de solo-anexo (ADR D12). La ausencia ES la especificación.
++//
++//  'id_alias' y 'creado_en' NO están aquí: los pone la BD. Si un cliente
++//  los manda en el JSON, el deserializador los ignora (no hay propiedad
++//  donde guardarlos), así que nunca llegan al INSERT.
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del POST /api/AliasPrograma.</summary>
++public class AliasProgramaCrear
++{
++    /// <summary>Texto normalizado. Obligatorio, 1 a 200 caracteres, único en la tabla.</summary>
++    [Required(ErrorMessage = "El campo 'texto_normalizado' es obligatorio.")]
++    [StringLength(200, MinimumLength = 1,
++        ErrorMessage = "El campo 'texto_normalizado' debe tener entre 1 y 200 caracteres.")]
++    [JsonPropertyName("texto_normalizado")]
++    public string? TextoNormalizado { get; set; }
++
++    /// <summary>Código del programa. Obligatorio (si no existe, la FK lo rechaza -> 500).</summary>
++    [Required(ErrorMessage = "El campo 'fk_programa' es obligatorio.")]
++    [StringLength(5, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_programa' debe tener entre 1 y 5 caracteres.")]
++    [JsonPropertyName("fk_programa")]
++    public string? FkPrograma { get; set; }
++
++    /// <summary>Origen del alias. Opcional (por defecto 'FORMULARIO'), hasta 30 caracteres.</summary>
++    [StringLength(30, MinimumLength = 1,
++        ErrorMessage = "El campo 'origen' debe tener entre 1 y 30 caracteres.")]
++    [JsonPropertyName("origen")]
++    public string? Origen { get; set; }
++}
+diff --git a/api_catedras/Peticiones/ProgramaAcademicoActualizar.cs b/api_catedras/Peticiones/ProgramaAcademicoActualizar.cs
+new file mode 100644
+index 0000000..af4d70c
+--- /dev/null
++++ b/api_catedras/Peticiones/ProgramaAcademicoActualizar.cs
+@@ -0,0 +1,47 @@
++// ==========================================================================
++//  Peticiones/ProgramaAcademicoActualizar.cs  ·  Proyecto Cátedras · v2
++// --------------------------------------------------------------------------
++//  Body del PATCH /api/ProgramaAcademico/{codigo}: PARCIAL, todo opcional.
++//  Cada campo que llega se valida con las mismas reglas de forma.
++//  Convención v1: null = "no enviado" (para quitar la facultad, usar PUT).
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del PATCH /api/ProgramaAcademico/{codigo}. Todo opcional.</summary>
++public class ProgramaAcademicoActualizar
++{
++    [StringLength(150, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 150 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    [StringLength(10, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_facultad' debe tener entre 1 y 10 caracteres.")]
++    [JsonPropertyName("fk_facultad")]
++    public string? FkFacultad { get; set; }
++
++    [RegularExpression("^(PREGRADO|ESPECIALIZACION|MAESTRIA|DOCTORADO|EDUCACION_CONTINUA|OTRO)$",
++        ErrorMessage = "El campo 'nivel' debe ser PREGRADO, ESPECIALIZACION, MAESTRIA, DOCTORADO, EDUCACION_CONTINUA u OTRO.")]
++    [JsonPropertyName("nivel")]
++    public string? Nivel { get; set; }
++
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++
++    /// <summary>Diccionario columna -> valor SOLO con lo que llegó (no null).</summary>
++    public Dictionary<string, object?> ACamposEnviados()
++    {
++        var datos = new Dictionary<string, object?>();
++
++        if (Nombre is not null) datos["nombre"] = Nombre;
++        if (FkFacultad is not null) datos["fk_facultad"] = FkFacultad;
++        if (Nivel is not null) datos["nivel"] = Nivel;
++        if (Activo is not null) datos["activo"] = Activo;
++
++        return datos;
++    }
++}
+diff --git a/api_catedras/Peticiones/ProgramaAcademicoCrear.cs b/api_catedras/Peticiones/ProgramaAcademicoCrear.cs
+new file mode 100644
+index 0000000..fc7d5bd
+--- /dev/null
++++ b/api_catedras/Peticiones/ProgramaAcademicoCrear.cs
+@@ -0,0 +1,52 @@
++// ==========================================================================
++//  Peticiones/ProgramaAcademicoCrear.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del POST /api/ProgramaAcademico.
++//
++//  Dos comprobaciones de FORMA nuevas, ambas con [RegularExpression]
++//  (mismo criterio que 'canal_difusion' de Modalidad en la v1):
++//   · 'codigo': una letra MAYÚSCULA + 3 o 4 alfanuméricos en mayúscula
++//     ("M0286" pasa, "m0286" -> 422). Refleja el CHECK chk_programa_codigo.
++//   · 'nivel': lista CERRADA de 6 valores (chk_programa_nivel). La BD lo
++//     guarda como texto, así que aquí también es texto, no un 'enum' de C#.
++//  Un fallo de forma -> 422 y la BD no se toca.
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del POST /api/ProgramaAcademico.</summary>
++public class ProgramaAcademicoCrear
++{
++    /// <summary>Código. Obligatorio; formato: letra + 3 o 4 alfanuméricos, en mayúscula.</summary>
++    [Required(ErrorMessage = "El campo 'codigo' es obligatorio.")]
++    [RegularExpression("^[A-Z][0-9A-Z]{3,4}$",
++        ErrorMessage = "El campo 'codigo' debe ser una letra mayúscula seguida de 3 o 4 letras mayúsculas o dígitos (p. ej. 'M0286').")]
++    [JsonPropertyName("codigo")]
++    public string? Codigo { get; set; }
++
++    /// <summary>Nombre. Obligatorio, 1 a 150 caracteres.</summary>
++    [Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
++    [StringLength(150, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 150 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    /// <summary>Facultad. Opcional; si llega, 1 a 10 caracteres (la FK la vigila la BD).</summary>
++    [StringLength(10, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_facultad' debe tener entre 1 y 10 caracteres.")]
++    [JsonPropertyName("fk_facultad")]
++    public string? FkFacultad { get; set; }
++
++    /// <summary>Nivel. Opcional (por defecto PREGRADO); si llega, debe estar en la lista.</summary>
++    [RegularExpression("^(PREGRADO|ESPECIALIZACION|MAESTRIA|DOCTORADO|EDUCACION_CONTINUA|OTRO)$",
++        ErrorMessage = "El campo 'nivel' debe ser PREGRADO, ESPECIALIZACION, MAESTRIA, DOCTORADO, EDUCACION_CONTINUA u OTRO.")]
++    [JsonPropertyName("nivel")]
++    public string? Nivel { get; set; }
++
++    /// <summary>¿Está activo? Opcional (por defecto true).</summary>
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++}
+diff --git a/api_catedras/Peticiones/ProgramaAcademicoReemplazo.cs b/api_catedras/Peticiones/ProgramaAcademicoReemplazo.cs
+new file mode 100644
+index 0000000..305c99e
+--- /dev/null
++++ b/api_catedras/Peticiones/ProgramaAcademicoReemplazo.cs
+@@ -0,0 +1,42 @@
++// ==========================================================================
++//  Peticiones/ProgramaAcademicoReemplazo.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Body del PUT /api/ProgramaAcademico/{codigo}: REEMPLAZO COMPLETO.
++//  'nombre', 'nivel' y 'activo' obligatorios (falta uno -> 422).
++//  'fk_facultad' se escribe siempre: si no llega, queda NULL.
++//  El 'codigo' viaja en la URL (la PK no se cambia).
++// ==========================================================================
++
++namespace ApiCatedras.Peticiones;
++
++using System.ComponentModel.DataAnnotations;
++using System.Text.Json.Serialization;
++
++/// <summary>Body del PUT /api/ProgramaAcademico/{codigo}.</summary>
++public class ProgramaAcademicoReemplazo
++{
++    /// <summary>Nuevo nombre. Obligatorio, 1 a 150 caracteres.</summary>
++    [Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
++    [StringLength(150, MinimumLength = 1,
++        ErrorMessage = "El campo 'nombre' debe tener entre 1 y 150 caracteres.")]
++    [JsonPropertyName("nombre")]
++    public string? Nombre { get; set; }
++
++    /// <summary>Nueva facultad. Si no llega o es null -> el programa queda sin facultad.</summary>
++    [StringLength(10, MinimumLength = 1,
++        ErrorMessage = "El campo 'fk_facultad' debe tener entre 1 y 10 caracteres.")]
++    [JsonPropertyName("fk_facultad")]
++    public string? FkFacultad { get; set; }
++
++    /// <summary>Nivel. Obligatorio en el PUT, de la lista cerrada.</summary>
++    [Required(ErrorMessage = "El campo 'nivel' es obligatorio.")]
++    [RegularExpression("^(PREGRADO|ESPECIALIZACION|MAESTRIA|DOCTORADO|EDUCACION_CONTINUA|OTRO)$",
++        ErrorMessage = "El campo 'nivel' debe ser PREGRADO, ESPECIALIZACION, MAESTRIA, DOCTORADO, EDUCACION_CONTINUA u OTRO.")]
++    [JsonPropertyName("nivel")]
++    public string? Nivel { get; set; }
++
++    /// <summary>¿Está activo? Obligatorio en el PUT.</summary>
++    [Required(ErrorMessage = "El campo 'activo' es obligatorio (true o false).")]
++    [JsonPropertyName("activo")]
++    public bool? Activo { get; set; }
++}
+diff --git a/api_catedras/Program.cs b/api_catedras/Program.cs
+index 59a3af9..e544b26 100644
+--- a/api_catedras/Program.cs
++++ b/api_catedras/Program.cs
+@@ -247,6 +247,18 @@ builder.Services.AddScoped<IRepositorioDependencia>(
+     _ => new RepositorioDependenciaPostgres(cadenaConexion));
+ builder.Services.AddScoped<IServicioDependencia, ServicioDependencia>();
+ 
++// IRepositorioProgramaAcademico -> RepositorioProgramaAcademicoPostgres,
++// IServicioProgramaAcademico -> ServicioProgramaAcademico.
++builder.Services.AddScoped<IRepositorioProgramaAcademico>(
++    _ => new RepositorioProgramaAcademicoPostgres(cadenaConexion));
++builder.Services.AddScoped<IServicioProgramaAcademico, ServicioProgramaAcademico>();
++
++// IRepositorioAliasPrograma -> RepositorioAliasProgramaPostgres,
++// IServicioAliasPrograma -> ServicioAliasPrograma (solo-anexo: sin actualizar).
++builder.Services.AddScoped<IRepositorioAliasPrograma>(
++    _ => new RepositorioAliasProgramaPostgres(cadenaConexion));
++builder.Services.AddScoped<IServicioAliasPrograma, ServicioAliasPrograma>();
++
+ // --------------------------------------------------------------------------
+ //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
+ // --------------------------------------------------------------------------
+diff --git a/api_catedras/Repositorios/IRepositorioAliasPrograma.cs b/api_catedras/Repositorios/IRepositorioAliasPrograma.cs
+new file mode 100644
+index 0000000..036c7b7
+--- /dev/null
++++ b/api_catedras/Repositorios/IRepositorioAliasPrograma.cs
+@@ -0,0 +1,34 @@
++// ==========================================================================
++//  Repositorios/IRepositorioAliasPrograma.cs  ·  Proyecto Cátedras · v2
++// --------------------------------------------------------------------------
++//  Contrato de acceso a datos de 'catedras.alias_programa'.
++//
++//  ⚠ A PROPÓSITO NO HAY 'ActualizarAsync' (3_plan.md §4.4, ADR D12): la
++//  tabla es de solo-anexo. Quien lea esta interfaz ve la regla de negocio
++//  sin leer la spec: un alias se crea o se borra, nunca se corrige.
++//
++//  'CrearAsync' devuelve DOS valores que pone la BD en el mismo INSERT
++//  (RETURNING id_alias, creado_en), como una TUPLA de C#.
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++
++/// <summary>Operaciones de datos sobre 'catedras.alias_programa' (solo-anexo).</summary>
++public interface IRepositorioAliasPrograma
++{
++    /// <summary>Alias ordenados por id, hasta 'limite' filas.</summary>
++    Task<List<AliasPrograma>> ObtenerTodosAsync(int limite);
++
++    /// <summary>El alias con ese id, o null si no existe.</summary>
++    Task<AliasPrograma?> ObtenerPorIdAsync(long idAlias);
++
++    /// <summary>Inserta y devuelve el id y la fecha que generó la BD.
++    /// Texto duplicado o programa inexistente -> NpgsqlException (500).</summary>
++    Task<(long IdAlias, DateTime CreadoEn)> CrearAsync(AliasPrograma alias);
++
++    /// <summary>Borra. Devuelve filas eliminadas (0 = no existe). Ninguna tabla
++    /// referencia a 'alias_programa', así que nunca falla por FK.</summary>
++    Task<int> EliminarAsync(long idAlias);
++}
+diff --git a/api_catedras/Repositorios/IRepositorioProgramaAcademico.cs b/api_catedras/Repositorios/IRepositorioProgramaAcademico.cs
+new file mode 100644
+index 0000000..af9ebeb
+--- /dev/null
++++ b/api_catedras/Repositorios/IRepositorioProgramaAcademico.cs
+@@ -0,0 +1,30 @@
++// ==========================================================================
++//  Repositorios/IRepositorioProgramaAcademico.cs  ·  Proyecto Cátedras · v2
++// --------------------------------------------------------------------------
++//  Contrato de acceso a datos de 'catedras.programa_academico'. Mismo molde
++//  de 5 operaciones que la v1; la clave es el 'codigo' (texto).
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++
++/// <summary>Operaciones de datos sobre la tabla 'catedras.programa_academico'.</summary>
++public interface IRepositorioProgramaAcademico
++{
++    /// <summary>Programas ordenados por código, hasta 'limite' filas.</summary>
++    Task<List<ProgramaAcademico>> ObtenerTodosAsync(int limite);
++
++    /// <summary>El programa con ese código, o null si no existe.</summary>
++    Task<ProgramaAcademico?> ObtenerPorIdAsync(string codigo);
++
++    /// <summary>Inserta. Duplicado o facultad inexistente -> NpgsqlException (500).</summary>
++    Task CrearAsync(ProgramaAcademico programa);
++
++    /// <summary>Actualiza las columnas de 'datos'. Devuelve filas afectadas (0 = no existe).</summary>
++    Task<int> ActualizarAsync(string codigo, Dictionary<string, object?> datos);
++
++    /// <summary>Borra. Devuelve filas eliminadas (0 = no existe). Si el programa
++    /// tiene filas en 'programa_asistente' (FK RESTRICT) -> NpgsqlException (500).</summary>
++    Task<int> EliminarAsync(string codigo);
++}
+diff --git a/api_catedras/Repositorios/RepositorioAliasProgramaPostgres.cs b/api_catedras/Repositorios/RepositorioAliasProgramaPostgres.cs
+new file mode 100644
+index 0000000..52e7216
+--- /dev/null
++++ b/api_catedras/Repositorios/RepositorioAliasProgramaPostgres.cs
+@@ -0,0 +1,73 @@
++// ==========================================================================
++//  Repositorios/RepositorioAliasProgramaPostgres.cs  ·  Cátedras · v2
++// --------------------------------------------------------------------------
++//  IRepositorioAliasPrograma para PostgreSQL con Dapper. Sin UPDATE.
++//
++//  'CrearAsync' usa 'INSERT ... RETURNING id_alias, creado_en' y lee la
++//  fila devuelta con 'QuerySingleAsync<(long, DateTime)>': Dapper llena la
++//  tupla con las dos columnas, EN ORDEN. Un solo viaje a la BD.
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++using Dapper;
++using Npgsql;
++
++/// <summary>Acceso a 'catedras.alias_programa' en PostgreSQL mediante Dapper.</summary>
++public class RepositorioAliasProgramaPostgres : IRepositorioAliasPrograma
++{
++    private readonly string _cadenaConexion;
++
++    public RepositorioAliasProgramaPostgres(string cadenaConexion)
++    {
++        _cadenaConexion = cadenaConexion;
++    }
++
++    public async Task<List<AliasPrograma>> ObtenerTodosAsync(int limite)
++    {
++        const string sql = @"
++            SELECT id_alias, texto_normalizado, fk_programa, origen, creado_en
++            FROM catedras.alias_programa
++            ORDER BY id_alias
++            LIMIT @limite;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++        var filas = await conexion.QueryAsync<AliasPrograma>(sql, new { limite });
++        return filas.ToList();
++    }
++
++    public async Task<AliasPrograma?> ObtenerPorIdAsync(long idAlias)
++    {
++        const string sql = @"
++            SELECT id_alias, texto_normalizado, fk_programa, origen, creado_en
++            FROM catedras.alias_programa
++            WHERE id_alias = @idAlias;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++        return await conexion.QuerySingleOrDefaultAsync<AliasPrograma>(sql, new { idAlias });
++    }
++
++    public async Task<(long IdAlias, DateTime CreadoEn)> CrearAsync(AliasPrograma alias)
++    {
++        // Ni 'id_alias' (IDENTITY) ni 'creado_en' (DEFAULT now()) se envían:
++        // los genera la BD y RETURNING los devuelve en la misma sentencia.
++        const string sql = @"
++            INSERT INTO catedras.alias_programa (texto_normalizado, fk_programa, origen)
++            VALUES (@TextoNormalizado, @FkPrograma, @Origen)
++            RETURNING id_alias, creado_en;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Una fila con dos columnas -> una tupla (long, DateTime).
++        return await conexion.QuerySingleAsync<(long, DateTime)>(sql, alias);
++    }
++
++    public async Task<int> EliminarAsync(long idAlias)
++    {
++        const string sql = "DELETE FROM catedras.alias_programa WHERE id_alias = @idAlias;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++        return await conexion.ExecuteAsync(sql, new { idAlias });
++    }
++}
+diff --git a/api_catedras/Repositorios/RepositorioProgramaAcademicoPostgres.cs b/api_catedras/Repositorios/RepositorioProgramaAcademicoPostgres.cs
+new file mode 100644
+index 0000000..3311f41
+--- /dev/null
++++ b/api_catedras/Repositorios/RepositorioProgramaAcademicoPostgres.cs
+@@ -0,0 +1,106 @@
++// ==========================================================================
++//  Repositorios/RepositorioProgramaAcademicoPostgres.cs  ·  Cátedras · v2
++// --------------------------------------------------------------------------
++//  IRepositorioProgramaAcademico para PostgreSQL con Dapper. SQL a mano y
++//  parametrizado; una conexión por operación.
++//
++//  El DELETE es el más interesante de la v2 (5_data_model.md §2.3): la
++//  tabla tiene DOS FK entrantes con reglas distintas —alias_programa
++//  (CASCADE) y programa_asistente (RESTRICT)—. PostgreSQL las evalúa en la
++//  MISMA sentencia: si hay asistentes, el DELETE completo falla y la
++//  cascada a los alias NO llega a ocurrir (ACID · A: todo o nada). Este
++//  repositorio no simula nada de eso: solo deja subir la NpgsqlException.
++// ==========================================================================
++
++namespace ApiCatedras.Repositorios;
++
++using ApiCatedras.Modelos;
++using Dapper;
++using Npgsql;
++
++/// <summary>Acceso a 'catedras.programa_academico' en PostgreSQL mediante Dapper.</summary>
++public class RepositorioProgramaAcademicoPostgres : IRepositorioProgramaAcademico
++{
++    private readonly string _cadenaConexion;
++
++    // [ACID · C] Lista blanca del UPDATE. 'codigo' (la PK) no se actualiza.
++    private static readonly HashSet<string> ColumnasActualizables =
++        new() { "nombre", "fk_facultad", "nivel", "activo" };
++
++    public RepositorioProgramaAcademicoPostgres(string cadenaConexion)
++    {
++        _cadenaConexion = cadenaConexion;
++    }
++
++    public async Task<List<ProgramaAcademico>> ObtenerTodosAsync(int limite)
++    {
++        const string sql = @"
++            SELECT codigo, nombre, fk_facultad, nivel, activo
++            FROM catedras.programa_academico
++            ORDER BY codigo
++            LIMIT @limite;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++        var filas = await conexion.QueryAsync<ProgramaAcademico>(sql, new { limite });
++        return filas.ToList();
++    }
++
++    public async Task<ProgramaAcademico?> ObtenerPorIdAsync(string codigo)
++    {
++        const string sql = @"
++            SELECT codigo, nombre, fk_facultad, nivel, activo
++            FROM catedras.programa_academico
++            WHERE codigo = @codigo;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++        return await conexion.QuerySingleOrDefaultAsync<ProgramaAcademico>(sql, new { codigo });
++    }
++
++    public async Task CrearAsync(ProgramaAcademico programa)
++    {
++        const string sql = @"
++            INSERT INTO catedras.programa_academico (codigo, nombre, fk_facultad, nivel, activo)
++            VALUES (@Codigo, @Nombre, @FkFacultad, @Nivel, @Activo);";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // Código duplicado o 'fk_facultad' inexistente -> NpgsqlException.
++        await conexion.ExecuteAsync(sql, programa);
++    }
++
++    public async Task<int> ActualizarAsync(string codigo, Dictionary<string, object?> datos)
++    {
++        var asignaciones = new List<string>();
++        var parametros = new DynamicParameters();
++        parametros.Add("id_clave", codigo);
++
++        foreach (var (columna, valor) in datos)
++        {
++            if (!ColumnasActualizables.Contains(columna))
++                continue;
++
++            asignaciones.Add($"{columna} = @{columna}");
++            parametros.Add(columna, valor);
++        }
++
++        if (asignaciones.Count == 0)
++            return 0;
++
++        var sql =
++            $"UPDATE catedras.programa_academico SET {string.Join(", ", asignaciones)} " +
++            "WHERE codigo = @id_clave;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++        return await conexion.ExecuteAsync(sql, parametros);
++    }
++
++    public async Task<int> EliminarAsync(string codigo)
++    {
++        const string sql = "DELETE FROM catedras.programa_academico WHERE codigo = @codigo;";
++
++        await using var conexion = new NpgsqlConnection(_cadenaConexion);
++
++        // RESTRICT (programa_asistente) gana sobre CASCADE (alias_programa).
++        return await conexion.ExecuteAsync(sql, new { codigo });
++    }
++}
+diff --git a/api_catedras/Servicios/IServicioAliasPrograma.cs b/api_catedras/Servicios/IServicioAliasPrograma.cs
+new file mode 100644
+index 0000000..d66c6f8
+--- /dev/null
++++ b/api_catedras/Servicios/IServicioAliasPrograma.cs
+@@ -0,0 +1,27 @@
++// ==========================================================================
++//  Servicios/IServicioAliasPrograma.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Contrato de negocio de 'AliasPrograma': 4 operaciones, sin actualizar
++//  (mismo criterio que el repositorio, ADR D12).
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++
++/// <summary>Reglas de negocio del recurso 'AliasPrograma' (solo-anexo).</summary>
++public interface IServicioAliasPrograma
++{
++    /// <summary>Lista alias. 'limite' nulo -> 1000; &lt;= 0 -> ArgumentException.</summary>
++    Task<(List<AliasPrograma> Datos, int Total)> ListarAsync(int? limite);
++
++    /// <summary>Devuelve el alias o lanza NoEncontradoExcepcion.</summary>
++    Task<AliasPrograma> ObtenerAsync(long idAlias);
++
++    /// <summary>Crea el alias y devuelve la fila completa (con id y fecha de la BD).</summary>
++    Task<AliasPrograma> CrearAsync(AliasProgramaCrear peticion);
++
++    /// <summary>Borra el alias. 0 filas -> NoEncontradoExcepcion.</summary>
++    Task<int> EliminarAsync(long idAlias);
++}
+diff --git a/api_catedras/Servicios/IServicioProgramaAcademico.cs b/api_catedras/Servicios/IServicioProgramaAcademico.cs
+new file mode 100644
+index 0000000..ec97db7
+--- /dev/null
++++ b/api_catedras/Servicios/IServicioProgramaAcademico.cs
+@@ -0,0 +1,22 @@
++// ==========================================================================
++//  Servicios/IServicioProgramaAcademico.cs  ·  Proyecto Cátedras · v2
++// --------------------------------------------------------------------------
++//  Contrato de negocio de 'ProgramaAcademico'. Mismo molde que la v1:
++//  ArgumentException -> 400 · NoEncontradoExcepcion -> 404.
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++
++/// <summary>Reglas de negocio del recurso 'ProgramaAcademico'.</summary>
++public interface IServicioProgramaAcademico
++{
++    Task<(List<ProgramaAcademico> Datos, int Total)> ListarAsync(int? limite);
++    Task<ProgramaAcademico> ObtenerAsync(string codigo);
++    Task CrearAsync(ProgramaAcademicoCrear peticion);
++    Task<int> ReemplazarAsync(string codigo, ProgramaAcademicoReemplazo peticion);
++    Task<int> ActualizarAsync(string codigo, ProgramaAcademicoActualizar peticion);
++    Task<int> EliminarAsync(string codigo);
++}
+diff --git a/api_catedras/Servicios/ServicioAliasPrograma.cs b/api_catedras/Servicios/ServicioAliasPrograma.cs
+new file mode 100644
+index 0000000..3c57a54
+--- /dev/null
++++ b/api_catedras/Servicios/ServicioAliasPrograma.cs
+@@ -0,0 +1,80 @@
++// ==========================================================================
++//  Servicios/ServicioAliasPrograma.cs  ·  Proyecto Cátedras · Versión 2
++// --------------------------------------------------------------------------
++//  Reglas de negocio de 'AliasPrograma'. Sin método de actualizar.
++//  En CrearAsync el servicio arma el modelo con los valores por defecto,
++//  pide al repositorio el INSERT y completa el modelo con lo que la BD
++//  generó (id_alias y creado_en) antes de devolverlo.
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Repositorios;
++
++/// <summary>Reglas de negocio de 'AliasPrograma'.</summary>
++public class ServicioAliasPrograma : IServicioAliasPrograma
++{
++    private const int LimitePorDefecto = 1000;
++
++    // DEFAULT de la columna 'origen'.
++    private const string OrigenPorDefecto = "FORMULARIO";
++
++    private readonly IRepositorioAliasPrograma _repositorio;
++
++    public ServicioAliasPrograma(IRepositorioAliasPrograma repositorio)
++    {
++        _repositorio = repositorio;
++    }
++
++    public async Task<(List<AliasPrograma> Datos, int Total)> ListarAsync(int? limite)
++    {
++        int limiteEfectivo = limite ?? LimitePorDefecto;
++
++        if (limiteEfectivo <= 0)
++            throw new ArgumentException(
++                "El parámetro 'limite' debe ser un entero mayor que 0.");
++
++        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo);
++        return (datos, datos.Count);
++    }
++
++    public async Task<AliasPrograma> ObtenerAsync(long idAlias)
++    {
++        var alias = await _repositorio.ObtenerPorIdAsync(idAlias);
++
++        if (alias is null)
++            throw new NoEncontradoExcepcion($"No existe el alias '{idAlias}'.");
++
++        return alias;
++    }
++
++    public async Task<AliasPrograma> CrearAsync(AliasProgramaCrear peticion)
++    {
++        var alias = new AliasPrograma
++        {
++            TextoNormalizado = peticion.TextoNormalizado!,
++            FkPrograma = peticion.FkPrograma!,
++            Origen = peticion.Origen ?? OrigenPorDefecto,
++        };
++
++        // Deconstrucción de tupla: cada valor que devolvió la BD a su variable.
++        var (idAlias, creadoEn) = await _repositorio.CrearAsync(alias);
++        alias.IdAlias = idAlias;
++        alias.CreadoEn = creadoEn;
++
++        return alias;
++    }
++
++    public async Task<int> EliminarAsync(long idAlias)
++    {
++        int filas = await _repositorio.EliminarAsync(idAlias);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe el alias '{idAlias}'.");
++
++        return filas;
++    }
++}
+diff --git a/api_catedras/Servicios/ServicioProgramaAcademico.cs b/api_catedras/Servicios/ServicioProgramaAcademico.cs
+new file mode 100644
+index 0000000..a5e32aa
+--- /dev/null
++++ b/api_catedras/Servicios/ServicioProgramaAcademico.cs
+@@ -0,0 +1,113 @@
++// ==========================================================================
++//  Servicios/ServicioProgramaAcademico.cs  ·  Proyecto Cátedras · v2
++// --------------------------------------------------------------------------
++//  Reglas de negocio de 'ProgramaAcademico'. No tiene reglas que crucen
++//  campos: el formato del código y la lista de niveles son de FORMA (los
++//  revisa la petición -> 422) y la existencia de la facultad es una FK
++//  (la revisa el motor -> 500). Aquí quedan solo las reglas comunes:
++//  límite > 0, valores por defecto, PATCH no vacío y "no existe" -> 404.
++// ==========================================================================
++
++namespace ApiCatedras.Servicios;
++
++using ApiCatedras.Excepciones;
++using ApiCatedras.Modelos;
++using ApiCatedras.Peticiones;
++using ApiCatedras.Repositorios;
++
++/// <summary>Reglas de negocio de 'ProgramaAcademico'.</summary>
++public class ServicioProgramaAcademico : IServicioProgramaAcademico
++{
++    private const int LimitePorDefecto = 1000;
++
++    // DEFAULT de la columna 'nivel' en la BD.
++    private const string NivelPorDefecto = "PREGRADO";
++
++    private readonly IRepositorioProgramaAcademico _repositorio;
++
++    public ServicioProgramaAcademico(IRepositorioProgramaAcademico repositorio)
++    {
++        _repositorio = repositorio;
++    }
++
++    public async Task<(List<ProgramaAcademico> Datos, int Total)> ListarAsync(int? limite)
++    {
++        int limiteEfectivo = limite ?? LimitePorDefecto;
++
++        if (limiteEfectivo <= 0)
++            throw new ArgumentException(
++                "El parámetro 'limite' debe ser un entero mayor que 0.");
++
++        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo);
++        return (datos, datos.Count);
++    }
++
++    public async Task<ProgramaAcademico> ObtenerAsync(string codigo)
++    {
++        var programa = await _repositorio.ObtenerPorIdAsync(codigo);
++
++        if (programa is null)
++            throw new NoEncontradoExcepcion($"No existe el programa académico '{codigo}'.");
++
++        return programa;
++    }
++
++    public async Task CrearAsync(ProgramaAcademicoCrear peticion)
++    {
++        var programa = new ProgramaAcademico
++        {
++            Codigo = peticion.Codigo!,
++            Nombre = peticion.Nombre!,
++            FkFacultad = peticion.FkFacultad,             // opcional
++            Nivel = peticion.Nivel ?? NivelPorDefecto,    // DEFAULT 'PREGRADO'
++            Activo = peticion.Activo ?? true,             // DEFAULT true
++        };
++
++        await _repositorio.CrearAsync(programa);
++    }
++
++    public async Task<int> ReemplazarAsync(string codigo, ProgramaAcademicoReemplazo peticion)
++    {
++        // Reemplazo completo: las 4 columnas, facultad incluida (null si no llegó).
++        var datos = new Dictionary<string, object?>
++        {
++            ["nombre"] = peticion.Nombre!,
++            ["fk_facultad"] = peticion.FkFacultad,
++            ["nivel"] = peticion.Nivel!,
++            ["activo"] = peticion.Activo!.Value,
++        };
++
++        int filas = await _repositorio.ActualizarAsync(codigo, datos);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe el programa académico '{codigo}'.");
++
++        return filas;
++    }
++
++    public async Task<int> ActualizarAsync(string codigo, ProgramaAcademicoActualizar peticion)
++    {
++        var datos = peticion.ACamposEnviados();
++
++        if (datos.Count == 0)
++            throw new ArgumentException(
++                "El cuerpo del PATCH no trae ningún campo para actualizar.");
++
++        int filas = await _repositorio.ActualizarAsync(codigo, datos);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe el programa académico '{codigo}'.");
++
++        return filas;
++    }
++
++    public async Task<int> EliminarAsync(string codigo)
++    {
++        int filas = await _repositorio.EliminarAsync(codigo);
++
++        if (filas == 0)
++            throw new NoEncontradoExcepcion($"No existe el programa académico '{codigo}'.");
++
++        return filas;
++    }
++}
+diff --git a/api_catedras/pruebas/Programa.cs b/api_catedras/pruebas/Programa.cs
+index fbf8ec9..45f7856 100644
+--- a/api_catedras/pruebas/Programa.cs
++++ b/api_catedras/pruebas/Programa.cs
+@@ -728,6 +728,80 @@ await AfirmarLanza<NoEncontradoExcepcion>(
+ 
+ Afirmar("DELETE elimina 1 fila", await servicioDependencia.EliminarAsync("PASTORAL") == 1);
+ 
++// ============================================================================
++//  v2 · Prueba de capas: ServicioProgramaAcademico + repositorio falso
++//  (el formato del código y la lista de niveles son de FORMA: los prueba la
++//   petición contra Docker, no esta prueba de capas)
++// ============================================================================
++var servicioPrograma = new ServicioProgramaAcademico(new RepositorioProgramaAcademicoFalso());
++
++Console.WriteLine("\n== v2 · Prueba de capas: ServicioProgramaAcademico + repositorio falso en memoria ==\n");
++
++var (datosProg, totalProg) = await servicioPrograma.ListarAsync(null);
++Afirmar("Listar() devuelve el programa semilla", totalProg == 1 && datosProg.Count == 1);
++
++await AfirmarLanza<ArgumentException>(
++    "Listar(-1) lanza ArgumentException", () => servicioPrograma.ListarAsync(-1));
++
++await servicioPrograma.CrearAsync(new ProgramaAcademicoCrear { Codigo = "Z9999", Nombre = "Programa de prueba" });
++var progCreado = await servicioPrograma.ObtenerAsync("Z9999");
++Afirmar("Crear() aplica los DEFAULT (nivel PREGRADO, activo true, sin facultad)",
++    progCreado.Nivel == "PREGRADO" && progCreado.Activo && progCreado.FkFacultad is null);
++
++int filasPutProg = await servicioPrograma.ReemplazarAsync("Z9999", new ProgramaAcademicoReemplazo
++{ Nombre = "Maestría de prueba", FkFacultad = "F_ING", Nivel = "MAESTRIA", Activo = false });
++var trasPutProg = await servicioPrograma.ObtenerAsync("Z9999");
++Afirmar("PUT reemplaza todo", filasPutProg == 1 && trasPutProg.Nivel == "MAESTRIA"
++    && trasPutProg.FkFacultad == "F_ING" && !trasPutProg.Activo);
++
++int filasPatchProg = await servicioPrograma.ActualizarAsync("Z9999", new ProgramaAcademicoActualizar { Activo = true });
++var trasPatchProg = await servicioPrograma.ObtenerAsync("Z9999");
++Afirmar("PATCH cambia solo 'activo' y deja 'nivel' igual",
++    filasPatchProg == 1 && trasPatchProg.Activo && trasPatchProg.Nivel == "MAESTRIA");
++
++await AfirmarLanza<ArgumentException>(
++    "PATCH sin campos lanza ArgumentException",
++    () => servicioPrograma.ActualizarAsync("Z9999", new ProgramaAcademicoActualizar()));
++
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "Obtener(\"Q0000\") lanza NoEncontradoExcepcion", () => servicioPrograma.ObtenerAsync("Q0000"));
++
++Afirmar("DELETE elimina 1 fila", await servicioPrograma.EliminarAsync("Z9999") == 1);
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioPrograma.EliminarAsync("Z9999"));
++
++// ============================================================================
++//  v2 · Prueba de capas: ServicioAliasPrograma + repositorio falso
++//  El repositorio falso simula IDENTITY (contador) y DEFAULT now().
++// ============================================================================
++var servicioAlias = new ServicioAliasPrograma(new RepositorioAliasProgramaFalso());
++
++Console.WriteLine("\n== v2 · Prueba de capas: ServicioAliasPrograma + repositorio falso en memoria ==\n");
++
++var (datosAli, totalAli) = await servicioAlias.ListarAsync(null);
++Afirmar("Listar() devuelve los 3 alias semilla de M0286",
++    totalAli == 3 && datosAli.All(a => a.FkPrograma == "M0286"));
++
++var aliasCreado = await servicioAlias.CrearAsync(new AliasProgramaCrear { TextoNormalizado = "ing de datos", FkPrograma = "M0286" });
++Afirmar("Crear() devuelve el id y la fecha generados por la 'BD'",
++    aliasCreado.IdAlias == 5 && aliasCreado.CreadoEn != default);
++Afirmar("Crear() aplica origen = FORMULARIO por defecto", aliasCreado.Origen == "FORMULARIO");
++
++var aliasLeido = await servicioAlias.ObtenerAsync(aliasCreado.IdAlias);
++Afirmar("Obtener() encuentra el alias creado", aliasLeido.TextoNormalizado == "ing de datos");
++
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "Obtener(999) lanza NoEncontradoExcepcion", () => servicioAlias.ObtenerAsync(999));
++
++Afirmar("DELETE elimina 1 fila", await servicioAlias.EliminarAsync(aliasCreado.IdAlias) == 1);
++await AfirmarLanza<NoEncontradoExcepcion>(
++    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioAlias.EliminarAsync(aliasCreado.IdAlias));
++
++// Comprobación por REFLEXIÓN: la interfaz de verdad no declara un método
++// de actualizar (la ausencia es la especificación, ADR D12).
++Afirmar("IRepositorioAliasPrograma no declara ActualizarAsync",
++    typeof(IRepositorioAliasPrograma).GetMethod("ActualizarAsync") is null);
++
+ // --------------------------------------------------------------------------
+ //  Resultado final -> código de salida del proceso.
+ // --------------------------------------------------------------------------
+@@ -1333,3 +1407,88 @@ class RepositorioDependenciaFalso : IRepositorioDependencia
+     public Task<int> EliminarAsync(string idDependencia) =>
+         Task.FromResult(_tabla.Remove(idDependencia) ? 1 : 0);
+ }
++
++
++// ==========================================================================
++//  v2 · Repositorio FALSO de 'ProgramaAcademico'.
++// ==========================================================================
++class RepositorioProgramaAcademicoFalso : IRepositorioProgramaAcademico
++{
++    private readonly Dictionary<string, ProgramaAcademico> _tabla = new();
++
++    public RepositorioProgramaAcademicoFalso()
++    {
++        _tabla["M0286"] = new ProgramaAcademico { Codigo = "M0286", Nombre = "Ingenieria de Datos y Software", FkFacultad = "F_ING" };
++    }
++
++    public Task<List<ProgramaAcademico>> ObtenerTodosAsync(int limite) =>
++        Task.FromResult(_tabla.Values.OrderBy(p => p.Codigo).Take(limite).ToList());
++
++    public Task<ProgramaAcademico?> ObtenerPorIdAsync(string codigo) =>
++        Task.FromResult(_tabla.TryGetValue(codigo, out var programa) ? programa : null);
++
++    public Task CrearAsync(ProgramaAcademico programa)
++    {
++        if (_tabla.ContainsKey(programa.Codigo))
++            throw new InvalidOperationException("codigo duplicado (simulado).");
++        _tabla[programa.Codigo] = programa;
++        return Task.CompletedTask;
++    }
++
++    public Task<int> ActualizarAsync(string codigo, Dictionary<string, object?> datos)
++    {
++        if (!_tabla.TryGetValue(codigo, out var programa))
++            return Task.FromResult(0);
++
++        if (datos.TryGetValue("nombre", out var n)) programa.Nombre = (string)n!;
++        if (datos.TryGetValue("fk_facultad", out var f)) programa.FkFacultad = (string?)f;
++        if (datos.TryGetValue("nivel", out var nv)) programa.Nivel = (string)nv!;
++        if (datos.TryGetValue("activo", out var a)) programa.Activo = (bool)a!;
++        return Task.FromResult(1);
++    }
++
++    public Task<int> EliminarAsync(string codigo) =>
++        Task.FromResult(_tabla.Remove(codigo) ? 1 : 0);
++}
++
++// ==========================================================================
++//  v2 · Repositorio FALSO de 'AliasPrograma'. Sin ActualizarAsync: si se
++//  escribiera, el compilador no se quejaría, pero tampoco hay a quién
++//  servirle (la interfaz no lo declara). Simula IDENTITY y DEFAULT now().
++// ==========================================================================
++class RepositorioAliasProgramaFalso : IRepositorioAliasPrograma
++{
++    private readonly Dictionary<long, AliasPrograma> _tabla = new();
++    private long _siguienteId = 5; // en el script real los ids semilla son 1, 3 y 4
++
++    public RepositorioAliasProgramaFalso()
++    {
++        _tabla[1] = new AliasPrograma { IdAlias = 1, TextoNormalizado = "ingenieria de datos y software", FkPrograma = "M0286" };
++        _tabla[3] = new AliasPrograma { IdAlias = 3, TextoNormalizado = "ingenieria de datos", FkPrograma = "M0286" };
++        _tabla[4] = new AliasPrograma { IdAlias = 4, TextoNormalizado = "ing. datos y software", FkPrograma = "M0286" };
++    }
++
++    public Task<List<AliasPrograma>> ObtenerTodosAsync(int limite) =>
++        Task.FromResult(_tabla.Values.OrderBy(a => a.IdAlias).Take(limite).ToList());
++
++    public Task<AliasPrograma?> ObtenerPorIdAsync(long idAlias) =>
++        Task.FromResult(_tabla.TryGetValue(idAlias, out var alias) ? alias : null);
++
++    public Task<(long IdAlias, DateTime CreadoEn)> CrearAsync(AliasPrograma alias)
++    {
++        if (_tabla.Values.Any(a => a.TextoNormalizado == alias.TextoNormalizado))
++            throw new InvalidOperationException("texto_normalizado duplicado (simulado).");
++
++        long id = _siguienteId++;          // simula IDENTITY
++        var ahora = DateTime.UtcNow;       // simula DEFAULT now()
++        _tabla[id] = new AliasPrograma
++        {
++            IdAlias = id, TextoNormalizado = alias.TextoNormalizado,
++            FkPrograma = alias.FkPrograma, Origen = alias.Origen, CreadoEn = ahora,
++        };
++        return Task.FromResult((id, ahora));
++    }
++
++    public Task<int> EliminarAsync(long idAlias) =>
++        Task.FromResult(_tabla.Remove(idAlias) ? 1 : 0);
++}
+diff --git a/docs/spec_kit/Versiones/version2/8_tasks.md b/docs/spec_kit/Versiones/version2/8_tasks.md
+index c75f368..e472d4a 100644
+--- a/docs/spec_kit/Versiones/version2/8_tasks.md
++++ b/docs/spec_kit/Versiones/version2/8_tasks.md
+@@ -53,41 +53,43 @@ verificar `SET NULL` de punta a punta.
+ > [5_data_model.md](5_data_model.md). Depende de la Fase 14
+ > (`fk_facultad`).
+ 
+-- [ ] `Modelos/ProgramaAcademico.cs`, `AliasPrograma.cs` — en
++- [x] `Modelos/ProgramaAcademico.cs`, `AliasPrograma.cs` — en
+       `AliasPrograma`, `IdAlias` y `CreadoEn` sin `required` (los pone
+       la BD).
+-- [ ] `Peticiones/ProgramaAcademico{Crear,Reemplazo,Actualizar}.cs` —
++- [x] `Peticiones/ProgramaAcademico{Crear,Reemplazo,Actualizar}.cs` —
+       `codigo` con `[RegularExpression("^[A-Z][0-9A-Z]{3,4}$")]`,
+       `nivel` con `[RegularExpression]` sobre la lista cerrada (mismo
+       patrón que `ModalidadCrear.canal_difusion` en v1).
+-- [ ] `Peticiones/AliasProgramaCrear.cs` — **única** petición de esta
++- [x] `Peticiones/AliasProgramaCrear.cs` — **única** petición de esta
+       entidad; `texto_normalizado` y `fk_programa` obligatorios,
+       `origen` opcional. No crear `AliasProgramaReemplazo` ni
+       `AliasProgramaActualizar` (§4.4 de [3_plan.md](3_plan.md): la
+       ausencia es la especificación, no queda nada pendiente aquí).
+-- [ ] `Repositorios/IRepositorioProgramaAcademico.cs` +
++- [x] `Repositorios/IRepositorioProgramaAcademico.cs` +
+       `RepositorioProgramaAcademicoPostgres.cs` — CRUD estándar.
+-- [ ] `Repositorios/IRepositorioAliasPrograma.cs` +
++- [x] `Repositorios/IRepositorioAliasPrograma.cs` +
+       `RepositorioAliasProgramaPostgres.cs` — **sin**
+       `ActualizarAsync` en la interfaz (§4.4 de [3_plan.md](3_plan.md));
+       `CrearAsync` usa `RETURNING id_alias, creado_en`.
+-- [ ] `Servicios/IServicioProgramaAcademico.cs` +
++- [x] `Servicios/IServicioProgramaAcademico.cs` +
+       `ServicioProgramaAcademico.cs`.
+-- [ ] `Servicios/IServicioAliasPrograma.cs` + `ServicioAliasPrograma.cs`
++- [x] `Servicios/IServicioAliasPrograma.cs` + `ServicioAliasPrograma.cs`
+       — sin método de actualizar, mismo criterio que el repositorio.
+-- [ ] `Controllers/ProgramaAcademicoController.cs` — 6 endpoints.
+-- [ ] `Controllers/AliasProgramaController.cs` — **4** endpoints
++- [x] `Controllers/ProgramaAcademicoController.cs` — 6 endpoints.
++- [x] `Controllers/AliasProgramaController.cs` — **4** endpoints
+       (`GET` lista, `GET/{id}`, `POST`, `DELETE`); sin `[HttpPut]` ni
+       `[HttpPatch]`.
+-- [ ] `Program.cs` — registrar las 2 parejas nuevas.
++- [x] `Program.cs` — registrar las 2 parejas nuevas.
+ 
+-**Verificar:** `GET /api/ProgramaAcademico` → 105 filas; `GET
++**Verificado** (contra PostgreSQL real): `GET /api/ProgramaAcademico` → 105 filas; `GET
+ /api/ProgramaAcademico/M0286` → `fk_facultad: "F_ING"`; `POST` con
+ `codigo: "m0001"` → 422; con `nivel: "TECNICO"` → 422. `GET
+ /api/AliasPrograma` → 3 filas, las tres con `fk_programa: "M0286"`; un
+ `POST` exitoso devuelve `id_alias` e ignora cualquier `creado_en` que
+-llegue en el body; `PUT /api/AliasPrograma/1` → 404 de ASP.NET (ruta
+-inexistente, confirma que el verbo de verdad no está declarado).
++llegue en el body; `PUT /api/AliasPrograma/1` → **405** de ASP.NET (no 404: la RUTA sí
++existe para GET/DELETE, lo que no existe es el VERBO; en ambos casos lo
++responde el framework, sin código propio — confirma que el verbo de
++verdad no está declarado).
+ 
+ ## Fase 16 — La aplicación (capas de `Catedra`)
+ > RF84-RF89 de [2_spec.md](2_spec.md), §2.5 de
