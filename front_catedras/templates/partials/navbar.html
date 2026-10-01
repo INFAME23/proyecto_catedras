@@ -15,6 +15,11 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint in ('catedras.catalogo', 'catedras.detalle') }}" href="{{ url_for('catedras.catalogo') }}">
+                        <i class="fas fa-book-open"></i> Catálogo
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}" href="{{ url_for('admin.panel') }}">
                         <i class="fas fa-cogs"></i> Administración
                     </a>
