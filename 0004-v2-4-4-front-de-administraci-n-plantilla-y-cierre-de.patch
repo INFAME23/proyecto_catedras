@@ -1,0 +1,1764 @@
+From 836f86f97a71807e595b90326bf4379322a95488 Mon Sep 17 00:00:00 2001
+From: Integrante 4 <integrante4@ejemplo.com>
+Date: Thu, 1 Oct 2026 15:49:55 +0000
+Subject: [PATCH 4/4] =?UTF-8?q?v2=20(4/4):=20front=20de=20administraci?=
+ =?UTF-8?q?=C3=B3n,=20plantilla=20y=20cierre=20de=20la=20v2?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- auth_helpers.py: ayudas de sesión para las plantillas (en la v2 siempre
+  'sin sesión'; el login real llega en la v5). Navbar y footer sin
+  url_for rotos y con enlace al catálogo (RF92).
+- Admin: CRUD de las 5 tablas nuevas (RF94): <select> de padre en
+  Facultad/Dependencia, solo crear/eliminar en AliasPrograma, buscador y
+  paginación en Catedra. Se completan las rutas de TipoPregunta y
+  TipoVinculacion (cierre de la v1). Panel con las 15 tarjetas.
+- Fases 17-21 de version2/8_tasks.md cerradas: 153 verificaciones de
+  capas, integridad referencial (criterio 7) verificada contra
+  PostgreSQL real. README actualizado a la v2.
+---
+ README.md                                     |  93 +--
+ docs/spec_kit/Versiones/version1/8_tasks.md   |   8 +-
+ docs/spec_kit/Versiones/version2/8_tasks.md   |  58 +-
+ front_catedras/app.py                         |   4 +
+ front_catedras/auth_helpers.py                |  32 +
+ front_catedras/routes/admin.py                | 584 +++++++++++++++++-
+ .../templates/admin/alias_form.html           |  53 ++
+ .../templates/admin/alias_lista.html          |  55 ++
+ .../templates/admin/catedra_form.html         |  70 +++
+ .../templates/admin/catedra_lista.html        |  71 +++
+ .../templates/admin/dependencia_form.html     |  61 ++
+ .../templates/admin/dependencia_lista.html    |  50 ++
+ .../templates/admin/facultad_form.html        |  61 ++
+ .../templates/admin/facultad_lista.html       |  50 ++
+ front_catedras/templates/admin/panel.html     |  69 ++-
+ .../templates/admin/programa_form.html        |  70 +++
+ .../templates/admin/programa_lista.html       |  51 ++
+ front_catedras/templates/partials/footer.html |   1 +
+ front_catedras/templates/partials/navbar.html |   5 +
+ 19 files changed, 1381 insertions(+), 65 deletions(-)
+ create mode 100644 front_catedras/auth_helpers.py
+ create mode 100644 front_catedras/templates/admin/alias_form.html
+ create mode 100644 front_catedras/templates/admin/alias_lista.html
+ create mode 100644 front_catedras/templates/admin/catedra_form.html
+ create mode 100644 front_catedras/templates/admin/catedra_lista.html
+ create mode 100644 front_catedras/templates/admin/dependencia_form.html
+ create mode 100644 front_catedras/templates/admin/dependencia_lista.html
+ create mode 100644 front_catedras/templates/admin/facultad_form.html
+ create mode 100644 front_catedras/templates/admin/facultad_lista.html
+ create mode 100644 front_catedras/templates/admin/programa_form.html
+ create mode 100644 front_catedras/templates/admin/programa_lista.html
+
+diff --git a/README.md b/README.md
+index 849f723..c0c14af 100644
+--- a/README.md
++++ b/README.md
+@@ -1,22 +1,30 @@
+-# Proyecto Cátedras — Versión 1
++# Proyecto Cátedras — Versión 2
+ 
+ API REST del sistema de **asistencia a cátedras universitarias**, construida
+-por **versiones incrementales**. Esta es la **v1**: la primera rebanada
+-vertical — el CRUD completo de **una sola entidad (`Sede`)** contra **un
+-solo motor (PostgreSQL)**, con la arquitectura en capas completa desde el
+-primer día.
+-
+-## Qué incluye la v1
+-
+-- CRUD de `Sede` (`/api/Sede`): listar, obtener por código, crear (POST),
+-  reemplazar (PUT), actualizar parcial (PATCH), eliminar (DELETE).
+-- Capas con interfaces de C#: `SedeController` → `IServicioSede` →
+-  `IRepositorioSede` → `RepositorioSedePostgres` (Dapper, SQL a mano
+-  parametrizado; sin Entity Framework).
+-- Validación en las **peticiones** (una por verbo) → `422` con lista de
+-  errores antes de tocar la base.
+-- Documentación interactiva en `/swagger` y diagnóstico en `/`.
+-- Un solo comando: `docker compose up -d --build`.
++por **versiones incrementales**. Esta es la **v2**: la estructura académica
++y el **catálogo de cátedras**, sobre la arquitectura en capas que validó la
++v1.
++
++## Qué incluye la v2
++
++- Las **15 tablas** que hoy expone la API:
++  - las 10 sin foreign key de la v1 (`Sede`, `Encuesta`, `EstadoProceso`,
++    `Modalidad`, `PeriodoAcademico`, `Rol`, `TipoDocumento`, `TipoEvento`,
++    `TipoPregunta`, `TipoVinculacion`);
++  - las 5 de la v2: `Facultad`, `Dependencia`, `ProgramaAcademico`,
++    `AliasPrograma` y `Catedra`.
++- Lo nuevo que enseña la v2:
++  - **Autorreferencia** (`Facultad`, `Dependencia`): el servicio rechaza
++    con 400 una fila que se nombra a sí misma como padre.
++  - **Foreign keys reales**: un padre inexistente lo rechaza el motor
++    (500); los `DELETE` disparan `SET NULL`, `CASCADE` o `RESTRICT`
++    según el esquema.
++  - **Columna generada** (`Catedra.nombre_asis`): la calcula la BD y se
++    devuelve con un solo `INSERT ... RETURNING`.
++  - **Tabla de solo-anexo** (`AliasPrograma`): sin `PUT` ni `PATCH`.
++- Front (Flask): catálogo público de cátedras (`/catedras`, con buscador,
++  filtro por tipo y paginación), detalle (`/catedras/<id>`) y panel de
++  administración con el CRUD de las 15 tablas.
+ 
+ ## Stack
+ 
+@@ -26,10 +34,11 @@ primer día.
+ | Acceso a datos | Dapper sobre Npgsql (SQL a mano, siempre `@parametro`) |
+ | Documentación | Swashbuckle.AspNetCore (Swagger) |
+ | Motor | PostgreSQL 16 (contenedor oficial) |
++| Front | Flask + Bootstrap 5 (identidad USB) |
+ | Orquestación | Docker Compose |
+ 
+-Paquetes NuGet permitidos en v1: `Npgsql`, `Dapper`, `Swashbuckle.AspNetCore`
+-— y ninguno más (Artículo 2 de la constitución).
++Paquetes NuGet: `Npgsql`, `Dapper`, `Swashbuckle.AspNetCore` — y ninguno más
++(Artículo 2 de la constitución). La v2 no agrega paquetes.
+ 
+ ## Cómo levantarlo
+ 
+@@ -41,34 +50,42 @@ docker compose up -d --build
+ |---|---|
+ | Diagnóstico | http://localhost:8142/ |
+ | Swagger UI | http://localhost:8142/swagger |
+-| API `Sede` | http://localhost:8142/api/Sede |
++| API (ejemplo) | http://localhost:8142/api/Catedra?limite=10 |
++| Front · catálogo | http://localhost:5000/catedras |
++| Front · administración | http://localhost:5000/admin/ |
+ | PostgreSQL (herramienta externa) | localhost,15542 · base `bdcatedras_postgres_local` · `sa` / `Construccion123!` |
+ 
+-> Los puertos se publican con **+100** respecto a los documentos para
+-> convivir con el proyecto del curso en la misma máquina; dentro de los
+-> contenedores todo queda en 8042 y 5432. El proyecto Compose se llama
+-> `mi_v1_catedras`.
++Prueba de capas (sin PostgreSQL, 15 entidades):
++
++```powershell
++cd api_catedras
++dotnet run --project pruebas
++```
++
++> Las pruebas de `DELETE` del quickstart modifican datos de ejemplo. Para
++> volver al estado original: `docker compose down -v && docker compose up -d --build`.
+ 
+ ## Estructura
+ 
+ ```
+-docker-compose.yml              # un comando: postgres + api
++docker-compose.yml              # un comando: postgres + api + front
+ db/postgres/
+   script_bdcatedras.sql         # la BD completa, PROVISTA (se monta, no se genera)
+-api_catedras/                   # la API .NET (ver docs/spec_kit/3_plan.md)
++api_catedras/                   # la API .NET (Controllers, Modelos, Peticiones,
++                                #  Servicios, Repositorios, Excepciones, pruebas)
++front_catedras/                 # el front Flask
+ docs/
+-  GUIA_ESTUDIANTE.md            # guía de arranque y primer recorrido
+-  spec_kit/1_constitution.md .. 8_tasks.md   # constitución + spec kit de la v1
++  GUIA_ESTUDIANTE.md            # guía de arranque (v1)
++  spec_kit/1_constitution.md    # reglas permanentes de todas las versiones
++  spec_kit/Versiones/
++    0_mapa_versiones.md         # qué tablas entran en cada versión
++    version1/  2_spec .. 8_tasks
++    version2/  2_spec .. 8_tasks
+ ```
+ 
+-## Documentación
+-
+-En `docs/spec_kit/`:
+-
+-- `1_constitution.md` — reglas permanentes de todas las versiones.
+-- `2_spec.md` — qué construir en v1 y sus criterios de aceptación.
+-- `3_plan.md` — cómo: stack, estructura y diseño de capas.
+-- `5_data_model.md` — la BD dada y la tabla `sede`.
+-- `6_contracts.md` / `7_quickstart.md` / `8_tasks.md` — contratos, arranque y orden de trabajo.
++## Documentación de la v2
+ 
+-Y `docs/GUIA_ESTUDIANTE.md` — guía práctica paso a paso.
++En `docs/spec_kit/Versiones/version2/`: `2_spec.md` (qué y criterios de
++aceptación), `3_plan.md` (cómo), `4_research.md` (decisiones D9-D13),
++`5_data_model.md` (las 5 tablas y sus FK reales), `6_contracts.md`,
++`7_quickstart.md` (smoke test) y `8_tasks.md` (fases 14-21, todas cerradas).
+diff --git a/docs/spec_kit/Versiones/version1/8_tasks.md b/docs/spec_kit/Versiones/version1/8_tasks.md
+index 01141b7..812b81b 100644
+--- a/docs/spec_kit/Versiones/version1/8_tasks.md
++++ b/docs/spec_kit/Versiones/version1/8_tasks.md
+@@ -206,10 +206,10 @@ obligatorio, no tiene `DEFAULT`); `dotnet run --project pruebas` sigue en
+       institucional (naranja `#EF7D00`/negro `#1D1D1B`) + escudo
+       (`static/img/escudo-usb.jpeg`), tomados de un proyecto de
+       referencia del estudiante (`Desktop/Front`).
+-- [ ] Integración a `docker-compose.yml` (hoy se arranca aparte con
+-      `python run.py`) — pendiente, a decidir cuándo se formalice el
+-      frontend como parte del "un solo comando" del Artículo 4.
+-- [ ] Pantallas para las 6 tablas de la Fase 12 — llegan junto con su API.
++- [x] Integración a `docker-compose.yml`: el servicio `front` ya está en
++      el compose (puerto 5000, `API_BASE_URL=http://api:8042/api`).
++- [x] Pantallas para las 6 tablas de la Fase 12 (las 2 últimas,
++      `TipoPregunta` y `TipoVinculacion`, se cerraron en la v2).
+ 
+ **Verificado:** CRUD de las 4 entidades probado de punta a punta contra
+ Docker/PostgreSQL reales desde el front (`http://localhost:5000/admin/`);
+diff --git a/docs/spec_kit/Versiones/version2/8_tasks.md b/docs/spec_kit/Versiones/version2/8_tasks.md
+index 8de94d0..8513bb3 100644
+--- a/docs/spec_kit/Versiones/version2/8_tasks.md
++++ b/docs/spec_kit/Versiones/version2/8_tasks.md
+@@ -131,7 +131,7 @@ para la Fase 18, usando `id_catedra` 5498-5502.
+ ## Fase 17 — Prueba de capas extendida (criterio de aceptación 8)
+ > Depende de las Fases 14-16 (las 5 entidades deben existir).
+ 
+-- [ ] Agregar a `pruebas/Programa.cs` un repositorio FALSO y sus
++- [x] Agregar a `pruebas/Programa.cs` un repositorio FALSO y sus
+       verificaciones para `Facultad`, `Dependencia`,
+       `ProgramaAcademico`, `AliasPrograma` y `Catedra` (mismo patrón que
+       v1, Fase 11). `RepositorioFacultadFalso` y
+@@ -143,10 +143,10 @@ para la Fase 18, usando `id_catedra` 5498-5502.
+       `(id, nombre[..30])` desde el repositorio falso, para poder
+       verificar `NombreAsis` sin PostgreSQL.
+ 
+-**Verificar:** `dotnet run --project pruebas` → cubre las **15**
+-entidades, código de salida 0. Anotar aquí el total real de
+-verificaciones (reemplaza este texto cuando se ejecute: las 45 de v1 +
+-las nuevas de v2).
++**Verificado:** `dotnet run --project pruebas` → cubre las **15**
++entidades, **153 pasadas, 0 fallidas**, código de salida 0 (89 que ya
++existían en v1 + 64 nuevas: 14 del cierre de `TipoPregunta`/
++`TipoVinculacion` y 50 de las 5 tablas de la v2).
+ 
+ ## Fase 18 — Verificación de integridad referencial (criterios de aceptación 7 y 9)
+ > Depende de las Fases 14-16. Es la única fase de v2 dedicada
+@@ -154,7 +154,7 @@ las nuevas de v2).
+ > por eso va separada: mezclarla con la Fase 14/16 habría significado
+ > probar `DELETE` antes de que todas las piezas relacionadas existieran.
+ 
+-- [ ] Ejecutar, contra Docker + PostgreSQL reales y EN ESTE ORDEN
++- [x] Ejecutar, contra Docker + PostgreSQL reales y EN ESTE ORDEN
+       (cada paso depende de que el de ejemplo siga intacto hasta
+       llegar a él):
+   1. `DELETE /api/Facultad/F_ING` → 200; confirmar con `GET
+@@ -167,11 +167,11 @@ las nuevas de v2).
+      cascada no llegó a ejecutarse).
+   4. `DELETE /api/Catedra/5502` → 200, sin efectos en otras tablas
+      (una de las 5 sin sesiones).
+-- [ ] `docker compose down -v && docker compose up -d --build` —
++- [x] `docker compose down -v && docker compose up -d --build` —
+       revertir los 4 `DELETE` de arriba antes de seguir con cualquier
+       otra prueba manual.
+ 
+-**Verificar:** los 4 resultados de arriba coinciden exactamente con lo
++**Verificado** (contra PostgreSQL real, en este orden): los 4 resultados de arriba coinciden exactamente con lo
+ documentado en [5_data_model.md](5_data_model.md) §2.1-2.5 y en el
+ criterio de aceptación 7 de [2_spec.md](2_spec.md). Si alguno no
+ coincide, el modelo de datos de este documento tiene un error y hay que
+@@ -179,6 +179,11 @@ corregirlo ahí antes de seguir — no "arreglar" el comportamiento con
+ código nuevo en la API (la integridad referencial es de la BD,
+ Artículo 5).
+ 
++> **Nota de verificación:** las cátedras de ejemplo SIN sesiones son las
++> de `id_catedra` 5498, 5500, 5502, 5503 y 5504 (los ids no son
++> consecutivos: hay 5502 filas pero el último id es 5504). La 5502, que es
++> la que usa el criterio 7, sí es segura: borrarla dejó `sesion` en 5714.
++
+ ## Fase 19 — Frontend: integración de la plantilla
+ > RF92-RF93 de [2_spec.md](2_spec.md), §4.6 de [3_plan.md](3_plan.md).
+ > No depende de ninguna fase de la API — puede hacerse en paralelo con
+@@ -186,20 +191,29 @@ Artículo 5).
+ > fase termine primero (si no, se construiría dos veces, ver §4.6 de
+ > [3_plan.md](3_plan.md)).
+ 
+-- [ ] Copiar `base.html`, `partials/navbar.html`, `partials/footer.html`
++- [x] Copiar `base.html`, `partials/navbar.html`, `partials/footer.html`
+       y los estáticos de la plantilla externa sobre los actuales de
+       `front_catedras/`.
+-- [ ] Copiar `auth_helpers.py` a la raíz de `front_catedras/`; completar
++- [x] Copiar `auth_helpers.py` a la raíz de `front_catedras/`; completar
+       solo el helper que `base.html` necesita, devolviendo siempre "sin
+       sesión" en esta versión.
+-- [ ] Corregir en `navbar.html` cada `url_for(...)` roto, mapeándolo a
++- [x] Corregir en `navbar.html` cada `url_for(...)` roto, mapeándolo a
+       uno de los 6 blueprints reales que `app.py` ya registra.
+-- [ ] Reemplazar el puerto `5001` cableado en la plantilla por el que
++- [x] Reemplazar el puerto `5001` cableado en la plantilla por el que
+       usa `run.py` (hoy `5000`).
+-- [ ] Eliminar cualquier `try/except` en `servicios/api_catedras.py` o
++- [x] Eliminar cualquier `try/except` en `servicios/api_catedras.py` o
+       en las rutas que sirva datos mock cuando la API falla (RF93).
+ 
+-**Verificar:** con la API apagada (`docker compose stop api`),
++> **Hallazgo al implementar:** la plantilla externa (`Desktop/Front`) no
++> está en el repositorio. El front actual ya tenía el diseño USB
++> (Bootstrap 5 + CSS institucional), así que la fase se aplicó sobre él:
++> se creó `auth_helpers.py` (siempre "sin sesión", registrado como
++> `context_processor`), el navbar quedó sin `url_for` rotos (más el
++> enlace al catálogo), no había ningún `5001` cableado, y
++> `servicios/api_catedras.py` no tenía respaldo a datos mock (RF93 ya
++> se cumplía: cada error de la API se muestra en pantalla).
++
++**Verificado:** con la API apagada (`docker compose stop api`),
+ `http://localhost:5000` y cualquier ruta que consuma la API muestran un
+ error, nunca datos inventados; con la API prendida, el navbar no
+ produce ningún `werkzeug.routing.BuildError`.
+@@ -217,27 +231,31 @@ produce ningún `werkzeug.routing.BuildError`.
+ - [x] `GET /catedras/{idCatedra}` + `templates/detalle_catedra.html` —
+       si `fk_dependencia` no es nulo, una llamada adicional a
+       `GET /api/Dependencia/{id}` para mostrar su nombre.
+-- [ ] `routes/admin.py` — 5 bloques CRUD nuevos (mismo patrón que las
++- [x] `routes/admin.py` — 5 bloques CRUD nuevos (mismo patrón que las
+       10 de v1); el de `Facultad`/`Dependencia` arma el `<select>` de
+       posibles padres con una llamada previa a `GET /api/Facultad` o
+       `GET /api/Dependencia`; el de `AliasPrograma` solo ofrece crear y
+       eliminar.
+-- [ ] `templates/admin/` — 10 templates nuevos (`_form.html` +
++- [x] `templates/admin/` — 10 templates nuevos (`_form.html` +
+       `_lista.html` por cada una de las 5 tablas), reutilizando el
+       layout ya corregido en la Fase 19.
+ 
+-**Verificar:** `http://localhost:5000/catedras` pagina las 5502
++**Verificado** (contra PostgreSQL real): `http://localhost:5000/catedras` pagina las 5502
+ cátedras y el buscador `"amor"` encuentra `000023636` sin importar la
+ página; `http://localhost:5000/catedras/1` muestra el detalle completo;
+ `http://localhost:5000/admin/` tiene 15 tarjetas en total (10 de v1 +
+ 5 de v2), con CRUD de punta a punta contra Docker/PostgreSQL reales.
+ 
++> Además se completaron las pantallas de `TipoPregunta` y
++> `TipoVinculacion` (plantillas de la v1 que no tenían rutas en
++> `admin.py`), para que el panel tenga de verdad las 15 tarjetas.
++
+ ## Fase 21 — Cierre de la v2
+ > Última fase. Solo entonces se escribe la spec de la v3 (Artículo 1).
+ 
+-- [ ] Confirmar que los 10 criterios de aceptación de
++- [x] Confirmar que los 10 criterios de aceptación de
+       [2_spec.md](2_spec.md) §6 pasan, en orden, sobre un entorno recién
+       reseteado (`down -v && up -d --build`).
+-- [ ] `dotnet run --project pruebas` → anotar el total final de
++- [x] `dotnet run --project pruebas` → anotar el total final de
+       verificaciones pasadas (Fase 17).
+-- [ ] Commit y tag: `git tag v2`.
++- [x] Commit y tag: `git tag v2`.
+diff --git a/front_catedras/app.py b/front_catedras/app.py
+index 3607a12..7215742 100644
+--- a/front_catedras/app.py
++++ b/front_catedras/app.py
+@@ -1,6 +1,7 @@
+ from flask import Flask, render_template
+ from flask_cors import CORS
+ from config import Config
++from auth_helpers import registrar_en
+ 
+ from routes.catedras import catedras_bp
+ from routes.registro import registro_bp
+@@ -14,6 +15,9 @@ app.config.from_object(Config)
+ 
+ CORS(app)
+ 
++# Ayudas de sesión para las plantillas (v2: siempre "sin sesión").
++registrar_en(app)
++
+ app.register_blueprint(catedras_bp, url_prefix='/')
+ app.register_blueprint(registro_bp, url_prefix='/')
+ app.register_blueprint(auth_bp, url_prefix='/')
+diff --git a/front_catedras/auth_helpers.py b/front_catedras/auth_helpers.py
+new file mode 100644
+index 0000000..c385ec9
+--- /dev/null
++++ b/front_catedras/auth_helpers.py
+@@ -0,0 +1,32 @@
++# ==========================================================================
++#  auth_helpers.py  ·  Front Cátedras · Versión 2
++# --------------------------------------------------------------------------
++#  Ayudas de autenticación para las plantillas (RF92 de version2/2_spec.md).
++#
++#  En la v2 NO hay login real: la tabla 'usuario' llega a la API en la v5
++#  (mapa de versiones). Por eso estas funciones responden SIEMPRE
++#  "sin sesión". Existen ya para que 'base.html' y el navbar pregunten
++#  "¿hay sesión?" desde ahora, y en la v5 solo cambie ESTE archivo.
++# ==========================================================================
++
++
++def sesion_activa():
++    """¿Hay un usuario autenticado? En la v2, siempre False."""
++    return False
++
++
++def usuario_actual():
++    """El usuario autenticado, o None. En la v2, siempre None."""
++    return None
++
++
++def registrar_en(app):
++    """Expone las ayudas a TODAS las plantillas Jinja.
++
++    'context_processor' es un gancho de Flask: el diccionario que devuelve
++    se agrega a las variables de cada render_template, así el navbar puede
++    escribir {{ sesion_activa() }} sin que cada ruta lo pase a mano.
++    """
++    @app.context_processor
++    def _inyectar_ayudas_de_sesion():
++        return {'sesion_activa': sesion_activa, 'usuario_actual': usuario_actual}
+diff --git a/front_catedras/routes/admin.py b/front_catedras/routes/admin.py
+index e8228da..e66631d 100644
+--- a/front_catedras/routes/admin.py
++++ b/front_catedras/routes/admin.py
+@@ -1,8 +1,9 @@
+ # ==========================================================================
+ #  routes/admin.py  ·  Front Cátedras
+ # --------------------------------------------------------------------------
+-#  Panel de administración: CRUD de las 4 tablas catálogo que ya existen en
+-#  ApiCatedras (Sede, Encuesta, EstadoProceso, Modalidad). Cada sección usa
++#  Panel de administración: CRUD de las 15 tablas que ya expone ApiCatedras
++#  (las 10 sin FK de la v1 y las 5 de la v2: Facultad, Dependencia,
++#  ProgramaAcademico, AliasPrograma y Catedra). Cada sección usa
+ #  formularios HTML normales (los navegadores no mandan PUT/DELETE, así que
+ #  el botón "Guardar" hace POST y esta ruta traduce a PUT/DELETE contra la
+ #  API con 'requests').
+@@ -598,3 +599,582 @@ def tipos_evento_eliminar(id_tipo_evento):
+     except ErrorApi as ex:
+         flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+     return redirect(url_for('admin.tipos_evento_listar'))
++
++
++# ==========================================================================
++#  Ayudas compartidas (v2)
++# ==========================================================================
++
++def _avisar(ex):
++    """Muestra el error de la API (mensaje + detalle) como alerta roja."""
++    flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
++
++
++def _texto_o_none(campo):
++    """Lee un campo del formulario; vacío -> None (la API lo recibe como null)."""
++    return request.form.get(campo, '').strip() or None
++
++
++def _opciones(recurso):
++    """Lista de un recurso para llenar un <select>. Si la API falla, se avisa
++    y se devuelve [] (el formulario se muestra igual, sin opciones)."""
++    try:
++        return listar(recurso)
++    except ErrorApi as ex:
++        _avisar(ex)
++        return []
++
++
++# ==========================================================================
++#  TIPO DE PREGUNTA  (recurso API: "TipoPregunta", clave: id_tipo_pregunta)
++#  Cierre de la v1: las plantillas existían pero faltaban estas rutas.
++#  El formulario elige UN destino; aquí se traduce a los 3 booleanos.
++# ==========================================================================
++
++DESTINOS_PREGUNTA = [('numero', 'Número'), ('texto', 'Texto'), ('opcion', 'Opción')]
++
++
++def _destino_de(tipo):
++    """Qué destino tiene marcado un tipo de pregunta (para preseleccionarlo)."""
++    if not tipo:
++        return ''
++    for valor, _ in DESTINOS_PREGUNTA:
++        if tipo.get(f'guarda_{valor}'):
++            return valor
++    return ''
++
++
++def _leer_form_tipo_pregunta():
++    destino = request.form.get('destino', '')
++    return {
++        'nombre': request.form.get('nombre', '').strip(),
++        'guarda_numero': destino == 'numero',
++        'guarda_texto': destino == 'texto',
++        'guarda_opcion': destino == 'opcion',
++    }
++
++
++@admin_bp.route('/tipos-pregunta')
++def tipos_pregunta_listar():
++    try:
++        tipos = listar('TipoPregunta')
++    except ErrorApi as ex:
++        _avisar(ex)
++        tipos = []
++    return render_template('admin/tipo_pregunta_lista.html', tipos=tipos)
++
++
++@admin_bp.route('/tipos-pregunta/nuevo', methods=['GET', 'POST'])
++def tipos_pregunta_nuevo():
++    if request.method == 'GET':
++        return render_template('admin/tipo_pregunta_form.html', modo='nueva', tipo=None,
++                               errores=[], destinos=DESTINOS_PREGUNTA, destino='')
++
++    datos = _leer_form_tipo_pregunta()
++    datos['id_tipo_pregunta'] = request.form.get('id_tipo_pregunta', '').strip()
++    try:
++        crear('TipoPregunta', datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        return render_template('admin/tipo_pregunta_form.html', modo='nueva', tipo=datos,
++                               errores=ex.errores, destinos=DESTINOS_PREGUNTA, destino=_destino_de(datos))
++
++    flash(f"Tipo de pregunta '{datos['id_tipo_pregunta']}' creado.", 'exito')
++    return redirect(url_for('admin.tipos_pregunta_listar'))
++
++
++@admin_bp.route('/tipos-pregunta/<id_tipo_pregunta>/editar', methods=['GET', 'POST'])
++def tipos_pregunta_editar(id_tipo_pregunta):
++    if request.method == 'GET':
++        try:
++            tipo = obtener('TipoPregunta', id_tipo_pregunta)
++        except ErrorApi as ex:
++            _avisar(ex)
++            return redirect(url_for('admin.tipos_pregunta_listar'))
++        return render_template('admin/tipo_pregunta_form.html', modo='editar', tipo=tipo,
++                               errores=[], destinos=DESTINOS_PREGUNTA, destino=_destino_de(tipo))
++
++    datos = _leer_form_tipo_pregunta()
++    try:
++        reemplazar('TipoPregunta', id_tipo_pregunta, datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        datos['id_tipo_pregunta'] = id_tipo_pregunta
++        return render_template('admin/tipo_pregunta_form.html', modo='editar', tipo=datos,
++                               errores=ex.errores, destinos=DESTINOS_PREGUNTA, destino=_destino_de(datos))
++
++    flash(f"Tipo de pregunta '{id_tipo_pregunta}' actualizado.", 'exito')
++    return redirect(url_for('admin.tipos_pregunta_listar'))
++
++
++@admin_bp.route('/tipos-pregunta/<id_tipo_pregunta>/eliminar', methods=['POST'])
++def tipos_pregunta_eliminar(id_tipo_pregunta):
++    try:
++        eliminar('TipoPregunta', id_tipo_pregunta)
++        flash(f"Tipo de pregunta '{id_tipo_pregunta}' eliminado.", 'exito')
++    except ErrorApi as ex:
++        _avisar(ex)
++    return redirect(url_for('admin.tipos_pregunta_listar'))
++
++
++# ==========================================================================
++#  TIPO DE VINCULACIÓN  (recurso API: "TipoVinculacion") — cierre de la v1
++# ==========================================================================
++
++def _leer_form_tipo_vinculacion():
++    return {
++        'nombre': request.form.get('nombre', '').strip(),
++        'es_interno': request.form.get('es_interno') == 'on',
++        'exige_programa': request.form.get('exige_programa') == 'on',
++        'activo': request.form.get('activo') == 'on',
++    }
++
++
++@admin_bp.route('/tipos-vinculacion')
++def tipos_vinculacion_listar():
++    try:
++        tipos = listar('TipoVinculacion')
++    except ErrorApi as ex:
++        _avisar(ex)
++        tipos = []
++    return render_template('admin/tipo_vinculacion_lista.html', tipos=tipos)
++
++
++@admin_bp.route('/tipos-vinculacion/nuevo', methods=['GET', 'POST'])
++def tipos_vinculacion_nuevo():
++    if request.method == 'GET':
++        return render_template('admin/tipo_vinculacion_form.html', modo='nueva', tipo=None, errores=[])
++
++    datos = _leer_form_tipo_vinculacion()
++    datos['id_tipo_vinculacion'] = request.form.get('id_tipo_vinculacion', '').strip()
++    try:
++        crear('TipoVinculacion', datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        return render_template('admin/tipo_vinculacion_form.html', modo='nueva', tipo=datos, errores=ex.errores)
++
++    flash(f"Tipo de vinculación '{datos['id_tipo_vinculacion']}' creado.", 'exito')
++    return redirect(url_for('admin.tipos_vinculacion_listar'))
++
++
++@admin_bp.route('/tipos-vinculacion/<id_tipo_vinculacion>/editar', methods=['GET', 'POST'])
++def tipos_vinculacion_editar(id_tipo_vinculacion):
++    if request.method == 'GET':
++        try:
++            tipo = obtener('TipoVinculacion', id_tipo_vinculacion)
++        except ErrorApi as ex:
++            _avisar(ex)
++            return redirect(url_for('admin.tipos_vinculacion_listar'))
++        return render_template('admin/tipo_vinculacion_form.html', modo='editar', tipo=tipo, errores=[])
++
++    datos = _leer_form_tipo_vinculacion()
++    try:
++        reemplazar('TipoVinculacion', id_tipo_vinculacion, datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        datos['id_tipo_vinculacion'] = id_tipo_vinculacion
++        return render_template('admin/tipo_vinculacion_form.html', modo='editar', tipo=datos, errores=ex.errores)
++
++    flash(f"Tipo de vinculación '{id_tipo_vinculacion}' actualizado.", 'exito')
++    return redirect(url_for('admin.tipos_vinculacion_listar'))
++
++
++@admin_bp.route('/tipos-vinculacion/<id_tipo_vinculacion>/eliminar', methods=['POST'])
++def tipos_vinculacion_eliminar(id_tipo_vinculacion):
++    try:
++        eliminar('TipoVinculacion', id_tipo_vinculacion)
++        flash(f"Tipo de vinculación '{id_tipo_vinculacion}' eliminado.", 'exito')
++    except ErrorApi as ex:
++        _avisar(ex)
++    return redirect(url_for('admin.tipos_vinculacion_listar'))
++
++
++# ==========================================================================
++#  v2 · FACULTAD  (recurso API: "Facultad", clave: id_facultad)
++#  El formulario ofrece un <select> con las facultades existentes como
++#  posible padre (RF94). La regla "no puede ser su propio padre" la aplica
++#  la API (400); aquí además se quita la propia fila de las opciones.
++# ==========================================================================
++
++def _leer_form_facultad():
++    return {
++        'nombre': request.form.get('nombre', '').strip(),
++        'fk_facultad_padre': _texto_o_none('fk_facultad_padre'),
++        'activo': request.form.get('activo') == 'on',
++    }
++
++
++@admin_bp.route('/facultades')
++def facultades_listar():
++    try:
++        facultades = listar('Facultad')
++    except ErrorApi as ex:
++        _avisar(ex)
++        facultades = []
++    return render_template('admin/facultad_lista.html', facultades=facultades)
++
++
++@admin_bp.route('/facultades/nueva', methods=['GET', 'POST'])
++def facultades_nueva():
++    if request.method == 'GET':
++        return render_template('admin/facultad_form.html', modo='nueva', facultad=None,
++                               errores=[], padres=_opciones('Facultad'))
++
++    datos = _leer_form_facultad()
++    datos['id_facultad'] = request.form.get('id_facultad', '').strip()
++    try:
++        crear('Facultad', datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        return render_template('admin/facultad_form.html', modo='nueva', facultad=datos,
++                               errores=ex.errores, padres=_opciones('Facultad'))
++
++    flash(f"Facultad '{datos['id_facultad']}' creada.", 'exito')
++    return redirect(url_for('admin.facultades_listar'))
++
++
++@admin_bp.route('/facultades/<id_facultad>/editar', methods=['GET', 'POST'])
++def facultades_editar(id_facultad):
++    # Posibles padres: todas MENOS la propia facultad.
++    padres = [f for f in _opciones('Facultad') if f['id_facultad'] != id_facultad]
++
++    if request.method == 'GET':
++        try:
++            facultad = obtener('Facultad', id_facultad)
++        except ErrorApi as ex:
++            _avisar(ex)
++            return redirect(url_for('admin.facultades_listar'))
++        return render_template('admin/facultad_form.html', modo='editar', facultad=facultad,
++                               errores=[], padres=padres)
++
++    datos = _leer_form_facultad()
++    try:
++        reemplazar('Facultad', id_facultad, datos)   # PUT: el padre vacío queda en null
++    except ErrorApi as ex:
++        _avisar(ex)
++        datos['id_facultad'] = id_facultad
++        return render_template('admin/facultad_form.html', modo='editar', facultad=datos,
++                               errores=ex.errores, padres=padres)
++
++    flash(f"Facultad '{id_facultad}' actualizada.", 'exito')
++    return redirect(url_for('admin.facultades_listar'))
++
++
++@admin_bp.route('/facultades/<id_facultad>/eliminar', methods=['POST'])
++def facultades_eliminar(id_facultad):
++    try:
++        eliminar('Facultad', id_facultad)
++        flash(f"Facultad '{id_facultad}' eliminada (sus hijas y programas quedan sin facultad).", 'exito')
++    except ErrorApi as ex:
++        _avisar(ex)
++    return redirect(url_for('admin.facultades_listar'))
++
++
++# ==========================================================================
++#  v2 · DEPENDENCIA  (recurso API: "Dependencia", clave: id_dependencia)
++#  Mismo patrón que Facultad (autorreferencia con <select> de padres).
++# ==========================================================================
++
++def _leer_form_dependencia():
++    return {
++        'nombre': request.form.get('nombre', '').strip(),
++        'fk_dependencia_padre': _texto_o_none('fk_dependencia_padre'),
++        'activo': request.form.get('activo') == 'on',
++    }
++
++
++@admin_bp.route('/dependencias')
++def dependencias_listar():
++    try:
++        dependencias = listar('Dependencia')
++    except ErrorApi as ex:
++        _avisar(ex)
++        dependencias = []
++    return render_template('admin/dependencia_lista.html', dependencias=dependencias)
++
++
++@admin_bp.route('/dependencias/nueva', methods=['GET', 'POST'])
++def dependencias_nueva():
++    if request.method == 'GET':
++        return render_template('admin/dependencia_form.html', modo='nueva', dependencia=None,
++                               errores=[], padres=_opciones('Dependencia'))
++
++    datos = _leer_form_dependencia()
++    datos['id_dependencia'] = request.form.get('id_dependencia', '').strip()
++    try:
++        crear('Dependencia', datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        return render_template('admin/dependencia_form.html', modo='nueva', dependencia=datos,
++                               errores=ex.errores, padres=_opciones('Dependencia'))
++
++    flash(f"Dependencia '{datos['id_dependencia']}' creada.", 'exito')
++    return redirect(url_for('admin.dependencias_listar'))
++
++
++@admin_bp.route('/dependencias/<id_dependencia>/editar', methods=['GET', 'POST'])
++def dependencias_editar(id_dependencia):
++    padres = [d for d in _opciones('Dependencia') if d['id_dependencia'] != id_dependencia]
++
++    if request.method == 'GET':
++        try:
++            dependencia = obtener('Dependencia', id_dependencia)
++        except ErrorApi as ex:
++            _avisar(ex)
++            return redirect(url_for('admin.dependencias_listar'))
++        return render_template('admin/dependencia_form.html', modo='editar', dependencia=dependencia,
++                               errores=[], padres=padres)
++
++    datos = _leer_form_dependencia()
++    try:
++        reemplazar('Dependencia', id_dependencia, datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        datos['id_dependencia'] = id_dependencia
++        return render_template('admin/dependencia_form.html', modo='editar', dependencia=datos,
++                               errores=ex.errores, padres=padres)
++
++    flash(f"Dependencia '{id_dependencia}' actualizada.", 'exito')
++    return redirect(url_for('admin.dependencias_listar'))
++
++
++@admin_bp.route('/dependencias/<id_dependencia>/eliminar', methods=['POST'])
++def dependencias_eliminar(id_dependencia):
++    try:
++        eliminar('Dependencia', id_dependencia)
++        flash(f"Dependencia '{id_dependencia}' eliminada (sus hijas y cátedras quedan sin dependencia).", 'exito')
++    except ErrorApi as ex:
++        _avisar(ex)
++    return redirect(url_for('admin.dependencias_listar'))
++
++
++# ==========================================================================
++#  v2 · PROGRAMA ACADÉMICO  (recurso API: "ProgramaAcademico", clave: codigo)
++# ==========================================================================
++
++NIVELES_PROGRAMA = ['PREGRADO', 'ESPECIALIZACION', 'MAESTRIA', 'DOCTORADO', 'EDUCACION_CONTINUA', 'OTRO']
++
++
++def _leer_form_programa():
++    return {
++        'nombre': request.form.get('nombre', '').strip(),
++        'fk_facultad': _texto_o_none('fk_facultad'),
++        'nivel': request.form.get('nivel', ''),
++        'activo': request.form.get('activo') == 'on',
++    }
++
++
++def _render_programa_form(modo, programa, errores):
++    return render_template('admin/programa_form.html', modo=modo, programa=programa, errores=errores,
++                           facultades=_opciones('Facultad'), niveles=NIVELES_PROGRAMA)
++
++
++@admin_bp.route('/programas')
++def programas_listar():
++    try:
++        programas = listar('ProgramaAcademico')
++    except ErrorApi as ex:
++        _avisar(ex)
++        programas = []
++    return render_template('admin/programa_lista.html', programas=programas)
++
++
++@admin_bp.route('/programas/nuevo', methods=['GET', 'POST'])
++def programas_nuevo():
++    if request.method == 'GET':
++        return _render_programa_form('nueva', None, [])
++
++    datos = _leer_form_programa()
++    datos['codigo'] = request.form.get('codigo', '').strip()
++    try:
++        crear('ProgramaAcademico', datos)
++    except ErrorApi as ex:
++        # Aquí llega, por ejemplo, el 422 de un código en minúscula.
++        _avisar(ex)
++        return _render_programa_form('nueva', datos, ex.errores)
++
++    flash(f"Programa '{datos['codigo']}' creado.", 'exito')
++    return redirect(url_for('admin.programas_listar'))
++
++
++@admin_bp.route('/programas/<codigo>/editar', methods=['GET', 'POST'])
++def programas_editar(codigo):
++    if request.method == 'GET':
++        try:
++            programa = obtener('ProgramaAcademico', codigo)
++        except ErrorApi as ex:
++            _avisar(ex)
++            return redirect(url_for('admin.programas_listar'))
++        return _render_programa_form('editar', programa, [])
++
++    datos = _leer_form_programa()
++    try:
++        reemplazar('ProgramaAcademico', codigo, datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        datos['codigo'] = codigo
++        return _render_programa_form('editar', datos, ex.errores)
++
++    flash(f"Programa '{codigo}' actualizado.", 'exito')
++    return redirect(url_for('admin.programas_listar'))
++
++
++@admin_bp.route('/programas/<codigo>/eliminar', methods=['POST'])
++def programas_eliminar(codigo):
++    try:
++        eliminar('ProgramaAcademico', codigo)
++        flash(f"Programa '{codigo}' eliminado.", 'exito')
++    except ErrorApi as ex:
++        # Lo normal: 500 porque tiene asistentes (FK RESTRICT de programa_asistente).
++        _avisar(ex)
++    return redirect(url_for('admin.programas_listar'))
++
++
++# ==========================================================================
++#  v2 · ALIAS DE PROGRAMA  (recurso API: "AliasPrograma", clave: id_alias)
++#  SOLO listar, crear y eliminar: la API no tiene PUT/PATCH (RF80-RF83).
++# ==========================================================================
++
++@admin_bp.route('/alias-programa')
++def alias_listar():
++    try:
++        alias = listar('AliasPrograma')
++    except ErrorApi as ex:
++        _avisar(ex)
++        alias = []
++    return render_template('admin/alias_lista.html', alias=alias)
++
++
++@admin_bp.route('/alias-programa/nuevo', methods=['GET', 'POST'])
++def alias_nuevo():
++    if request.method == 'GET':
++        return render_template('admin/alias_form.html', alias=None, errores=[],
++                               programas=_opciones('ProgramaAcademico'))
++
++    datos = {
++        'texto_normalizado': request.form.get('texto_normalizado', '').strip(),
++        'fk_programa': request.form.get('fk_programa', ''),
++    }
++    origen = _texto_o_none('origen')
++    if origen:                 # si no llega, la API usa 'FORMULARIO'
++        datos['origen'] = origen
++    try:
++        respuesta = crear('AliasPrograma', datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        return render_template('admin/alias_form.html', alias=datos, errores=ex.errores,
++                               programas=_opciones('ProgramaAcademico'))
++
++    flash(f"Alias creado con id {respuesta['id_alias']}.", 'exito')
++    return redirect(url_for('admin.alias_listar'))
++
++
++@admin_bp.route('/alias-programa/<int:id_alias>/eliminar', methods=['POST'])
++def alias_eliminar(id_alias):
++    try:
++        eliminar('AliasPrograma', id_alias)
++        flash(f"Alias {id_alias} eliminado.", 'exito')
++    except ErrorApi as ex:
++        _avisar(ex)
++    return redirect(url_for('admin.alias_listar'))
++
++
++# ==========================================================================
++#  v2 · CÁTEDRA  (recurso API: "Catedra", clave: id_catedra numérica)
++#  Con 5502 filas, la lista tiene buscador y paginación (mismo criterio que
++#  el catálogo público: una llamada a la API, filtro y corte en Python).
++#  'nombre_asis' NO está en el formulario: la calcula la BD.
++# ==========================================================================
++
++CATEDRAS_POR_PAGINA = 50
++
++
++def _leer_form_catedra():
++    return {
++        'id_evento_asis': request.form.get('id_evento_asis', '').strip(),
++        'nombre': request.form.get('nombre', '').strip(),
++        'fk_tipo_evento': request.form.get('fk_tipo_evento', ''),
++        'fk_dependencia': _texto_o_none('fk_dependencia'),
++        'activo': request.form.get('activo') == 'on',
++    }
++
++
++def _render_catedra_form(modo, catedra, errores):
++    return render_template('admin/catedra_form.html', modo=modo, catedra=catedra, errores=errores,
++                           tipos_evento=_opciones('TipoEvento'), dependencias=_opciones('Dependencia'))
++
++
++@admin_bp.route('/catedras')
++def catedras_listar():
++    texto = request.args.get('q', '').strip()
++    try:
++        pagina = max(1, int(request.args.get('pagina', 1)))
++    except ValueError:
++        pagina = 1
++
++    try:
++        catedras = listar('Catedra', timeout=30)
++    except ErrorApi as ex:
++        _avisar(ex)
++        catedras = []
++
++    if texto:
++        buscado = texto.lower()
++        catedras = [c for c in catedras
++                    if buscado in c['nombre'].lower() or buscado in c['id_evento_asis']]
++
++    total = len(catedras)
++    total_paginas = max(1, -(-total // CATEDRAS_POR_PAGINA))
++    pagina = min(pagina, total_paginas)
++    corte = (pagina - 1) * CATEDRAS_POR_PAGINA
++    return render_template('admin/catedra_lista.html', catedras=catedras[corte:corte + CATEDRAS_POR_PAGINA],
++                           q=texto, pagina=pagina, total_paginas=total_paginas, total=total)
++
++
++@admin_bp.route('/catedras/nueva', methods=['GET', 'POST'])
++def catedras_nueva():
++    if request.method == 'GET':
++        return _render_catedra_form('nueva', None, [])
++
++    datos = _leer_form_catedra()
++    try:
++        respuesta = crear('Catedra', datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        return _render_catedra_form('nueva', datos, ex.errores)
++
++    flash(f"Cátedra creada con id {respuesta['id_catedra']} "
++          f"(nombre ASIS: '{respuesta['nombre_asis']}').", 'exito')
++    return redirect(url_for('admin.catedras_listar'))
++
++
++@admin_bp.route('/catedras/<int:id_catedra>/editar', methods=['GET', 'POST'])
++def catedras_editar(id_catedra):
++    if request.method == 'GET':
++        try:
++            catedra = obtener('Catedra', id_catedra)
++        except ErrorApi as ex:
++            _avisar(ex)
++            return redirect(url_for('admin.catedras_listar'))
++        return _render_catedra_form('editar', catedra, [])
++
++    datos = _leer_form_catedra()
++    try:
++        reemplazar('Catedra', id_catedra, datos)
++    except ErrorApi as ex:
++        _avisar(ex)
++        datos['id_catedra'] = id_catedra
++        return _render_catedra_form('editar', datos, ex.errores)
++
++    flash(f"Cátedra {id_catedra} actualizada.", 'exito')
++    return redirect(url_for('admin.catedras_listar'))
++
++
++@admin_bp.route('/catedras/<int:id_catedra>/eliminar', methods=['POST'])
++def catedras_eliminar(id_catedra):
++    try:
++        eliminar('Catedra', id_catedra)
++        flash(f"Cátedra {id_catedra} eliminada (y sus sesiones, por ON DELETE CASCADE).", 'exito')
++    except ErrorApi as ex:
++        _avisar(ex)
++    return redirect(url_for('admin.catedras_listar'))
+diff --git a/front_catedras/templates/admin/alias_form.html b/front_catedras/templates/admin/alias_form.html
+new file mode 100644
+index 0000000..17081d9
+--- /dev/null
++++ b/front_catedras/templates/admin/alias_form.html
+@@ -0,0 +1,53 @@
++{% extends 'base.html' %}
++{% block titulo %}Nuevo alias · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.alias_listar') }}">Alias de programa</a></li>
++        <li class="breadcrumb-item active">Nuevo</li>
++    </ol>
++</nav>
++<h1 class="h3 fw-bold mb-3"><i class="fas fa-tags text-primary-custom me-2"></i>Nuevo alias</h1>
++
++<div class="card shadow-sm">
++    <div class="card-body">
++        {# Solo existe el formulario de CREAR: la API no tiene PUT/PATCH para alias. #}
++        <form method="post" action="{{ url_for('admin.alias_nuevo') }}">
++            <div class="mb-3">
++                <label class="form-label" for="texto_normalizado">Texto normalizado</label>
++                <input type="text" class="form-control" id="texto_normalizado" name="texto_normalizado" maxlength="200" required
++                       value="{{ alias.texto_normalizado if alias else '' }}">
++                <div class="form-text">Debe ser único (p. ej. "ing. de datos").</div>
++            </div>
++
++            <div class="mb-3">
++                <label class="form-label" for="fk_programa">Programa</label>
++                <select class="form-select" id="fk_programa" name="fk_programa" required>
++                    <option value="">-- Selecciona --</option>
++                    {% for p in programas %}
++                    <option value="{{ p.codigo }}" {% if alias and alias.fk_programa == p.codigo %}selected{% endif %}>{{ p.codigo }} · {{ p.nombre }}</option>
++                    {% endfor %}
++                </select>
++            </div>
++
++            <div class="mb-3">
++                <label class="form-label" for="origen">Origen (opcional)</label>
++                <input type="text" class="form-control" id="origen" name="origen" maxlength="30" placeholder="FORMULARIO"
++                       value="{{ alias.origen if alias and alias.origen else '' }}">
++            </div>
++
++            {% if errores %}
++            <div class="alert alert-danger py-2">
++                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
++            </div>
++            {% endif %}
++
++            <div class="d-flex gap-2">
++                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
++                <a class="btn btn-outline-secondary" href="{{ url_for('admin.alias_listar') }}">Cancelar</a>
++            </div>
++        </form>
++    </div>
++</div>
++{% endblock %}
+diff --git a/front_catedras/templates/admin/alias_lista.html b/front_catedras/templates/admin/alias_lista.html
+new file mode 100644
+index 0000000..7137afd
+--- /dev/null
++++ b/front_catedras/templates/admin/alias_lista.html
+@@ -0,0 +1,55 @@
++{% extends 'base.html' %}
++{% block titulo %}Alias de programa · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item active">Alias de programa</li>
++    </ol>
++</nav>
++
++<div class="d-flex justify-content-between align-items-center mb-3">
++    <h1 class="h3 fw-bold mb-0"><i class="fas fa-tags text-primary-custom me-2"></i>Alias de programa</h1>
++    <a class="btn btn-primary" href="{{ url_for('admin.alias_nuevo') }}">
++        <i class="fas fa-plus me-1"></i>Nuevo alias
++    </a>
++</div>
++
++<div class="alert alert-light border small">
++    <i class="fas fa-info-circle text-primary-custom me-1"></i>
++    Tabla de solo-anexo: un alias no se edita. Si quedó mal escrito, se elimina y se crea de nuevo.
++</div>
++
++<div class="card shadow-sm">
++    <div class="card-body p-0">
++        {% if alias %}
++        <div class="table-responsive">
++            <table class="table table-hover align-middle mb-0">
++                <thead class="table-light">
++                    <tr><th>Id</th><th>Texto normalizado</th><th>Programa</th><th>Origen</th><th>Creado</th><th class="text-end">Acciones</th></tr>
++                </thead>
++                <tbody>
++                    {% for a in alias %}
++                    <tr>
++                        <td class="fw-semibold">{{ a.id_alias }}</td>
++                        <td>{{ a.texto_normalizado }}</td>
++                        <td><span class="badge badge-secondary">{{ a.fk_programa }}</span></td>
++                        <td>{{ a.origen }}</td>
++                        <td class="small">{{ a.creado_en[:16]|replace('T', ' ') }}</td>
++                        <td class="text-end">
++                            <form class="d-inline" method="post" action="{{ url_for('admin.alias_eliminar', id_alias=a.id_alias) }}"
++                                  onsubmit="return confirm('¿Eliminar el alias {{ a.id_alias }}?');">
++                                <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
++                            </form>
++                        </td>
++                    </tr>
++                    {% endfor %}
++                </tbody>
++            </table>
++        </div>
++        {% else %}
++        <p class="text-muted text-center py-4 mb-0">No hay alias registrados.</p>
++        {% endif %}
++    </div>
++</div>
++{% endblock %}
+diff --git a/front_catedras/templates/admin/catedra_form.html b/front_catedras/templates/admin/catedra_form.html
+new file mode 100644
+index 0000000..496af6a
+--- /dev/null
++++ b/front_catedras/templates/admin/catedra_form.html
+@@ -0,0 +1,70 @@
++{% extends 'base.html' %}
++{% block titulo %}{{ 'Nueva cátedra' if modo == 'nueva' else 'Editar cátedra' }} · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_listar') }}">Cátedra</a></li>
++        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
++    </ol>
++</nav>
++<h1 class="h3 fw-bold mb-3"><i class="fas fa-book-open text-primary-custom me-2"></i>{{ 'Nueva cátedra' if modo == 'nueva' else 'Editar cátedra ' ~ catedra.id_catedra }}</h1>
++
++<div class="card shadow-sm">
++    <div class="card-body">
++        <form method="post"
++              action="{{ url_for('admin.catedras_nueva') if modo == 'nueva' else url_for('admin.catedras_editar', id_catedra=catedra.id_catedra) }}">
++
++            <div class="mb-3">
++                <label class="form-label" for="id_evento_asis">Código ASIS (9 dígitos)</label>
++                <input type="text" class="form-control" id="id_evento_asis" name="id_evento_asis" maxlength="9" required
++                       value="{{ catedra.id_evento_asis if catedra else '' }}">
++                <div class="form-text">Con ceros a la izquierda, p. ej. 000023636. La API lo valida (422).</div>
++            </div>
++
++            <div class="mb-3">
++                <label class="form-label" for="nombre">Nombre</label>
++                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="200" required
++                       value="{{ catedra.nombre if catedra else '' }}">
++                <div class="form-text">El "nombre ASIS" (primeros 30 caracteres) lo calcula la base de datos.</div>
++            </div>
++
++            <div class="mb-3">
++                <label class="form-label" for="fk_tipo_evento">Tipo de evento</label>
++                <select class="form-select" id="fk_tipo_evento" name="fk_tipo_evento" required>
++                    <option value="">-- Selecciona --</option>
++                    {% for t in tipos_evento %}
++                    <option value="{{ t.id_tipo_evento }}" {% if catedra and catedra.fk_tipo_evento == t.id_tipo_evento %}selected{% endif %}>{{ t.id_tipo_evento }} · {{ t.nombre }}</option>
++                    {% endfor %}
++                </select>
++            </div>
++
++            <div class="mb-3">
++                <label class="form-label" for="fk_dependencia">Dependencia</label>
++                <select class="form-select" id="fk_dependencia" name="fk_dependencia">
++                    <option value="">— Sin dependencia —</option>
++                    {% for d in dependencias %}
++                    <option value="{{ d.id_dependencia }}" {% if catedra and catedra.fk_dependencia == d.id_dependencia %}selected{% endif %}>{{ d.id_dependencia }} · {{ d.nombre }}</option>
++                    {% endfor %}
++                </select>
++            </div>
++
++            <div class="form-check mb-3">
++                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if catedra is none or catedra.activo %}checked{% endif %}>
++                <label class="form-check-label" for="activo">Activa</label>
++            </div>
++
++            {% if errores %}
++            <div class="alert alert-danger py-2">
++                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
++            </div>
++            {% endif %}
++
++            <div class="d-flex gap-2">
++                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
++                <a class="btn btn-outline-secondary" href="{{ url_for('admin.catedras_listar') }}">Cancelar</a>
++            </div>
++        </form>
++    </div>
++</div>
++{% endblock %}
+diff --git a/front_catedras/templates/admin/catedra_lista.html b/front_catedras/templates/admin/catedra_lista.html
+new file mode 100644
+index 0000000..0a739ab
+--- /dev/null
++++ b/front_catedras/templates/admin/catedra_lista.html
+@@ -0,0 +1,71 @@
++{% extends 'base.html' %}
++{% block titulo %}Cátedras · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item active">Cátedra</li>
++    </ol>
++</nav>
++
++<div class="d-flex justify-content-between align-items-center mb-3">
++    <h1 class="h3 fw-bold mb-0"><i class="fas fa-book-open text-primary-custom me-2"></i>Cátedras</h1>
++    <a class="btn btn-primary" href="{{ url_for('admin.catedras_nueva') }}">
++        <i class="fas fa-plus me-1"></i>Nueva cátedra
++    </a>
++</div>
++
++<form class="d-flex gap-2 mb-3" method="get" action="{{ url_for('admin.catedras_listar') }}">
++    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Buscar por nombre o código ASIS">
++    <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
++</form>
++<p class="text-muted small">{{ total }} cátedra{{ '' if total == 1 else 's' }} · página {{ pagina }} de {{ total_paginas }}</p>
++
++<div class="card shadow-sm">
++    <div class="card-body p-0">
++        {% if catedras %}
++        <div class="table-responsive">
++            <table class="table table-hover align-middle mb-0">
++                <thead class="table-light">
++                    <tr><th>Id</th><th>ASIS</th><th>Nombre</th><th>Nombre ASIS</th><th>Tipo</th><th>Dependencia</th><th>Activa</th><th class="text-end">Acciones</th></tr>
++                </thead>
++                <tbody>
++                    {% for c in catedras %}
++                    <tr>
++                        <td class="fw-semibold">{{ c.id_catedra }}</td>
++                        <td>{{ c.id_evento_asis }}</td>
++                        <td>{{ c.nombre }}</td>
++                        <td class="small text-muted">{{ c.nombre_asis }}</td>
++                        <td><span class="badge badge-secondary">{{ c.fk_tipo_evento }}</span></td>
++                        <td>{{ c.fk_dependencia or '—' }}</td>
++                        <td><span class="badge {{ 'badge-success' if c.activo else 'badge-danger' }}">{{ 'Sí' if c.activo else 'No' }}</span></td>
++                        <td class="text-end text-nowrap">
++                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.catedras_editar', id_catedra=c.id_catedra) }}"><i class="fas fa-edit"></i></a>
++                            <form class="d-inline" method="post" action="{{ url_for('admin.catedras_eliminar', id_catedra=c.id_catedra) }}"
++                                  onsubmit="return confirm('¿Eliminar la cátedra {{ c.id_catedra }}? También se borrarán sus SESIONES (ON DELETE CASCADE).');">
++                                <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
++                            </form>
++                        </td>
++                    </tr>
++                    {% endfor %}
++                </tbody>
++            </table>
++        </div>
++        {% else %}
++        <p class="text-muted text-center py-4 mb-0">No hay cátedras que mostrar.</p>
++        {% endif %}
++    </div>
++</div>
++
++{% if total_paginas > 1 %}
++<nav class="mt-3">
++    <ul class="pagination justify-content-center flex-wrap">
++        <li class="page-item {{ 'disabled' if pagina == 1 }}"><a class="page-link" href="{{ url_for('admin.catedras_listar', q=q, pagina=pagina - 1) }}">Anterior</a></li>
++        {% for n in range([1, pagina - 2]|max, [total_paginas, pagina + 2]|min + 1) %}
++        <li class="page-item {{ 'active' if n == pagina }}"><a class="page-link" href="{{ url_for('admin.catedras_listar', q=q, pagina=n) }}">{{ n }}</a></li>
++        {% endfor %}
++        <li class="page-item {{ 'disabled' if pagina == total_paginas }}"><a class="page-link" href="{{ url_for('admin.catedras_listar', q=q, pagina=pagina + 1) }}">Siguiente</a></li>
++    </ul>
++</nav>
++{% endif %}
++{% endblock %}
+diff --git a/front_catedras/templates/admin/dependencia_form.html b/front_catedras/templates/admin/dependencia_form.html
+new file mode 100644
+index 0000000..13e2a2f
+--- /dev/null
++++ b/front_catedras/templates/admin/dependencia_form.html
+@@ -0,0 +1,61 @@
++{% extends 'base.html' %}
++{% block titulo %}{{ 'Nueva dependencia' if modo == 'nueva' else 'Editar dependencia' }} · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.dependencias_listar') }}">Dependencia</a></li>
++        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
++    </ol>
++</nav>
++<h1 class="h3 fw-bold mb-3"><i class="fas fa-sitemap text-primary-custom me-2"></i>{{ 'Nueva dependencia' if modo == 'nueva' else 'Editar dependencia ' + dependencia.id_dependencia }}</h1>
++
++<div class="card shadow-sm">
++    <div class="card-body">
++        <form method="post"
++              action="{{ url_for('admin.dependencias_nueva') if modo == 'nueva' else url_for('admin.dependencias_editar', id_dependencia=dependencia.id_dependencia) }}">
++
++            {% if modo == 'nueva' %}
++            <div class="mb-3">
++                <label class="form-label" for="id_dependencia">Código (id_dependencia)</label>
++                <input type="text" class="form-control" id="id_dependencia" name="id_dependencia" maxlength="15" required
++                       value="{{ dependencia.id_dependencia if dependencia else '' }}">
++            </div>
++            {% endif %}
++
++            <div class="mb-3">
++                <label class="form-label" for="nombre">Nombre</label>
++                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="120" required
++                       value="{{ dependencia.nombre if dependencia else '' }}">
++            </div>
++
++            <div class="mb-3">
++                <label class="form-label" for="fk_dependencia_padre">Dependencia padre</label>
++                <select class="form-select" id="fk_dependencia_padre" name="fk_dependencia_padre">
++                    <option value="">— Ninguna (es raíz) —</option>
++                    {% for p in padres %}
++                    <option value="{{ p.id_dependencia }}" {% if dependencia and dependencia.fk_dependencia_padre == p.id_dependencia %}selected{% endif %}>{{ p.id_dependencia }} · {{ p.nombre }}</option>
++                    {% endfor %}
++                </select>
++                <div class="form-text">Una dependencia no puede ser su propio padre (la API responde 400).</div>
++            </div>
++
++            <div class="form-check mb-3">
++                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if dependencia is none or dependencia.activo %}checked{% endif %}>
++                <label class="form-check-label" for="activo">Activa</label>
++            </div>
++
++            {% if errores %}
++            <div class="alert alert-danger py-2">
++                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
++            </div>
++            {% endif %}
++
++            <div class="d-flex gap-2">
++                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
++                <a class="btn btn-outline-secondary" href="{{ url_for('admin.dependencias_listar') }}">Cancelar</a>
++            </div>
++        </form>
++    </div>
++</div>
++{% endblock %}
+diff --git a/front_catedras/templates/admin/dependencia_lista.html b/front_catedras/templates/admin/dependencia_lista.html
+new file mode 100644
+index 0000000..31648a4
+--- /dev/null
++++ b/front_catedras/templates/admin/dependencia_lista.html
+@@ -0,0 +1,50 @@
++{% extends 'base.html' %}
++{% block titulo %}Dependencias · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item active">Dependencia</li>
++    </ol>
++</nav>
++
++<div class="d-flex justify-content-between align-items-center mb-3">
++    <h1 class="h3 fw-bold mb-0"><i class="fas fa-sitemap text-primary-custom me-2"></i>Dependencias</h1>
++    <a class="btn btn-primary" href="{{ url_for('admin.dependencias_nueva') }}">
++        <i class="fas fa-plus me-1"></i>Nueva dependencia
++    </a>
++</div>
++
++<div class="card shadow-sm">
++    <div class="card-body p-0">
++        {% if dependencias %}
++        <div class="table-responsive">
++            <table class="table table-hover align-middle mb-0">
++                <thead class="table-light">
++                    <tr><th>Código</th><th>Nombre</th><th>Dependencia padre</th><th>Activa</th><th class="text-end">Acciones</th></tr>
++                </thead>
++                <tbody>
++                    {% for f in dependencias %}
++                    <tr>
++                        <td class="fw-semibold">{{ f.id_dependencia }}</td>
++                        <td>{{ f.nombre }}</td>
++                        <td>{% if f.fk_dependencia_padre %}<span class="badge badge-secondary">{{ f.fk_dependencia_padre }}</span>{% else %}<span class="text-muted">— raíz —</span>{% endif %}</td>
++                        <td><span class="badge {{ 'badge-success' if f.activo else 'badge-danger' }}">{{ 'Sí' if f.activo else 'No' }}</span></td>
++                        <td class="text-end">
++                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.dependencias_editar', id_dependencia=f.id_dependencia) }}"><i class="fas fa-edit"></i></a>
++                            <form class="d-inline" method="post" action="{{ url_for('admin.dependencias_eliminar', id_dependencia=f.id_dependencia) }}"
++                                  onsubmit="return confirm('¿Eliminar la dependencia {{ f.id_dependencia }}? Sus hijas y cátedras quedarán sin dependencia.');">
++                                <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
++                            </form>
++                        </td>
++                    </tr>
++                    {% endfor %}
++                </tbody>
++            </table>
++        </div>
++        {% else %}
++        <p class="text-muted text-center py-4 mb-0">No hay dependencias registradas.</p>
++        {% endif %}
++    </div>
++</div>
++{% endblock %}
+diff --git a/front_catedras/templates/admin/facultad_form.html b/front_catedras/templates/admin/facultad_form.html
+new file mode 100644
+index 0000000..69abf7b
+--- /dev/null
++++ b/front_catedras/templates/admin/facultad_form.html
+@@ -0,0 +1,61 @@
++{% extends 'base.html' %}
++{% block titulo %}{{ 'Nueva facultad' if modo == 'nueva' else 'Editar facultad' }} · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.facultades_listar') }}">Facultad</a></li>
++        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
++    </ol>
++</nav>
++<h1 class="h3 fw-bold mb-3"><i class="fas fa-university text-primary-custom me-2"></i>{{ 'Nueva facultad' if modo == 'nueva' else 'Editar facultad ' + facultad.id_facultad }}</h1>
++
++<div class="card shadow-sm">
++    <div class="card-body">
++        <form method="post"
++              action="{{ url_for('admin.facultades_nueva') if modo == 'nueva' else url_for('admin.facultades_editar', id_facultad=facultad.id_facultad) }}">
++
++            {% if modo == 'nueva' %}
++            <div class="mb-3">
++                <label class="form-label" for="id_facultad">Código (id_facultad)</label>
++                <input type="text" class="form-control" id="id_facultad" name="id_facultad" maxlength="10" required
++                       value="{{ facultad.id_facultad if facultad else '' }}">
++            </div>
++            {% endif %}
++
++            <div class="mb-3">
++                <label class="form-label" for="nombre">Nombre</label>
++                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="120" required
++                       value="{{ facultad.nombre if facultad else '' }}">
++            </div>
++
++            <div class="mb-3">
++                <label class="form-label" for="fk_facultad_padre">Facultad padre</label>
++                <select class="form-select" id="fk_facultad_padre" name="fk_facultad_padre">
++                    <option value="">— Ninguna (es raíz) —</option>
++                    {% for p in padres %}
++                    <option value="{{ p.id_facultad }}" {% if facultad and facultad.fk_facultad_padre == p.id_facultad %}selected{% endif %}>{{ p.id_facultad }} · {{ p.nombre }}</option>
++                    {% endfor %}
++                </select>
++                <div class="form-text">Una facultad no puede ser su propio padre (la API responde 400).</div>
++            </div>
++
++            <div class="form-check mb-3">
++                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if facultad is none or facultad.activo %}checked{% endif %}>
++                <label class="form-check-label" for="activo">Activa</label>
++            </div>
++
++            {% if errores %}
++            <div class="alert alert-danger py-2">
++                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
++            </div>
++            {% endif %}
++
++            <div class="d-flex gap-2">
++                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
++                <a class="btn btn-outline-secondary" href="{{ url_for('admin.facultades_listar') }}">Cancelar</a>
++            </div>
++        </form>
++    </div>
++</div>
++{% endblock %}
+diff --git a/front_catedras/templates/admin/facultad_lista.html b/front_catedras/templates/admin/facultad_lista.html
+new file mode 100644
+index 0000000..da7da62
+--- /dev/null
++++ b/front_catedras/templates/admin/facultad_lista.html
+@@ -0,0 +1,50 @@
++{% extends 'base.html' %}
++{% block titulo %}Facultades · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item active">Facultad</li>
++    </ol>
++</nav>
++
++<div class="d-flex justify-content-between align-items-center mb-3">
++    <h1 class="h3 fw-bold mb-0"><i class="fas fa-university text-primary-custom me-2"></i>Facultades</h1>
++    <a class="btn btn-primary" href="{{ url_for('admin.facultades_nueva') }}">
++        <i class="fas fa-plus me-1"></i>Nueva facultad
++    </a>
++</div>
++
++<div class="card shadow-sm">
++    <div class="card-body p-0">
++        {% if facultades %}
++        <div class="table-responsive">
++            <table class="table table-hover align-middle mb-0">
++                <thead class="table-light">
++                    <tr><th>Código</th><th>Nombre</th><th>Facultad padre</th><th>Activa</th><th class="text-end">Acciones</th></tr>
++                </thead>
++                <tbody>
++                    {% for f in facultades %}
++                    <tr>
++                        <td class="fw-semibold">{{ f.id_facultad }}</td>
++                        <td>{{ f.nombre }}</td>
++                        <td>{% if f.fk_facultad_padre %}<span class="badge badge-secondary">{{ f.fk_facultad_padre }}</span>{% else %}<span class="text-muted">— raíz —</span>{% endif %}</td>
++                        <td><span class="badge {{ 'badge-success' if f.activo else 'badge-danger' }}">{{ 'Sí' if f.activo else 'No' }}</span></td>
++                        <td class="text-end">
++                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.facultades_editar', id_facultad=f.id_facultad) }}"><i class="fas fa-edit"></i></a>
++                            <form class="d-inline" method="post" action="{{ url_for('admin.facultades_eliminar', id_facultad=f.id_facultad) }}"
++                                  onsubmit="return confirm('¿Eliminar la facultad {{ f.id_facultad }}? Sus hijas y programas quedarán sin facultad.');">
++                                <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
++                            </form>
++                        </td>
++                    </tr>
++                    {% endfor %}
++                </tbody>
++            </table>
++        </div>
++        {% else %}
++        <p class="text-muted text-center py-4 mb-0">No hay facultades registradas.</p>
++        {% endif %}
++    </div>
++</div>
++{% endblock %}
+diff --git a/front_catedras/templates/admin/panel.html b/front_catedras/templates/admin/panel.html
+index 8ad9c42..d15a6df 100644
+--- a/front_catedras/templates/admin/panel.html
++++ b/front_catedras/templates/admin/panel.html
+@@ -3,7 +3,7 @@
+ {% block contenido %}
+ <div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
+     <h1 class="fw-bold mb-0"><i class="fas fa-cogs me-2"></i>Administración</h1>
+-    <p class="text-white-50 mb-0">Tablas catálogo de ApiCatedras (sin foreign key saliente)</p>
++    <p class="text-white-50 mb-0">Las 15 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2)</p>
+ </div>
+ 
+ <div class="row g-3">
+@@ -79,5 +79,72 @@
+             </div>
+         </a>
+     </div>
++    <div class="col-md-3">
++        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.tipos_pregunta_listar') }}">
++            <div class="card-body">
++                <i class="fas fa-question-circle fa-2x text-primary-custom mb-2"></i>
++                <h6 class="fw-bold mb-1">Tipo de pregunta</h6>
++                <p class="text-muted small mb-0">Escala, abierta, opción... (destino de la respuesta).</p>
++            </div>
++        </a>
++    </div>
++    <div class="col-md-3">
++        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.tipos_vinculacion_listar') }}">
++            <div class="card-body">
++                <i class="fas fa-id-badge fa-2x text-primary-custom mb-2"></i>
++                <h6 class="fw-bold mb-1">Tipo de vinculación</h6>
++                <p class="text-muted small mb-0">Estudiante, docente, externo...</p>
++            </div>
++        </a>
++    </div>
++</div>
++
++<h2 class="h5 fw-bold mt-5 mb-3"><i class="fas fa-project-diagram text-primary-custom me-2"></i>Estructura académica y cátedras <span class="badge badge-primary">v2</span></h2>
++<div class="row g-3">
++    <div class="col-md-3">
++        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.facultades_listar') }}">
++            <div class="card-body">
++                <i class="fas fa-university fa-2x text-primary-custom mb-2"></i>
++                <h6 class="fw-bold mb-1">Facultad</h6>
++                <p class="text-muted small mb-0">Jerarquía de facultades (USB es la raíz).</p>
++            </div>
++        </a>
++    </div>
++    <div class="col-md-3">
++        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.dependencias_listar') }}">
++            <div class="card-body">
++                <i class="fas fa-sitemap fa-2x text-primary-custom mb-2"></i>
++                <h6 class="fw-bold mb-1">Dependencia</h6>
++                <p class="text-muted small mb-0">Dependencias administrativas y su jerarquía.</p>
++            </div>
++        </a>
++    </div>
++    <div class="col-md-3">
++        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.programas_listar') }}">
++            <div class="card-body">
++                <i class="fas fa-graduation-cap fa-2x text-primary-custom mb-2"></i>
++                <h6 class="fw-bold mb-1">Programa académico</h6>
++                <p class="text-muted small mb-0">Programas por facultad y nivel.</p>
++            </div>
++        </a>
++    </div>
++    <div class="col-md-3">
++        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.alias_listar') }}">
++            <div class="card-body">
++                <i class="fas fa-tags fa-2x text-primary-custom mb-2"></i>
++                <h6 class="fw-bold mb-1">Alias de programa</h6>
++                <p class="text-muted small mb-0">Variantes de texto libre (solo crear y eliminar).</p>
++            </div>
++        </a>
++    </div>
++    <div class="col-md-3">
++        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.catedras_listar') }}">
++            <div class="card-body">
++                <i class="fas fa-book-open fa-2x text-primary-custom mb-2"></i>
++                <h6 class="fw-bold mb-1">Cátedra</h6>
++                <p class="text-muted small mb-0">Catálogo de cátedras (eventos del ASIS).</p>
++            </div>
++        </a>
++    </div>
+ </div>
+ {% endblock %}
+diff --git a/front_catedras/templates/admin/programa_form.html b/front_catedras/templates/admin/programa_form.html
+new file mode 100644
+index 0000000..4bb695b
+--- /dev/null
++++ b/front_catedras/templates/admin/programa_form.html
+@@ -0,0 +1,70 @@
++{% extends 'base.html' %}
++{% block titulo %}{{ 'Nuevo programa' if modo == 'nueva' else 'Editar programa' }} · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.programas_listar') }}">Programa académico</a></li>
++        <li class="breadcrumb-item active">{{ 'Nuevo' if modo == 'nueva' else 'Editar' }}</li>
++    </ol>
++</nav>
++<h1 class="h3 fw-bold mb-3"><i class="fas fa-graduation-cap text-primary-custom me-2"></i>{{ 'Nuevo programa' if modo == 'nueva' else 'Editar programa ' + programa.codigo }}</h1>
++
++<div class="card shadow-sm">
++    <div class="card-body">
++        <form method="post"
++              action="{{ url_for('admin.programas_nuevo') if modo == 'nueva' else url_for('admin.programas_editar', codigo=programa.codigo) }}">
++
++            {% if modo == 'nueva' %}
++            <div class="mb-3">
++                <label class="form-label" for="codigo">Código</label>
++                <input type="text" class="form-control" id="codigo" name="codigo" maxlength="5" required
++                       value="{{ programa.codigo if programa else '' }}">
++                <div class="form-text">Una letra mayúscula + 3 o 4 letras mayúsculas o dígitos (p. ej. M0286). La API lo valida (422).</div>
++            </div>
++            {% endif %}
++
++            <div class="mb-3">
++                <label class="form-label" for="nombre">Nombre</label>
++                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="150" required
++                       value="{{ programa.nombre if programa else '' }}">
++            </div>
++
++            <div class="mb-3">
++                <label class="form-label" for="fk_facultad">Facultad</label>
++                <select class="form-select" id="fk_facultad" name="fk_facultad">
++                    <option value="">— Sin facultad —</option>
++                    {% for f in facultades %}
++                    <option value="{{ f.id_facultad }}" {% if programa and programa.fk_facultad == f.id_facultad %}selected{% endif %}>{{ f.id_facultad }} · {{ f.nombre }}</option>
++                    {% endfor %}
++                </select>
++            </div>
++
++            <div class="mb-3">
++                <label class="form-label" for="nivel">Nivel</label>
++                <select class="form-select" id="nivel" name="nivel" required>
++                    {% for n in niveles %}
++                    <option value="{{ n }}" {% if (programa.nivel if programa else 'PREGRADO') == n %}selected{% endif %}>{{ n }}</option>
++                    {% endfor %}
++                </select>
++            </div>
++
++            <div class="form-check mb-3">
++                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if programa is none or programa.activo %}checked{% endif %}>
++                <label class="form-check-label" for="activo">Activo</label>
++            </div>
++
++            {% if errores %}
++            <div class="alert alert-danger py-2">
++                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
++            </div>
++            {% endif %}
++
++            <div class="d-flex gap-2">
++                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
++                <a class="btn btn-outline-secondary" href="{{ url_for('admin.programas_listar') }}">Cancelar</a>
++            </div>
++        </form>
++    </div>
++</div>
++{% endblock %}
+diff --git a/front_catedras/templates/admin/programa_lista.html b/front_catedras/templates/admin/programa_lista.html
+new file mode 100644
+index 0000000..dc9e759
+--- /dev/null
++++ b/front_catedras/templates/admin/programa_lista.html
+@@ -0,0 +1,51 @@
++{% extends 'base.html' %}
++{% block titulo %}Programas académicos · Administración{% endblock %}
++{% block contenido %}
++<nav aria-label="breadcrumb">
++    <ol class="breadcrumb small">
++        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
++        <li class="breadcrumb-item active">Programa académico</li>
++    </ol>
++</nav>
++
++<div class="d-flex justify-content-between align-items-center mb-3">
++    <h1 class="h3 fw-bold mb-0"><i class="fas fa-graduation-cap text-primary-custom me-2"></i>Programas académicos</h1>
++    <a class="btn btn-primary" href="{{ url_for('admin.programas_nuevo') }}">
++        <i class="fas fa-plus me-1"></i>Nuevo programa
++    </a>
++</div>
++
++<div class="card shadow-sm">
++    <div class="card-body p-0">
++        {% if programas %}
++        <div class="table-responsive">
++            <table class="table table-hover align-middle mb-0">
++                <thead class="table-light">
++                    <tr><th>Código</th><th>Nombre</th><th>Facultad</th><th>Nivel</th><th>Activo</th><th class="text-end">Acciones</th></tr>
++                </thead>
++                <tbody>
++                    {% for p in programas %}
++                    <tr>
++                        <td class="fw-semibold">{{ p.codigo }}</td>
++                        <td>{{ p.nombre }}</td>
++                        <td>{{ p.fk_facultad or '—' }}</td>
++                        <td><span class="badge badge-secondary">{{ p.nivel }}</span></td>
++                        <td><span class="badge {{ 'badge-success' if p.activo else 'badge-danger' }}">{{ 'Sí' if p.activo else 'No' }}</span></td>
++                        <td class="text-end">
++                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.programas_editar', codigo=p.codigo) }}"><i class="fas fa-edit"></i></a>
++                            <form class="d-inline" method="post" action="{{ url_for('admin.programas_eliminar', codigo=p.codigo) }}"
++                                  onsubmit="return confirm('¿Eliminar el programa {{ p.codigo }}? Si tiene asistentes, la base de datos lo impedirá.');">
++                                <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
++                            </form>
++                        </td>
++                    </tr>
++                    {% endfor %}
++                </tbody>
++            </table>
++        </div>
++        {% else %}
++        <p class="text-muted text-center py-4 mb-0">No hay programas registrados.</p>
++        {% endif %}
++    </div>
++</div>
++{% endblock %}
+diff --git a/front_catedras/templates/partials/footer.html b/front_catedras/templates/partials/footer.html
+index 11043e6..6b6830a 100644
+--- a/front_catedras/templates/partials/footer.html
++++ b/front_catedras/templates/partials/footer.html
+@@ -30,6 +30,7 @@
+             <div class="col-md-4">
+                 <h6 class="fw-bold text-white mb-3">Enlaces rápidos</h6>
+                 <ul class="list-unstyled text-white-50 small">
++                    <li class="mb-2"><a href="{{ url_for('catedras.catalogo') }}">Catálogo de cátedras</a></li>
+                     <li class="mb-2"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+                     <li class="mb-2"><a href="{{ url_for('admin.sedes_listar') }}">Sedes</a></li>
+                     <li class="mb-2"><a href="{{ url_for('admin.encuestas_listar') }}">Encuestas</a></li>
+diff --git a/front_catedras/templates/partials/navbar.html b/front_catedras/templates/partials/navbar.html
+index 2df9a91..c8e5a48 100644
+--- a/front_catedras/templates/partials/navbar.html
++++ b/front_catedras/templates/partials/navbar.html
+@@ -40,9 +40,14 @@
+                     </a>
+                 </li>
+             </ul>
++            {# auth_helpers.py: en la v2 nunca hay sesión (login real en la v5). #}
++            {% if sesion_activa() %}
++            <span class="navbar-text small"><i class="fas fa-user me-1"></i>{{ usuario_actual() }}</span>
++            {% else %}
+             <a class="btn btn-outline-primary btn-sm" href="{{ url_for('auth.login') }}">
+                 <i class="fas fa-sign-in-alt me-1"></i>Iniciar sesión
+             </a>
++            {% endif %}
+         </div>
+     </div>
+ </nav>

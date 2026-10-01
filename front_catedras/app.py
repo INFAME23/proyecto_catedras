@@ -1,6 +1,7 @@
 from flask import Flask, render_template
 from flask_cors import CORS
 from config import Config
+from auth_helpers import registrar_en
 
 from routes.catedras import catedras_bp
 from routes.registro import registro_bp
@@ -13,6 +14,9 @@ app = Flask(__name__)
 app.config.from_object(Config)
 
 CORS(app)
+
+# Ayudas de sesión para las plantillas (v2: siempre "sin sesión").
+registrar_en(app)
 
 app.register_blueprint(catedras_bp, url_prefix='/')
 app.register_blueprint(registro_bp, url_prefix='/')

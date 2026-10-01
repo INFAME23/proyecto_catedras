@@ -3,7 +3,7 @@
 {% block contenido %}
 <div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
     <h1 class="fw-bold mb-0"><i class="fas fa-cogs me-2"></i>Administración</h1>
-    <p class="text-white-50 mb-0">Tablas catálogo de ApiCatedras (sin foreign key saliente)</p>
+    <p class="text-white-50 mb-0">Las 15 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2)</p>
 </div>
 
 <div class="row g-3">
@@ -76,6 +76,73 @@
                 <i class="fas fa-calendar-day fa-2x text-primary-custom mb-2"></i>
                 <h6 class="fw-bold mb-1">Tipo de evento</h6>
                 <p class="text-muted small mb-0">Clasificación del evento en el ASIS.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.tipos_pregunta_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-question-circle fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Tipo de pregunta</h6>
+                <p class="text-muted small mb-0">Escala, abierta, opción... (destino de la respuesta).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.tipos_vinculacion_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-id-badge fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Tipo de vinculación</h6>
+                <p class="text-muted small mb-0">Estudiante, docente, externo...</p>
+            </div>
+        </a>
+    </div>
+</div>
+
+<h2 class="h5 fw-bold mt-5 mb-3"><i class="fas fa-project-diagram text-primary-custom me-2"></i>Estructura académica y cátedras <span class="badge badge-primary">v2</span></h2>
+<div class="row g-3">
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.facultades_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-university fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Facultad</h6>
+                <p class="text-muted small mb-0">Jerarquía de facultades (USB es la raíz).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.dependencias_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-sitemap fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Dependencia</h6>
+                <p class="text-muted small mb-0">Dependencias administrativas y su jerarquía.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.programas_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-graduation-cap fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Programa académico</h6>
+                <p class="text-muted small mb-0">Programas por facultad y nivel.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.alias_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-tags fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Alias de programa</h6>
+                <p class="text-muted small mb-0">Variantes de texto libre (solo crear y eliminar).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.catedras_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-book-open fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Cátedra</h6>
+                <p class="text-muted small mb-0">Catálogo de cátedras (eventos del ASIS).</p>
             </div>
         </a>
     </div>

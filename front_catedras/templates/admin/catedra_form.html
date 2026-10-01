@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nueva cátedra' if modo == 'nueva' else 'Editar cátedra' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_listar') }}">Cátedra</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-book-open text-primary-custom me-2"></i>{{ 'Nueva cátedra' if modo == 'nueva' else 'Editar cátedra ' ~ catedra.id_catedra }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.catedras_nueva') if modo == 'nueva' else url_for('admin.catedras_editar', id_catedra=catedra.id_catedra) }}">
+
+            <div class="mb-3">
+                <label class="form-label" for="id_evento_asis">Código ASIS (9 dígitos)</label>
+                <input type="text" class="form-control" id="id_evento_asis" name="id_evento_asis" maxlength="9" required
+                       value="{{ catedra.id_evento_asis if catedra else '' }}">
+                <div class="form-text">Con ceros a la izquierda, p. ej. 000023636. La API lo valida (422).</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="nombre">Nombre</label>
+                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="200" required
+                       value="{{ catedra.nombre if catedra else '' }}">
+                <div class="form-text">El "nombre ASIS" (primeros 30 caracteres) lo calcula la base de datos.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="fk_tipo_evento">Tipo de evento</label>
+                <select class="form-select" id="fk_tipo_evento" name="fk_tipo_evento" required>
+                    <option value="">-- Selecciona --</option>
+                    {% for t in tipos_evento %}
+                    <option value="{{ t.id_tipo_evento }}" {% if catedra and catedra.fk_tipo_evento == t.id_tipo_evento %}selected{% endif %}>{{ t.id_tipo_evento }} · {{ t.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="fk_dependencia">Dependencia</label>
+                <select class="form-select" id="fk_dependencia" name="fk_dependencia">
+                    <option value="">— Sin dependencia —</option>
+                    {% for d in dependencias %}
+                    <option value="{{ d.id_dependencia }}" {% if catedra and catedra.fk_dependencia == d.id_dependencia %}selected{% endif %}>{{ d.id_dependencia }} · {{ d.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if catedra is none or catedra.activo %}checked{% endif %}>
+                <label class="form-check-label" for="activo">Activa</label>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.catedras_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

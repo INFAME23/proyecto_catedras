@@ -206,10 +206,10 @@ obligatorio, no tiene `DEFAULT`); `dotnet run --project pruebas` sigue en
       institucional (naranja `#EF7D00`/negro `#1D1D1B`) + escudo
       (`static/img/escudo-usb.jpeg`), tomados de un proyecto de
       referencia del estudiante (`Desktop/Front`).
-- [ ] Integración a `docker-compose.yml` (hoy se arranca aparte con
-      `python run.py`) — pendiente, a decidir cuándo se formalice el
-      frontend como parte del "un solo comando" del Artículo 4.
-- [ ] Pantallas para las 6 tablas de la Fase 12 — llegan junto con su API.
+- [x] Integración a `docker-compose.yml`: el servicio `front` ya está en
+      el compose (puerto 5000, `API_BASE_URL=http://api:8042/api`).
+- [x] Pantallas para las 6 tablas de la Fase 12 (las 2 últimas,
+      `TipoPregunta` y `TipoVinculacion`, se cerraron en la v2).
 
 **Verificado:** CRUD de las 4 entidades probado de punta a punta contra
 Docker/PostgreSQL reales desde el front (`http://localhost:5000/admin/`);
