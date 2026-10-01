@@ -1,5 +1,5 @@
 // ==========================================================================
-//  Program.cs  ·  Proyecto Cátedras · Versión 1
+//  Program.cs  ·  Proyecto Cátedras · Versión 2
 // --------------------------------------------------------------------------
 //  Punto de entrada de la API. Aquí ocurren CUATRO cosas y nada más:
 //    1. Se registran los controladores y se personaliza el 422.
@@ -217,6 +217,36 @@ builder.Services.AddScoped<IRepositorioTipoEvento>(
     _ => new RepositorioTipoEventoPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioTipoEvento, ServicioTipoEvento>();
 
+// IRepositorioTipoPregunta -> RepositorioTipoPreguntaPostgres,
+// IServicioTipoPregunta -> ServicioTipoPregunta.
+// (Cierre de la v1: el controlador existía pero faltaba este registro, y
+//  sin él cada petición a /api/TipoPregunta respondía 500.)
+builder.Services.AddScoped<IRepositorioTipoPregunta>(
+    _ => new RepositorioTipoPreguntaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioTipoPregunta, ServicioTipoPregunta>();
+
+// IRepositorioTipoVinculacion -> RepositorioTipoVinculacionPostgres,
+// IServicioTipoVinculacion -> ServicioTipoVinculacion. (Cierre de la v1.)
+builder.Services.AddScoped<IRepositorioTipoVinculacion>(
+    _ => new RepositorioTipoVinculacionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioTipoVinculacion, ServicioTipoVinculacion>();
+
+// ---------------------------- Versión 2 ---------------------------------
+// Las tablas de la v2 tienen foreign keys, pero eso NO cambia el
+// ensamblador: cada entidad sigue siendo una pareja interfaz -> clase.
+
+// IRepositorioFacultad -> RepositorioFacultadPostgres,
+// IServicioFacultad -> ServicioFacultad (valida la autorreferencia).
+builder.Services.AddScoped<IRepositorioFacultad>(
+    _ => new RepositorioFacultadPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioFacultad, ServicioFacultad>();
+
+// IRepositorioDependencia -> RepositorioDependenciaPostgres,
+// IServicioDependencia -> ServicioDependencia (misma regla).
+builder.Services.AddScoped<IRepositorioDependencia>(
+    _ => new RepositorioDependenciaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioDependencia, ServicioDependencia>();
+
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
@@ -230,8 +260,8 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Json(new
 {
     mensaje = "API Cátedras en línea.",
-    version = "v1",
-    contratos = "docs/spec_kit/6_contracts.md",
+    version = "v2",
+    contratos = "docs/spec_kit/Versiones/version2/6_contracts.md",
 }));
 
 // Conecta las rutas de los controladores ([Route("api/Sede")]...).

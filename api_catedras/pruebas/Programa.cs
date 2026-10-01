@@ -1,5 +1,6 @@
 // ==========================================================================
-//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versión 1 · Criterio 6
+//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versiones 1 y 2
+//  (criterio 6 de la v1 · criterio 8 de la v2)
 // --------------------------------------------------------------------------
 //  "Prueba de capas": se construye ServicioSede pasándole un repositorio
 //  FALSO que guarda las sedes en un diccionario en memoria (implementa
@@ -580,6 +581,153 @@ await AfirmarLanza<NoEncontradoExcepcion>(
     "segundo DELETE lanza NoEncontradoExcepcion",
     () => servicioTipoEvt.EliminarAsync("TEST"));
 
+// ============================================================================
+//  Prueba de capas: ServicioTipoPregunta + repositorio falso (cierre de la v1)
+// ============================================================================
+var servicioTipoPreg = new ServicioTipoPregunta(new RepositorioTipoPreguntaFalso());
+
+Console.WriteLine("\n== Prueba de capas: ServicioTipoPregunta + repositorio falso en memoria ==\n");
+
+var (datosTpreg, totalTpreg) = await servicioTipoPreg.ListarAsync(null);
+Afirmar("Listar() devuelve los 2 tipos de pregunta semilla", totalTpreg == 2 && datosTpreg.Count == 2);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioTipoPreg.ListarAsync(0));
+
+// Regla de negocio: exactamente UNO de los tres destinos en true.
+await AfirmarLanza<ArgumentException>(
+    "Crear() con los tres destinos en false lanza ArgumentException",
+    () => servicioTipoPreg.CrearAsync(new TipoPreguntaCrear { IdTipoPregunta = "MALA", Nombre = "Mala" }));
+await AfirmarLanza<ArgumentException>(
+    "Crear() con dos destinos en true lanza ArgumentException",
+    () => servicioTipoPreg.CrearAsync(new TipoPreguntaCrear
+    { IdTipoPregunta = "MALA", Nombre = "Mala", GuardaNumero = true, GuardaTexto = true }));
+
+await servicioTipoPreg.CrearAsync(new TipoPreguntaCrear { IdTipoPregunta = "SI_NO", Nombre = "Sí o no", GuardaOpcion = true });
+var tpregCreado = await servicioTipoPreg.ObtenerAsync("SI_NO");
+Afirmar("Crear() inserta y Obtener() lo encuentra", tpregCreado.GuardaOpcion && !tpregCreado.GuardaNumero);
+
+int filasPatchTpreg = await servicioTipoPreg.ActualizarAsync("SI_NO", new TipoPreguntaActualizar { Nombre = "Sí/No" });
+Afirmar("PATCH cambia solo 'nombre'", filasPatchTpreg == 1 && (await servicioTipoPreg.ObtenerAsync("SI_NO")).Nombre == "Sí/No");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioTipoPreg.ActualizarAsync("SI_NO", new TipoPreguntaActualizar()));
+
+Afirmar("DELETE elimina 1 fila", await servicioTipoPreg.EliminarAsync("SI_NO") == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioTipoPreg.EliminarAsync("SI_NO"));
+
+// ============================================================================
+//  Prueba de capas: ServicioTipoVinculacion + repositorio falso (cierre de la v1)
+// ============================================================================
+var servicioTipoVinc = new ServicioTipoVinculacion(new RepositorioTipoVinculacionFalso());
+
+Console.WriteLine("\n== Prueba de capas: ServicioTipoVinculacion + repositorio falso en memoria ==\n");
+
+var (datosTvin, totalTvin) = await servicioTipoVinc.ListarAsync(null);
+Afirmar("Listar() devuelve los 2 tipos de vinculación semilla", totalTvin == 2 && datosTvin.Count == 2);
+
+await servicioTipoVinc.CrearAsync(new TipoVinculacionCrear { IdTipoVinculacion = "EGRESADO", Nombre = "Egresado", EsInterno = true });
+var tvinCreado = await servicioTipoVinc.ObtenerAsync("EGRESADO");
+Afirmar("Crear() aplica los valores por defecto (exige_programa y activo = true)",
+    tvinCreado.EsInterno && tvinCreado.ExigePrograma && tvinCreado.Activo);
+
+int filasPutTvin = await servicioTipoVinc.ReemplazarAsync("EGRESADO", new TipoVinculacionReemplazo
+{ Nombre = "Egresado USB", EsInterno = false, ExigePrograma = false, Activo = false });
+var trasPutTvin = await servicioTipoVinc.ObtenerAsync("EGRESADO");
+Afirmar("PUT reemplaza todo", filasPutTvin == 1 && !trasPutTvin.EsInterno && !trasPutTvin.ExigePrograma && !trasPutTvin.Activo);
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a \"NO_VA\" lanza NoEncontradoExcepcion",
+    () => servicioTipoVinc.ActualizarAsync("NO_VA", new TipoVinculacionActualizar { Activo = true }));
+
+Afirmar("DELETE elimina 1 fila", await servicioTipoVinc.EliminarAsync("EGRESADO") == 1);
+
+// ============================================================================
+//  v2 · Prueba de capas: ServicioFacultad + repositorio falso
+//  Lo nuevo: la AUTORREFERENCIA. El servicio debe rechazar (400) una
+//  facultad que se nombra a sí misma como padre, SIN llegar al repositorio.
+// ============================================================================
+var repoFacultadFalso = new RepositorioFacultadFalso();
+var servicioFacultad = new ServicioFacultad(repoFacultadFalso);
+
+Console.WriteLine("\n== v2 · Prueba de capas: ServicioFacultad + repositorio falso en memoria ==\n");
+
+var (datosFac, totalFac) = await servicioFacultad.ListarAsync(null);
+Afirmar("Listar() devuelve las 2 facultades semilla", totalFac == 2 && datosFac.Count == 2);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioFacultad.ListarAsync(0));
+
+await AfirmarLanza<ArgumentException>(
+    "POST con fk_facultad_padre == id_facultad lanza ArgumentException (400)",
+    () => servicioFacultad.CrearAsync(new FacultadCrear { IdFacultad = "X", Nombre = "X", FkFacultadPadre = "X" }));
+Afirmar("...y la autorreferencia NO llegó al repositorio", repoFacultadFalso.Inserciones == 0);
+
+await servicioFacultad.CrearAsync(new FacultadCrear { IdFacultad = "F_ING", Nombre = "Ingenierias", FkFacultadPadre = "USB" });
+var facCreada = await servicioFacultad.ObtenerAsync("F_ING");
+Afirmar("Crear() inserta con padre y activo = true por defecto",
+    facCreada.FkFacultadPadre == "USB" && facCreada.Activo);
+
+await AfirmarLanza<ArgumentException>(
+    "PUT con padre == id de la URL lanza ArgumentException",
+    () => servicioFacultad.ReemplazarAsync("F_ING", new FacultadReemplazo { Nombre = "Ing", FkFacultadPadre = "F_ING", Activo = true }));
+await AfirmarLanza<ArgumentException>(
+    "PATCH con padre == id de la URL lanza ArgumentException",
+    () => servicioFacultad.ActualizarAsync("F_ING", new FacultadActualizar { FkFacultadPadre = "F_ING" }));
+
+int filasPutFac = await servicioFacultad.ReemplazarAsync("F_ING", new FacultadReemplazo { Nombre = "Ingenierías", Activo = false });
+var trasPutFac = await servicioFacultad.ObtenerAsync("F_ING");
+Afirmar("PUT sin padre deja fk_facultad_padre en null (reemplazo completo)",
+    filasPutFac == 1 && trasPutFac.FkFacultadPadre is null && !trasPutFac.Activo);
+
+int filasPatchFac = await servicioFacultad.ActualizarAsync("F_ING", new FacultadActualizar { FkFacultadPadre = "USB" });
+var trasPatchFac = await servicioFacultad.ObtenerAsync("F_ING");
+Afirmar("PATCH cambia solo el padre y deja 'nombre' igual",
+    filasPatchFac == 1 && trasPatchFac.FkFacultadPadre == "USB" && trasPatchFac.Nombre == "Ingenierías");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioFacultad.ActualizarAsync("F_ING", new FacultadActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(\"NO_VA\") lanza NoEncontradoExcepcion", () => servicioFacultad.ObtenerAsync("NO_VA"));
+
+Afirmar("DELETE elimina 1 fila", await servicioFacultad.EliminarAsync("F_ING") == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioFacultad.EliminarAsync("F_ING"));
+
+// ============================================================================
+//  v2 · Prueba de capas: ServicioDependencia + repositorio falso
+// ============================================================================
+var repoDependenciaFalso = new RepositorioDependenciaFalso();
+var servicioDependencia = new ServicioDependencia(repoDependenciaFalso);
+
+Console.WriteLine("\n== v2 · Prueba de capas: ServicioDependencia + repositorio falso en memoria ==\n");
+
+var (datosDep, totalDep) = await servicioDependencia.ListarAsync(null);
+Afirmar("Listar() devuelve las 2 dependencias raíz semilla", totalDep == 2 && datosDep.Count == 2);
+
+await AfirmarLanza<ArgumentException>(
+    "POST con fk_dependencia_padre == id_dependencia lanza ArgumentException (400)",
+    () => servicioDependencia.CrearAsync(new DependenciaCrear { IdDependencia = "Y", Nombre = "Y", FkDependenciaPadre = "Y" }));
+Afirmar("...y la autorreferencia NO llegó al repositorio", repoDependenciaFalso.Inserciones == 0);
+
+await servicioDependencia.CrearAsync(new DependenciaCrear { IdDependencia = "PASTORAL", Nombre = "Pastoral", FkDependenciaPadre = "BIENESTAR" });
+Afirmar("Crear() inserta la hija con su padre",
+    (await servicioDependencia.ObtenerAsync("PASTORAL")).FkDependenciaPadre == "BIENESTAR");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH con padre == id de la URL lanza ArgumentException",
+    () => servicioDependencia.ActualizarAsync("PASTORAL", new DependenciaActualizar { FkDependenciaPadre = "PASTORAL" }));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PUT a \"NO_VA\" lanza NoEncontradoExcepcion",
+    () => servicioDependencia.ReemplazarAsync("NO_VA", new DependenciaReemplazo { Nombre = "N", Activo = true }));
+
+Afirmar("DELETE elimina 1 fila", await servicioDependencia.EliminarAsync("PASTORAL") == 1);
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -1003,4 +1151,185 @@ class RepositorioTipoEventoFalso : IRepositorioTipoEvento
 
     public Task<int> EliminarAsync(string idTipoEvento) =>
         Task.FromResult(_tabla.Remove(idTipoEvento) ? 1 : 0);
+}
+
+
+// ==========================================================================
+//  Repositorio FALSO de 'TipoPregunta' (cierre de la v1). NO valida la regla
+//  "un solo destino": es de negocio y la prueba verifica justo eso.
+// ==========================================================================
+class RepositorioTipoPreguntaFalso : IRepositorioTipoPregunta
+{
+    private readonly Dictionary<string, TipoPregunta> _tabla = new();
+
+    public RepositorioTipoPreguntaFalso()
+    {
+        _tabla["ESCALA"] = new TipoPregunta { IdTipoPregunta = "ESCALA", Nombre = "Escala", GuardaNumero = true };
+        _tabla["ABIERTA"] = new TipoPregunta { IdTipoPregunta = "ABIERTA", Nombre = "Abierta", GuardaTexto = true };
+    }
+
+    public Task<List<TipoPregunta>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(t => t.IdTipoPregunta).Take(limite).ToList());
+
+    public Task<TipoPregunta?> ObtenerPorIdAsync(string idTipoPregunta) =>
+        Task.FromResult(_tabla.TryGetValue(idTipoPregunta, out var tipo) ? tipo : null);
+
+    public Task CrearAsync(TipoPregunta tipoPregunta)
+    {
+        if (_tabla.ContainsKey(tipoPregunta.IdTipoPregunta))
+            throw new InvalidOperationException("id_tipo_pregunta duplicado (simulado).");
+        _tabla[tipoPregunta.IdTipoPregunta] = tipoPregunta;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idTipoPregunta, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idTipoPregunta, out var tipo))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) tipo.Nombre = (string)n!;
+        if (datos.TryGetValue("guarda_numero", out var gn)) tipo.GuardaNumero = (bool)gn!;
+        if (datos.TryGetValue("guarda_texto", out var gt)) tipo.GuardaTexto = (bool)gt!;
+        if (datos.TryGetValue("guarda_opcion", out var go)) tipo.GuardaOpcion = (bool)go!;
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idTipoPregunta) =>
+        Task.FromResult(_tabla.Remove(idTipoPregunta) ? 1 : 0);
+}
+
+// ==========================================================================
+//  Repositorio FALSO de 'TipoVinculacion' (cierre de la v1).
+// ==========================================================================
+class RepositorioTipoVinculacionFalso : IRepositorioTipoVinculacion
+{
+    private readonly Dictionary<string, TipoVinculacion> _tabla = new();
+
+    public RepositorioTipoVinculacionFalso()
+    {
+        _tabla["ESTUDIANTE"] = new TipoVinculacion { IdTipoVinculacion = "ESTUDIANTE", Nombre = "Estudiante", EsInterno = true };
+        _tabla["EXTERNO"] = new TipoVinculacion { IdTipoVinculacion = "EXTERNO", Nombre = "Externo", EsInterno = false, ExigePrograma = false };
+    }
+
+    public Task<List<TipoVinculacion>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(t => t.IdTipoVinculacion).Take(limite).ToList());
+
+    public Task<TipoVinculacion?> ObtenerPorIdAsync(string idTipoVinculacion) =>
+        Task.FromResult(_tabla.TryGetValue(idTipoVinculacion, out var tipo) ? tipo : null);
+
+    public Task CrearAsync(TipoVinculacion tipoVinculacion)
+    {
+        if (_tabla.ContainsKey(tipoVinculacion.IdTipoVinculacion))
+            throw new InvalidOperationException("id_tipo_vinculacion duplicado (simulado).");
+        _tabla[tipoVinculacion.IdTipoVinculacion] = tipoVinculacion;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idTipoVinculacion, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idTipoVinculacion, out var tipo))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) tipo.Nombre = (string)n!;
+        if (datos.TryGetValue("es_interno", out var ei)) tipo.EsInterno = (bool)ei!;
+        if (datos.TryGetValue("exige_programa", out var ep)) tipo.ExigePrograma = (bool)ep!;
+        if (datos.TryGetValue("activo", out var a)) tipo.Activo = (bool)a!;
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idTipoVinculacion) =>
+        Task.FromResult(_tabla.Remove(idTipoVinculacion) ? 1 : 0);
+}
+
+// ==========================================================================
+//  v2 · Repositorio FALSO de 'Facultad'. Cuenta las inserciones para poder
+//  comprobar que una autorreferencia se detuvo en el SERVICIO (nunca llegó
+//  aquí). NO simula la FK del padre: eso es trabajo del motor real.
+// ==========================================================================
+class RepositorioFacultadFalso : IRepositorioFacultad
+{
+    private readonly Dictionary<string, Facultad> _tabla = new();
+
+    /// <summary>Cuántas veces se llamó a CrearAsync.</summary>
+    public int Inserciones { get; private set; }
+
+    public RepositorioFacultadFalso()
+    {
+        _tabla["USB"] = new Facultad { IdFacultad = "USB", Nombre = "Universidad de San Buenaventura" };
+        _tabla["F_OTRA"] = new Facultad { IdFacultad = "F_OTRA", Nombre = "Otra", FkFacultadPadre = "USB" };
+    }
+
+    public Task<List<Facultad>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(f => f.IdFacultad).Take(limite).ToList());
+
+    public Task<Facultad?> ObtenerPorIdAsync(string idFacultad) =>
+        Task.FromResult(_tabla.TryGetValue(idFacultad, out var facultad) ? facultad : null);
+
+    public Task CrearAsync(Facultad facultad)
+    {
+        Inserciones++;
+        if (_tabla.ContainsKey(facultad.IdFacultad))
+            throw new InvalidOperationException("id_facultad duplicado (simulado).");
+        _tabla[facultad.IdFacultad] = facultad;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idFacultad, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idFacultad, out var facultad))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) facultad.Nombre = (string)n!;
+        if (datos.TryGetValue("fk_facultad_padre", out var p)) facultad.FkFacultadPadre = (string?)p;
+        if (datos.TryGetValue("activo", out var a)) facultad.Activo = (bool)a!;
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idFacultad) =>
+        Task.FromResult(_tabla.Remove(idFacultad) ? 1 : 0);
+}
+
+// ==========================================================================
+//  v2 · Repositorio FALSO de 'Dependencia'. Mismo patrón que el de Facultad.
+// ==========================================================================
+class RepositorioDependenciaFalso : IRepositorioDependencia
+{
+    private readonly Dictionary<string, Dependencia> _tabla = new();
+
+    public int Inserciones { get; private set; }
+
+    public RepositorioDependenciaFalso()
+    {
+        _tabla["VICE_ACAD"] = new Dependencia { IdDependencia = "VICE_ACAD", Nombre = "Vicerrectoria Academica" };
+        _tabla["BIENESTAR"] = new Dependencia { IdDependencia = "BIENESTAR", Nombre = "Bienestar Institucional" };
+    }
+
+    public Task<List<Dependencia>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(d => d.IdDependencia).Take(limite).ToList());
+
+    public Task<Dependencia?> ObtenerPorIdAsync(string idDependencia) =>
+        Task.FromResult(_tabla.TryGetValue(idDependencia, out var dependencia) ? dependencia : null);
+
+    public Task CrearAsync(Dependencia dependencia)
+    {
+        Inserciones++;
+        if (_tabla.ContainsKey(dependencia.IdDependencia))
+            throw new InvalidOperationException("id_dependencia duplicado (simulado).");
+        _tabla[dependencia.IdDependencia] = dependencia;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string idDependencia, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idDependencia, out var dependencia))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("nombre", out var n)) dependencia.Nombre = (string)n!;
+        if (datos.TryGetValue("fk_dependencia_padre", out var p)) dependencia.FkDependenciaPadre = (string?)p;
+        if (datos.TryGetValue("activo", out var a)) dependencia.Activo = (bool)a!;
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string idDependencia) =>
+        Task.FromResult(_tabla.Remove(idDependencia) ? 1 : 0);
 }

@@ -10,10 +10,7 @@
 >
 > **Nota de alcance (v1):** sin segundo motor, sin cambio de proveedor —
 > un solo servicio `api` (C#/ASP.NET Core) + PostgreSQL. El código hoy
-> solo toca `Sede`, `Encuesta`, `EstadoProceso` y `Modalidad`;
-> `PeriodoAcademico`, `Rol`, `TipoDocumento`, `TipoEvento`,
-> `TipoPregunta` y `TipoVinculacion` ya están especificadas (Fase 12,
-> pendiente) para el próximo commit. Ya existe un frontend
+> cubre las **10 tablas sin FK** (Fases 9-12, cerradas al iniciar la v2). Ya existe un frontend
 > (`front_catedras/`, Flask) — Fase 13.
 
 ---
@@ -151,35 +148,38 @@ solo sus filas de siembra tras las pruebas.
 **Verificado:** `dotnet run --project pruebas` → **45 pasadas, 0
 fallidas**, código de salida 0.
 
-## Fase 12 — La aplicación (capas de las 6 tablas sin FK restantes) ⏳
+## Fase 12 — La aplicación (capas de las 6 tablas sin FK restantes) ✅
 > Especificadas en RF26-RF61 de [2_spec.md](2_spec.md) y §2.5-2.10 de
-> [5_data_model.md](5_data_model.md); **nada de esto está creado
-> todavía** — es la guía para el próximo commit de v1.
+> [5_data_model.md](5_data_model.md). **Cerrada al iniciar la v2:** el
+> código de las 6 entidades ya existía, pero `Program.cs` no registraba
+> `TipoPregunta` ni `TipoVinculacion` (sus endpoints respondían 500) y
+> `pruebas/` no las cubría. Ambas cosas se corrigieron en el primer
+> commit de la v2.
 
-- [ ] `Modelos/PeriodoAcademico.cs`, `Rol.cs`, `TipoDocumento.cs`,
+- [x] `Modelos/PeriodoAcademico.cs`, `Rol.cs`, `TipoDocumento.cs`,
       `TipoEvento.cs`, `TipoPregunta.cs`, `TipoVinculacion.cs`.
-- [ ] Las 3 peticiones por entidad (`...Crear`, `...Reemplazo`,
+- [x] Las 3 peticiones por entidad (`...Crear`, `...Reemplazo`,
       `...Actualizar`) — `PeriodoAcademicoCrear` valida el formato de
       `id_periodo` con `[RegularExpression("^[0-9]{4}-[1-3]$")]`;
       `TipoEventoCrear` usa `[StringLength(4, MinimumLength = 4)]`
       (longitud fija, no "hasta 4").
-- [ ] Repositorios (`IRepositorioXxx` + `RepositorioXxxPostgres`) para
+- [x] Repositorios (`IRepositorioXxx` + `RepositorioXxxPostgres`) para
       las 6. `RepositorioPeriodoAcademicoPostgres` reutiliza
       `ManejadorTipoDateOnly.cs` (ya existe) para `fecha_ini`/`fecha_fin`.
-- [ ] Servicios: `ServicioPeriodoAcademico` valida `fecha_fin > fecha_ini`
+- [x] Servicios: `ServicioPeriodoAcademico` valida `fecha_fin > fecha_ini`
       (mismo criterio que `Encuesta`, §4.8 de [3_plan.md](3_plan.md));
       `ServicioTipoPregunta` valida que exactamente una de
       `guarda_numero`/`guarda_texto`/`guarda_opcion` sea `true`
       (extensión a TRES campos de la misma regla).
-- [ ] Controllers (6 endpoints cada uno, mismo patrón que
+- [x] Controllers (6 endpoints cada uno, mismo patrón que
       `SedeController`).
-- [ ] `Program.cs` — registrar las 6 parejas interfaz/implementación
+- [x] `Program.cs` — registrar las 6 parejas interfaz/implementación
       nuevas en el ensamblador.
-- [ ] Extender `pruebas/Programa.cs` con un repositorio FALSO y sus
+- [x] Extender `pruebas/Programa.cs` con un repositorio FALSO y sus
       verificaciones por cada una de las 6 (mismo patrón que
       `RepositorioModalidadFalso`).
 
-**Verificar (cuando se implemente):** los 6 recursos aparecen en
+**Verificado** (contra PostgreSQL real): los 6 recursos aparecen en
 `/swagger`; `POST /api/PeriodoAcademico` con `fecha_fin <= fecha_ini` →
 400; `POST /api/TipoPregunta` con las tres columnas en `false` (o dos en
 `true`) → 400; `POST /api/TipoVinculacion` sin `es_interno` → 422 (es
