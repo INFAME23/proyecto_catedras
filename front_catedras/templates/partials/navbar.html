@@ -40,9 +40,14 @@
                     </a>
                 </li>
             </ul>
+            {# auth_helpers.py: en la v2 nunca hay sesión (login real en la v5). #}
+            {% if sesion_activa() %}
+            <span class="navbar-text small"><i class="fas fa-user me-1"></i>{{ usuario_actual() }}</span>
+            {% else %}
             <a class="btn btn-outline-primary btn-sm" href="{{ url_for('auth.login') }}">
                 <i class="fas fa-sign-in-alt me-1"></i>Iniciar sesión
             </a>
+            {% endif %}
         </div>
     </div>
 </nav>

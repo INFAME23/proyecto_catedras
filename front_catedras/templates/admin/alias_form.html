@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block titulo %}Nuevo alias · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.alias_listar') }}">Alias de programa</a></li>
+        <li class="breadcrumb-item active">Nuevo</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-tags text-primary-custom me-2"></i>Nuevo alias</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        {# Solo existe el formulario de CREAR: la API no tiene PUT/PATCH para alias. #}
+        <form method="post" action="{{ url_for('admin.alias_nuevo') }}">
+            <div class="mb-3">
+                <label class="form-label" for="texto_normalizado">Texto normalizado</label>
+                <input type="text" class="form-control" id="texto_normalizado" name="texto_normalizado" maxlength="200" required
+                       value="{{ alias.texto_normalizado if alias else '' }}">
+                <div class="form-text">Debe ser único (p. ej. "ing. de datos").</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="fk_programa">Programa</label>
+                <select class="form-select" id="fk_programa" name="fk_programa" required>
+                    <option value="">-- Selecciona --</option>
+                    {% for p in programas %}
+                    <option value="{{ p.codigo }}" {% if alias and alias.fk_programa == p.codigo %}selected{% endif %}>{{ p.codigo }} · {{ p.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="origen">Origen (opcional)</label>
+                <input type="text" class="form-control" id="origen" name="origen" maxlength="30" placeholder="FORMULARIO"
+                       value="{{ alias.origen if alias and alias.origen else '' }}">
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.alias_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

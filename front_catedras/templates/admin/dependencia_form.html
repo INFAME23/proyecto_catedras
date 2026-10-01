@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nueva dependencia' if modo == 'nueva' else 'Editar dependencia' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.dependencias_listar') }}">Dependencia</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-sitemap text-primary-custom me-2"></i>{{ 'Nueva dependencia' if modo == 'nueva' else 'Editar dependencia ' + dependencia.id_dependencia }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.dependencias_nueva') if modo == 'nueva' else url_for('admin.dependencias_editar', id_dependencia=dependencia.id_dependencia) }}">
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="id_dependencia">Código (id_dependencia)</label>
+                <input type="text" class="form-control" id="id_dependencia" name="id_dependencia" maxlength="15" required
+                       value="{{ dependencia.id_dependencia if dependencia else '' }}">
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label" for="nombre">Nombre</label>
+                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="120" required
+                       value="{{ dependencia.nombre if dependencia else '' }}">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="fk_dependencia_padre">Dependencia padre</label>
+                <select class="form-select" id="fk_dependencia_padre" name="fk_dependencia_padre">
+                    <option value="">— Ninguna (es raíz) —</option>
+                    {% for p in padres %}
+                    <option value="{{ p.id_dependencia }}" {% if dependencia and dependencia.fk_dependencia_padre == p.id_dependencia %}selected{% endif %}>{{ p.id_dependencia }} · {{ p.nombre }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Una dependencia no puede ser su propio padre (la API responde 400).</div>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if dependencia is none or dependencia.activo %}checked{% endif %}>
+                <label class="form-check-label" for="activo">Activa</label>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.dependencias_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

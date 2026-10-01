@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nueva facultad' if modo == 'nueva' else 'Editar facultad' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.facultades_listar') }}">Facultad</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-university text-primary-custom me-2"></i>{{ 'Nueva facultad' if modo == 'nueva' else 'Editar facultad ' + facultad.id_facultad }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.facultades_nueva') if modo == 'nueva' else url_for('admin.facultades_editar', id_facultad=facultad.id_facultad) }}">
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="id_facultad">Código (id_facultad)</label>
+                <input type="text" class="form-control" id="id_facultad" name="id_facultad" maxlength="10" required
+                       value="{{ facultad.id_facultad if facultad else '' }}">
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label" for="nombre">Nombre</label>
+                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="120" required
+                       value="{{ facultad.nombre if facultad else '' }}">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="fk_facultad_padre">Facultad padre</label>
+                <select class="form-select" id="fk_facultad_padre" name="fk_facultad_padre">
+                    <option value="">— Ninguna (es raíz) —</option>
+                    {% for p in padres %}
+                    <option value="{{ p.id_facultad }}" {% if facultad and facultad.fk_facultad_padre == p.id_facultad %}selected{% endif %}>{{ p.id_facultad }} · {{ p.nombre }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Una facultad no puede ser su propio padre (la API responde 400).</div>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if facultad is none or facultad.activo %}checked{% endif %}>
+                <label class="form-check-label" for="activo">Activa</label>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.facultades_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
