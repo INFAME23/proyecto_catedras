@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nuevo asistente' if modo == 'nueva' else 'Editar asistente' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_listar') }}">Asistente</a></li>
+        <li class="breadcrumb-item active">{{ 'Nuevo' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-user text-primary-custom me-2"></i>{{ 'Nuevo asistente' if modo == 'nueva' else 'Editar asistente ' ~ asistente.id_asistente }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.asistentes_nuevo') if modo == 'nueva' else url_for('admin.asistentes_editar', id_asistente=asistente.id_asistente) }}">
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="id_asis">Código ASIS</label>
+                    <input type="text" class="form-control" id="id_asis" name="id_asis" maxlength="15"
+                           value="{{ asistente.id_asis if asistente and asistente.id_asis else '' }}">
+                    <div class="form-text">5 a 15 letras o dígitos. Obligatorio si NO es externo (la API lo valida: 400).</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="nombres">Nombres</label>
+                    <input type="text" class="form-control" id="nombres" name="nombres" maxlength="100" required
+                           value="{{ asistente.nombres if asistente else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="apellidos">Apellidos</label>
+                    <input type="text" class="form-control" id="apellidos" name="apellidos" maxlength="100" required
+                           value="{{ asistente.apellidos if asistente else '' }}">
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="nombre_completo_asis">Nombre completo (tal como llegó del ASIS) <span class="text-muted small">(opcional)</span></label>
+                    <input type="text" class="form-control" id="nombre_completo_asis" name="nombre_completo_asis" maxlength="200"
+                           value="{{ asistente.nombre_completo_asis if asistente and asistente.nombre_completo_asis else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="correo_institucional">Correo institucional</label>
+                    <input type="email" class="form-control" id="correo_institucional" name="correo_institucional"
+                           value="{{ asistente.correo_institucional if asistente and asistente.correo_institucional else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="correo_personal">Correo personal</label>
+                    <input type="email" class="form-control" id="correo_personal" name="correo_personal"
+                           value="{{ asistente.correo_personal if asistente and asistente.correo_personal else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="celular">Celular</label>
+                    <input type="text" class="form-control" id="celular" name="celular" maxlength="20"
+                           value="{{ asistente.celular if asistente and asistente.celular else '' }}">
+                </div>
+                <div class="col-12"><div class="form-text mt-0">Debe haber al menos un correo (la API lo valida: 400).</div></div>
+                <div class="col-md-6">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="es_externo" name="es_externo" {% if asistente and asistente.es_externo %}checked{% endif %}>
+                        <label class="form-check-label" for="es_externo">Es público externo</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if asistente is none or asistente.activo %}checked{% endif %}>
+                        <label class="form-check-label" for="activo">Activo</label>
+                    </div>
+                </div>
+            </div>
+
+            {# Guía IA, Regla 1: detalles iniciales, SOLO al crear. Se guardan en
+               la MISMA transacción que el asistente: si alguno falla, no se crea
+               nada. Todas las FK se eligen de un <select> (Regla 2). #}
+            {% if modo == 'nueva' %}
+            <hr class="my-4">
+            <h2 class="h6 fw-bold mb-1">Detalles iniciales <span class="text-muted small fw-normal">(opcionales)</span></h2>
+            <p class="form-text mt-0 mb-3">Se guardan junto con el asistente: si alguno falla (documento repetido, matrícula duplicada...), no se crea nada.</p>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label" for="doc_tipo">Tipo de documento</label>
+                    <select class="form-select" id="doc_tipo" name="doc_tipo">
+                        <option value="">— Sin documento —</option>
+                        {% for t in tipos_documento %}<option value="{{ t.id_tipo_documento }}">{{ t.id_tipo_documento }} · {{ t.nombre }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="doc_numero">Número de documento</label>
+                    <input type="text" class="form-control" id="doc_numero" name="doc_numero" maxlength="20">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="vinc_tipo">Vinculación</label>
+                    <select class="form-select" id="vinc_tipo" name="vinc_tipo">
+                        <option value="">— Sin vinculación —</option>
+                        {% for t in tipos_vinculacion %}<option value="{{ t.id_tipo_vinculacion }}">{{ t.id_tipo_vinculacion }} · {{ t.nombre }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="vinc_fecha_ini">Desde</label>
+                    <input type="date" class="form-control" id="vinc_fecha_ini" name="vinc_fecha_ini">
+                    <div class="form-text">Vacío = hoy.</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="prog_codigo">Programa</label>
+                    <select class="form-select" id="prog_codigo" name="prog_codigo">
+                        <option value="">— Sin programa —</option>
+                        {% for p in programas %}<option value="{{ p.codigo }}">{{ p.codigo }} · {{ p.nombre }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="prog_periodo">Periodo</label>
+                    <select class="form-select" id="prog_periodo" name="prog_periodo">
+                        <option value="">—</option>
+                        {% for p in periodos %}<option value="{{ p.id_periodo }}">{{ p.id_periodo }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3"></div>
+                <div class="col-md-3">
+                    <div class="form-check mt-md-4">
+                        <input class="form-check-input" type="checkbox" id="consentimiento" name="consentimiento">
+                        <label class="form-check-label" for="consentimiento">Aceptó la política de datos</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="version_politica">Versión de la política</label>
+                    <input type="text" class="form-control" id="version_politica" name="version_politica" maxlength="20" value="v1.0">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="canal">Canal</label>
+                    <select class="form-select" id="canal" name="canal">
+                        {% for c in canales %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if errores %}
+            <div class="alert alert-danger py-2 mt-3">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2 mt-4">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.asistentes_listar') if modo == 'nueva' else url_for('admin.asistentes_detalle', id_asistente=asistente.id_asistente) }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

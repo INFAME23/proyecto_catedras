@@ -1,6 +1,6 @@
 // ==========================================================================
-//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versiones 1 y 2
-//  (criterio 6 de la v1 · criterio 8 de la v2)
+//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versiones 1, 2 y 3
+//  (criterio 6 de la v1 · criterio 8 de la v2 · criterio 8 de la v3)
 // --------------------------------------------------------------------------
 //  "Prueba de capas": se construye ServicioSede pasándole un repositorio
 //  FALSO que guarda las sedes en un diccionario en memoria (implementa
@@ -883,6 +883,290 @@ Afirmar("Ninguna petición de Catedra tiene la propiedad NombreAsis (columna gen
     new[] { typeof(CatedraCrear), typeof(CatedraReemplazo), typeof(CatedraActualizar) }
         .All(t => t.GetProperty("NombreAsis") is null));
 
+// ============================================================================
+//  v3 · Prueba de capas: ServicioAsistente + repositorio falso
+//  El repositorio falso simula el CALL a 'sp_guardar_asistente': devuelve un
+//  id fijo y GUARDA las 4 listas de detalle que le entregó el servicio, para
+//  comprobar sin PostgreSQL cómo las armó.
+// ============================================================================
+var repoAsistente = new RepositorioAsistenteFalso();
+var servicioAsistente = new ServicioAsistente(repoAsistente);
+
+Console.WriteLine("\n== v3 · Prueba de capas: ServicioAsistente + repositorio falso en memoria ==\n");
+
+var (datosAsi, totalAsi) = await servicioAsistente.ListarAsync(null, null, null);
+Afirmar("Listar() devuelve los 3 asistentes semilla", totalAsi == 3 && datosAsi.Count == 3);
+
+var (datosAsiQ, _) = await servicioAsistente.ListarAsync("garcia", null, null);
+Afirmar("Listar(q='garcia') filtra sin distinguir mayúsculas", datosAsiQ.Count == 1 && datosAsiQ[0].Apellidos == "Garcia");
+
+var (datosAsiP2, _) = await servicioAsistente.ListarAsync(null, 2, 2);
+Afirmar("Listar(limite 2, página 2) salta las 2 primeras filas", datosAsiP2.Count == 1 && datosAsiP2[0].IdAsistente == 3);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(pagina 0) lanza ArgumentException", () => servicioAsistente.ListarAsync(null, null, 0));
+
+// Reglas que cruzan campos: el servicio las corta ANTES del repositorio.
+int llamadasAntes = repoAsistente.LlamadasCrear;
+await AfirmarLanza<ArgumentException>(
+    "Crear() no externo sin id_asis lanza ArgumentException (400)",
+    () => servicioAsistente.CrearAsync(new AsistenteCrear { Nombres = "A", Apellidos = "B", CorreoPersonal = "a@b.co" }));
+await AfirmarLanza<ArgumentException>(
+    "Crear() sin ningún correo lanza ArgumentException (400)",
+    () => servicioAsistente.CrearAsync(new AsistenteCrear { Nombres = "A", Apellidos = "B", IdAsis = "ABC12345" }));
+Afirmar("...y en ninguno de los dos casos se llamó al repositorio", repoAsistente.LlamadasCrear == llamadasAntes);
+
+var externo = await servicioAsistente.CrearAsync(new AsistenteCrear
+{ Nombres = "Ext", Apellidos = "Erno", EsExterno = true, CorreoPersonal = "ext@x.co" });
+Afirmar("Crear() externo sin id_asis es válido", externo.IdAsistente > 0 && externo.IdAsis is null && externo.EsExterno);
+
+var conDetalles = await servicioAsistente.CrearAsync(new AsistenteCrear
+{
+    Nombres = "Prueba", Apellidos = "Uno", IdAsis = "Z9999999", CorreoInstitucional = "p.uno@usbmed.edu.co",
+    Documentos = [new DetalleDocumentoInicial { FkTipoDocumento = "CC", Numero = "999999999" }],
+    Vinculaciones = [new DetalleVinculacionInicial { FkTipoVinculacion = "ESTUDIANTE" }],
+    Programas = [new DetalleProgramaInicial { FkPrograma = "M0286", FkPeriodo = "2026-1" }],
+    Consentimiento = new DetalleConsentimientoInicial { VersionPolitica = "v1.0" },
+});
+long idNuevo = conDetalles.IdAsistente;
+Afirmar("Crear() con detalles devuelve el id que generó la 'BD'", idNuevo == repoAsistente.UltimoId);
+Afirmar("Crear() aplica es_externo = false y activo = true", !conDetalles.EsExterno && conDetalles.Activo);
+Afirmar("Los 4 detalles llegaron al repositorio en la MISMA llamada",
+    repoAsistente.UltimosDocumentos.Count == 1 && repoAsistente.UltimasVinculaciones.Count == 1
+    && repoAsistente.UltimosProgramas.Count == 1 && repoAsistente.UltimoConsentimiento is not null);
+Afirmar("Tras el CALL, cada detalle apunta al asistente nuevo (fk_asistente)",
+    repoAsistente.UltimosDocumentos.All(d => d.FkAsistente == idNuevo)
+    && repoAsistente.UltimasVinculaciones.All(v => v.FkAsistente == idNuevo)
+    && repoAsistente.UltimosProgramas.All(p => p.FkAsistente == idNuevo)
+    && repoAsistente.UltimoConsentimiento!.FkAsistente == idNuevo);
+Afirmar("Detalles con sus DEFAULT: vigente=true, fecha_ini=hoy, estado=ACTIVO, canal=WEB",
+    repoAsistente.UltimosDocumentos[0].Vigente
+    && repoAsistente.UltimasVinculaciones[0].FechaIni == DateOnly.FromDateTime(DateTime.Today)
+    && repoAsistente.UltimosProgramas[0].Estado == "ACTIVO"
+    && repoAsistente.UltimoConsentimiento!.Canal == "WEB");
+
+var sinDetalles = await servicioAsistente.CrearAsync(new AsistenteCrear
+{ Nombres = "Solo", Apellidos = "Maestro", IdAsis = "SOLO0001", CorreoPersonal = "s@x.co" });
+Afirmar("Crear() sin bloques de detalle entrega 4 listas vacías / null",
+    repoAsistente.UltimosDocumentos.Count == 0 && repoAsistente.UltimasVinculaciones.Count == 0
+    && repoAsistente.UltimosProgramas.Count == 0 && repoAsistente.UltimoConsentimiento is null);
+
+await AfirmarLanza<ArgumentException>(
+    "PUT no externo sin id_asis lanza ArgumentException",
+    () => servicioAsistente.ReemplazarAsync(idNuevo, new AsistenteReemplazo
+    { Nombres = "P", Apellidos = "U", EsExterno = false, Activo = true, CorreoPersonal = "x@y.co" }));
+
+int filasPutAsi = await servicioAsistente.ReemplazarAsync(idNuevo, new AsistenteReemplazo
+{ IdAsis = "Z9999999", Nombres = "Prueba", Apellidos = "Editada", CorreoPersonal = "x@y.co", EsExterno = false, Activo = false });
+var trasPutAsi = await servicioAsistente.ObtenerAsync(idNuevo);
+Afirmar("PUT reemplaza todo (el correo institucional que no llegó queda null)",
+    filasPutAsi == 1 && trasPutAsi.Apellidos == "Editada" && trasPutAsi.CorreoInstitucional is null && !trasPutAsi.Activo);
+
+int filasPatchAsi = await servicioAsistente.ActualizarAsync(idNuevo, new AsistenteActualizar { Celular = "3001234567" });
+var trasPatchAsi = await servicioAsistente.ObtenerAsync(idNuevo);
+Afirmar("PATCH cambia solo 'celular'", filasPatchAsi == 1 && trasPatchAsi.Celular == "3001234567" && trasPatchAsi.Apellidos == "Editada");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException", () => servicioAsistente.ActualizarAsync(idNuevo, new AsistenteActualizar()));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(99999) lanza NoEncontradoExcepcion", () => servicioAsistente.ObtenerAsync(99999));
+Afirmar("DELETE elimina 1 fila", await servicioAsistente.EliminarAsync(sinDetalles.IdAsistente) == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioAsistente.EliminarAsync(sinDetalles.IdAsistente));
+
+Afirmar("Ninguna petición de detalle inicial declara 'FkAsistente' (lo fija el SP)",
+    new[] { typeof(DetalleDocumentoInicial), typeof(DetalleVinculacionInicial),
+            typeof(DetalleProgramaInicial), typeof(DetalleConsentimientoInicial) }
+        .All(t => t.GetProperty("FkAsistente") is null));
+
+// ============================================================================
+//  v3 · Prueba de capas: ServicioDocumentoAsistente + repositorio falso
+// ============================================================================
+var servicioDocumento = new ServicioDocumentoAsistente(new RepositorioDocumentoAsistenteFalso());
+
+Console.WriteLine("\n== v3 · Prueba de capas: ServicioDocumentoAsistente + repositorio falso en memoria ==\n");
+
+var (datosDoc, totalDoc) = await servicioDocumento.ListarAsync(null, null);
+Afirmar("Listar() devuelve los 2 documentos semilla", totalDoc == 2);
+var (datosDocA1, _) = await servicioDocumento.ListarAsync(1, null);
+Afirmar("Listar(fkAsistente=1) solo trae los del asistente 1", datosDocA1.Count == 1 && datosDocA1[0].FkAsistente == 1);
+
+var docCreado = await servicioDocumento.CrearAsync(new DocumentoAsistenteCrear
+{ FkAsistente = 2, FkTipoDocumento = "TI", Numero = "1234567" });
+Afirmar("Crear() devuelve id y fecha generados, vigente = true por defecto",
+    docCreado.IdDocumento == 3 && docCreado.RegistradoEn != default && docCreado.Vigente);
+
+int filasPatchDoc = await servicioDocumento.ActualizarAsync(docCreado.IdDocumento, new DocumentoAsistenteActualizar { Vigente = false });
+Afirmar("PATCH {vigente:false} cambia solo 'vigente'",
+    filasPatchDoc == 1 && !(await servicioDocumento.ObtenerAsync(docCreado.IdDocumento)).Vigente);
+
+int filasPutDoc = await servicioDocumento.ReemplazarAsync(docCreado.IdDocumento, new DocumentoAsistenteReemplazo
+{ FkTipoDocumento = "CC", Numero = "7654321", Vigente = true });
+var trasPutDoc = await servicioDocumento.ObtenerAsync(docCreado.IdDocumento);
+Afirmar("PUT reemplaza tipo, número y vigente (el dueño no cambia)",
+    filasPutDoc == 1 && trasPutDoc.FkTipoDocumento == "CC" && trasPutDoc.Numero == "7654321" && trasPutDoc.FkAsistente == 2);
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioDocumento.ActualizarAsync(docCreado.IdDocumento, new DocumentoAsistenteActualizar()));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PUT sobre id inexistente lanza NoEncontradoExcepcion",
+    () => servicioDocumento.ReemplazarAsync(999, new DocumentoAsistenteReemplazo { FkTipoDocumento = "CC", Numero = "1111", Vigente = true }));
+Afirmar("DELETE elimina 1 fila", await servicioDocumento.EliminarAsync(docCreado.IdDocumento) == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioDocumento.EliminarAsync(docCreado.IdDocumento));
+
+// ============================================================================
+//  v3 · Prueba de capas: ServicioVinculacionAsistente + repositorio falso
+//  Tabla de LLAVE COMPUESTA (ADR D16): sin id, se abre y se cierra.
+// ============================================================================
+var repoVinculacion = new RepositorioVinculacionAsistenteFalso();
+var servicioVinculacion = new ServicioVinculacionAsistente(repoVinculacion);
+
+Console.WriteLine("\n== v3 · Prueba de capas: ServicioVinculacionAsistente + repositorio falso en memoria ==\n");
+
+var vinc = await servicioVinculacion.CrearAsync(new VinculacionAsistenteCrear { FkAsistente = 1, FkTipoVinculacion = "DOCENTE" });
+Afirmar("Crear() abre con fecha_ini = hoy y sin fecha_fin",
+    vinc.FechaIni == DateOnly.FromDateTime(DateTime.Today) && vinc.FechaFin is null);
+
+var (datosVinA1, _) = await servicioVinculacion.ListarAsync(1, null);
+Afirmar("Listar(fkAsistente=1) trae la semilla y la nueva", datosVinA1.Count == 2);
+
+var cierre = new VinculacionAsistenteCerrar
+{ FkAsistente = 1, FkTipoVinculacion = "DOCENTE", FechaIni = vinc.FechaIni, FechaFin = vinc.FechaIni.AddDays(30) };
+
+await AfirmarLanza<ArgumentException>(
+    "Cerrar con fecha_fin anterior a fecha_ini lanza ArgumentException",
+    () => servicioVinculacion.CerrarAsync(new VinculacionAsistenteCerrar
+    { FkAsistente = 1, FkTipoVinculacion = "DOCENTE", FechaIni = vinc.FechaIni, FechaFin = vinc.FechaIni.AddDays(-1) }));
+
+var cerrada = await servicioVinculacion.CerrarAsync(cierre);
+Afirmar("Cerrar() pone fecha_fin", cerrada.FechaFin == vinc.FechaIni.AddDays(30));
+
+int cierresAntes = repoVinculacion.LlamadasCerrar;
+await AfirmarLanza<ArgumentException>(
+    "Cerrar dos veces lanza ArgumentException (400)", () => servicioVinculacion.CerrarAsync(cierre));
+Afirmar("...y la segunda vez NO se llamó al UPDATE del repositorio", repoVinculacion.LlamadasCerrar == cierresAntes);
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Cerrar una llave inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioVinculacion.CerrarAsync(new VinculacionAsistenteCerrar
+    { FkAsistente = 1, FkTipoVinculacion = "EGRESADO", FechaIni = new DateOnly(2020, 1, 1) }));
+
+Afirmar("IRepositorioVinculacionAsistente no declara ObtenerPorId/Actualizar/Eliminar (ADR D16)",
+    new[] { "ObtenerPorIdAsync", "ActualizarAsync", "EliminarAsync" }
+        .All(m => typeof(IRepositorioVinculacionAsistente).GetMethod(m) is null));
+
+// ============================================================================
+//  v3 · Prueba de capas: ServicioProgramaAsistente + repositorio falso
+// ============================================================================
+var repoProgAsi = new RepositorioProgramaAsistenteFalso();
+var servicioProgAsi = new ServicioProgramaAsistente(repoProgAsi);
+
+Console.WriteLine("\n== v3 · Prueba de capas: ServicioProgramaAsistente + repositorio falso en memoria ==\n");
+
+var matricula = await servicioProgAsi.CrearAsync(new ProgramaAsistenteCrear { FkAsistente = 2, FkPrograma = "M0286", FkPeriodo = "2026-2" });
+Afirmar("Crear() aplica estado = ACTIVO por defecto", matricula.Estado == "ACTIVO");
+
+var cambio = new ProgramaAsistenteCambiarEstado { FkAsistente = 2, FkPrograma = "M0286", FkPeriodo = "2026-2", Estado = "GRADUADO" };
+var cambiada = await servicioProgAsi.CambiarEstadoAsync(cambio);
+Afirmar("CambiarEstado() deja la matrícula en GRADUADO", cambiada.Estado == "GRADUADO");
+
+int cambiosAntes = repoProgAsi.LlamadasCambiar;
+await AfirmarLanza<ArgumentException>(
+    "CambiarEstado al MISMO estado lanza ArgumentException (400)", () => servicioProgAsi.CambiarEstadoAsync(cambio));
+Afirmar("...sin llamar al UPDATE del repositorio", repoProgAsi.LlamadasCambiar == cambiosAntes);
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "CambiarEstado de una llave inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioProgAsi.CambiarEstadoAsync(new ProgramaAsistenteCambiarEstado
+    { FkAsistente = 2, FkPrograma = "XXXX", FkPeriodo = "2026-2", Estado = "RETIRADO" }));
+
+Afirmar("IRepositorioProgramaAsistente no declara ObtenerPorId/Actualizar/Eliminar (ADR D16)",
+    new[] { "ObtenerPorIdAsync", "ActualizarAsync", "EliminarAsync" }
+        .All(m => typeof(IRepositorioProgramaAsistente).GetMethod(m) is null));
+
+// ============================================================================
+//  v3 · Prueba de capas: ServicioConsentimientoDatos + repositorio falso
+// ============================================================================
+var servicioConsentimiento = new ServicioConsentimientoDatos(new RepositorioConsentimientoDatosFalso());
+
+Console.WriteLine("\n== v3 · Prueba de capas: ServicioConsentimientoDatos + repositorio falso en memoria ==\n");
+
+var consentimiento = await servicioConsentimiento.CrearAsync(new ConsentimientoDatosCrear { FkAsistente = 1, VersionPolitica = "v2.0" });
+Afirmar("Crear() devuelve id y aceptado_en de la 'BD', canal = WEB por defecto",
+    consentimiento.IdConsentimiento == 2 && consentimiento.AceptadoEn != default && consentimiento.Canal == "WEB");
+Afirmar("Obtener() encuentra el consentimiento creado",
+    (await servicioConsentimiento.ObtenerAsync(consentimiento.IdConsentimiento)).VersionPolitica == "v2.0");
+var (datosConA1, _) = await servicioConsentimiento.ListarAsync(1, null);
+Afirmar("Listar(fkAsistente=1) trae la semilla y el nuevo", datosConA1.Count == 2);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(999) lanza NoEncontradoExcepcion", () => servicioConsentimiento.ObtenerAsync(999));
+Afirmar("IRepositorioConsentimientoDatos no declara Actualizar ni Eliminar (RF113)",
+    typeof(IRepositorioConsentimientoDatos).GetMethod("ActualizarAsync") is null
+    && typeof(IRepositorioConsentimientoDatos).GetMethod("EliminarAsync") is null);
+
+// ============================================================================
+//  v3 · Prueba de capas: ServicioLoteCargaAsistente + ServicioNovedadCarga
+//  El repositorio falso de lotes cuenta las llamadas: así se demuestra que
+//  los 400 por contadores lo lanza el SERVICIO sin tocar el repositorio.
+//  El falso de novedades COMPARTE la lista donde el de lotes guarda las
+//  novedades al cerrar (simula que el SP las insertó en la misma BD).
+// ============================================================================
+var tablaNovedades = new List<NovedadCarga>();
+var repoLote = new RepositorioLoteCargaAsistenteFalso(tablaNovedades);
+var servicioLote = new ServicioLoteCargaAsistente(repoLote);
+var servicioNovedad = new ServicioNovedadCarga(new RepositorioNovedadCargaFalso(tablaNovedades));
+
+Console.WriteLine("\n== v3 · Prueba de capas: ServicioLoteCargaAsistente + ServicioNovedadCarga ==\n");
+
+var lote = await servicioLote.CrearAsync(new LoteCargaAsistenteCrear { NombreArchivo = "prueba.xlsx" });
+Afirmar("Crear() abre el lote con contadores en 0 y sin usuario",
+    lote.IdLoteCarga == 2 && lote.FilasLeidas == 0 && lote.FkUsuario is null && !lote.EstaCerrado);
+
+int llamadasLoteAntes = repoLote.LlamadasTotales;
+await AfirmarLanza<ArgumentException>(
+    "Cerrar con aceptadas + rechazadas > leidas lanza ArgumentException (400)",
+    () => servicioLote.CerrarAsync(lote.IdLoteCarga, new LoteCargaAsistenteCerrar
+    { FilasLeidas = 2, FilasAceptadas = 2, FilasRechazadas = 1, Novedades = [new NovedadInicial { NumeroFila = 3, ContenidoCrudo = "x", Motivo = "m" }] }));
+await AfirmarLanza<ArgumentException>(
+    "Cerrar sin una novedad por fila rechazada lanza ArgumentException (400)",
+    () => servicioLote.CerrarAsync(lote.IdLoteCarga, new LoteCargaAsistenteCerrar
+    { FilasLeidas = 3, FilasAceptadas = 2, FilasRechazadas = 1 }));
+Afirmar("...y en esos dos casos el repositorio NUNCA se invocó", repoLote.LlamadasTotales == llamadasLoteAntes);
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Cerrar un lote inexistente lanza NoEncontradoExcepcion",
+    () => servicioLote.CerrarAsync(999, new LoteCargaAsistenteCerrar { FilasLeidas = 0, FilasAceptadas = 0, FilasRechazadas = 0 }));
+
+var cerradoLote = await servicioLote.CerrarAsync(lote.IdLoteCarga, new LoteCargaAsistenteCerrar
+{
+    FilasLeidas = 3, FilasAceptadas = 2, FilasRechazadas = 1,
+    Novedades = [new NovedadInicial { NumeroFila = 2, ContenidoCrudo = "Ana;;", Motivo = "correo duplicado" }],
+});
+Afirmar("Cerrar() guarda los 3 contadores y queda 'cerrado'",
+    cerradoLote.FilasLeidas == 3 && cerradoLote.FilasAceptadas == 2 && cerradoLote.FilasRechazadas == 1 && cerradoLote.EstaCerrado);
+
+var (novedadesLote, totalNov) = await servicioNovedad.ListarAsync(lote.IdLoteCarga, null);
+Afirmar("La novedad quedó con fk_lote_carga = el lote cerrado y su motivo",
+    totalNov == 1 && novedadesLote[0].FkLoteCarga == lote.IdLoteCarga && novedadesLote[0].Motivo == "correo duplicado");
+
+await AfirmarLanza<ArgumentException>(
+    "Cerrar el mismo lote dos veces lanza ArgumentException (400)",
+    () => servicioLote.CerrarAsync(lote.IdLoteCarga, new LoteCargaAsistenteCerrar { FilasLeidas = 0, FilasAceptadas = 0, FilasRechazadas = 0 }));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "NovedadCarga: Obtener(999) lanza NoEncontradoExcepcion", () => servicioNovedad.ObtenerAsync(999));
+
+Afirmar("IRepositorioNovedadCarga no declara CrearAsync (nace solo dentro del SP)",
+    typeof(IRepositorioNovedadCarga).GetMethod("CrearAsync") is null);
+Afirmar("IRepositorioLoteCargaAsistente no declara Actualizar ni Eliminar (RF117)",
+    typeof(IRepositorioLoteCargaAsistente).GetMethod("ActualizarAsync") is null
+    && typeof(IRepositorioLoteCargaAsistente).GetMethod("EliminarAsync") is null);
+Afirmar("LoteCargaAsistenteCrear no expone los contadores ni fk_usuario",
+    new[] { "FilasLeidas", "FilasAceptadas", "FilasRechazadas", "FkUsuario" }
+        .All(p => typeof(LoteCargaAsistenteCrear).GetProperty(p) is null));
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -1642,4 +1926,345 @@ class RepositorioCatedraFalso : IRepositorioCatedra
 
     public Task<int> EliminarAsync(long idCatedra) =>
         Task.FromResult(_tabla.Remove(idCatedra) ? 1 : 0);
+}
+
+// ==========================================================================
+//  v3 · Repositorio FALSO de 'Asistente'. Simula el CALL al SP:
+//   · IDENTITY -> contador '_siguienteId' (el id que "devuelve" el SP);
+//   · guarda las 4 listas de detalle que le entregó el servicio, para que
+//     la prueba compruebe que llegaron JUNTAS (Guía IA, Regla 1);
+//   · el filtro 'q' sin distinguir mayúsculas, como el ILIKE de Postgres.
+// ==========================================================================
+class RepositorioAsistenteFalso : IRepositorioAsistente
+{
+    private readonly Dictionary<long, Asistente> _tabla = new();
+    private long _siguienteId = 14812; // en el script real el último id es 14811
+
+    public int LlamadasCrear { get; private set; }
+    public long UltimoId { get; private set; }
+    public List<DocumentoAsistente> UltimosDocumentos { get; private set; } = new();
+    public List<VinculacionAsistente> UltimasVinculaciones { get; private set; } = new();
+    public List<ProgramaAsistente> UltimosProgramas { get; private set; } = new();
+    public ConsentimientoDatos? UltimoConsentimiento { get; private set; }
+
+    public RepositorioAsistenteFalso()
+    {
+        _tabla[1] = new Asistente { IdAsistente = 1, IdAsis = "1000090", Nombres = "Asistente", Apellidos = "ASIS 1000090", CorreoInstitucional = "asis.1000090@usbmed.edu.co" };
+        _tabla[2] = new Asistente { IdAsistente = 2, IdAsis = "1000445", Nombres = "Ana", Apellidos = "Garcia", CorreoInstitucional = "ana.garcia@usbmed.edu.co" };
+        _tabla[3] = new Asistente { IdAsistente = 3, IdAsis = "1000513C", Nombres = "Luis", Apellidos = "Perez", CorreoPersonal = "luis@x.co" };
+    }
+
+    public Task<List<Asistente>> ObtenerTodosAsync(string? q, int limite, int desplazamiento)
+    {
+        // 'OrdinalIgnoreCase' = comparar sin distinguir mayúsculas (como ILIKE).
+        var filas = _tabla.Values
+            .Where(a => string.IsNullOrWhiteSpace(q)
+                || $"{a.Nombres} {a.Apellidos}".Contains(q, StringComparison.OrdinalIgnoreCase)
+                || (a.IdAsis ?? "").Contains(q, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(a => a.IdAsistente)
+            .Skip(desplazamiento)   // OFFSET
+            .Take(limite)           // LIMIT
+            .ToList();
+        return Task.FromResult(filas);
+    }
+
+    public Task<Asistente?> ObtenerPorIdAsync(long idAsistente) =>
+        Task.FromResult(_tabla.TryGetValue(idAsistente, out var a) ? a : null);
+
+    public Task<long> CrearAsync(Asistente asistente, IReadOnlyList<DocumentoAsistente> documentos,
+        IReadOnlyList<VinculacionAsistente> vinculaciones, IReadOnlyList<ProgramaAsistente> programas,
+        ConsentimientoDatos? consentimiento)
+    {
+        LlamadasCrear++;
+        if (asistente.IdAsis is not null && _tabla.Values.Any(a => a.IdAsis == asistente.IdAsis))
+            throw new InvalidOperationException("id_asis duplicado (simulado).");
+
+        long id = _siguienteId++;     // lo que el SP devuelve en p_id_asistente
+        asistente.CreadoEn = DateTime.UtcNow;
+        _tabla[id] = asistente;
+
+        UltimoId = id;
+        // Se guardan las MISMAS instancias: si el servicio les pone el
+        // fk_asistente después del CALL, la prueba lo ve aquí.
+        UltimosDocumentos = documentos.ToList();
+        UltimasVinculaciones = vinculaciones.ToList();
+        UltimosProgramas = programas.ToList();
+        UltimoConsentimiento = consentimiento;
+        return Task.FromResult(id);
+    }
+
+    public Task<int> ActualizarAsync(long idAsistente, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idAsistente, out var a))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("id_asis", out var ia)) a.IdAsis = (string?)ia;
+        if (datos.TryGetValue("nombres", out var n)) a.Nombres = (string)n!;
+        if (datos.TryGetValue("apellidos", out var ap)) a.Apellidos = (string)ap!;
+        if (datos.TryGetValue("nombre_completo_asis", out var nc)) a.NombreCompletoAsis = (string?)nc;
+        if (datos.TryGetValue("correo_institucional", out var ci)) a.CorreoInstitucional = (string?)ci;
+        if (datos.TryGetValue("correo_personal", out var cp)) a.CorreoPersonal = (string?)cp;
+        if (datos.TryGetValue("celular", out var ce)) a.Celular = (string?)ce;
+        if (datos.TryGetValue("es_externo", out var ee)) a.EsExterno = (bool)ee!;
+        if (datos.TryGetValue("activo", out var ac)) a.Activo = (bool)ac!;
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(long idAsistente) =>
+        Task.FromResult(_tabla.Remove(idAsistente) ? 1 : 0);
+}
+
+// ==========================================================================
+//  v3 · Repositorio FALSO de 'DocumentoAsistente'. Simula IDENTITY y now().
+// ==========================================================================
+class RepositorioDocumentoAsistenteFalso : IRepositorioDocumentoAsistente
+{
+    private readonly Dictionary<long, DocumentoAsistente> _tabla = new();
+    private long _siguienteId = 3;
+
+    public RepositorioDocumentoAsistenteFalso()
+    {
+        _tabla[1] = new DocumentoAsistente { IdDocumento = 1, FkAsistente = 1, FkTipoDocumento = "CC", Numero = "32182100" };
+        _tabla[2] = new DocumentoAsistente { IdDocumento = 2, FkAsistente = 2, FkTipoDocumento = "CC", Numero = "43000111" };
+    }
+
+    public Task<List<DocumentoAsistente>> ObtenerTodosAsync(long? fkAsistente, int limite) =>
+        Task.FromResult(_tabla.Values
+            .Where(d => fkAsistente is null || d.FkAsistente == fkAsistente)
+            .OrderBy(d => d.IdDocumento).Take(limite).ToList());
+
+    public Task<DocumentoAsistente?> ObtenerPorIdAsync(long idDocumento) =>
+        Task.FromResult(_tabla.TryGetValue(idDocumento, out var d) ? d : null);
+
+    public Task<(long IdDocumento, DateTime RegistradoEn)> CrearAsync(DocumentoAsistente documento)
+    {
+        long id = _siguienteId++;          // simula IDENTITY
+        var ahora = DateTime.UtcNow;       // simula DEFAULT now()
+        _tabla[id] = new DocumentoAsistente
+        {
+            IdDocumento = id, FkAsistente = documento.FkAsistente, FkTipoDocumento = documento.FkTipoDocumento,
+            Numero = documento.Numero, Vigente = documento.Vigente, RegistradoEn = ahora,
+        };
+        return Task.FromResult((id, ahora));
+    }
+
+    public Task<int> ActualizarAsync(long idDocumento, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idDocumento, out var d))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("fk_tipo_documento", out var t)) d.FkTipoDocumento = (string)t!;
+        if (datos.TryGetValue("numero", out var n)) d.Numero = (string)n!;
+        if (datos.TryGetValue("vigente", out var v)) d.Vigente = (bool)v!;
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(long idDocumento) =>
+        Task.FromResult(_tabla.Remove(idDocumento) ? 1 : 0);
+}
+
+// ==========================================================================
+//  v3 · Repositorio FALSO de 'VinculacionAsistente' (llave compuesta).
+//  Solo los 3 métodos de la interfaz. Cuenta las llamadas a CerrarAsync.
+// ==========================================================================
+class RepositorioVinculacionAsistenteFalso : IRepositorioVinculacionAsistente
+{
+    private readonly List<VinculacionAsistente> _tabla = new()
+    {
+        new VinculacionAsistente { FkAsistente = 1, FkTipoVinculacion = "ESTUDIANTE", FechaIni = new DateOnly(2025, 1, 20) },
+    };
+
+    public int LlamadasCerrar { get; private set; }
+
+    // Devuelve COPIAS: así el servicio no puede cambiar la "tabla" sin
+    // pasar por CerrarAsync (como pasa con una BD de verdad).
+    public Task<List<VinculacionAsistente>> ObtenerTodosAsync(long? fkAsistente, int limite) =>
+        Task.FromResult(_tabla
+            .Where(v => fkAsistente is null || v.FkAsistente == fkAsistente)
+            .Take(limite)
+            .Select(v => new VinculacionAsistente
+            { FkAsistente = v.FkAsistente, FkTipoVinculacion = v.FkTipoVinculacion, FechaIni = v.FechaIni, FechaFin = v.FechaFin })
+            .ToList());
+
+    public Task CrearAsync(VinculacionAsistente vinculacion)
+    {
+        if (_tabla.Any(v => v.FkAsistente == vinculacion.FkAsistente
+                && v.FkTipoVinculacion == vinculacion.FkTipoVinculacion && v.FechaIni == vinculacion.FechaIni))
+            throw new InvalidOperationException("llave duplicada (simulado).");
+        _tabla.Add(vinculacion);
+        return Task.CompletedTask;
+    }
+
+    public Task<int> CerrarAsync(long fkAsistente, string fkTipoVinculacion, DateOnly fechaIni, DateOnly fechaFin)
+    {
+        LlamadasCerrar++;
+        var fila = _tabla.FirstOrDefault(v => v.FkAsistente == fkAsistente
+            && v.FkTipoVinculacion == fkTipoVinculacion && v.FechaIni == fechaIni && v.FechaFin is null);
+        if (fila is null) return Task.FromResult(0);
+        fila.FechaFin = fechaFin;
+        return Task.FromResult(1);
+    }
+}
+
+// ==========================================================================
+//  v3 · Repositorio FALSO de 'ProgramaAsistente' (llave compuesta).
+// ==========================================================================
+class RepositorioProgramaAsistenteFalso : IRepositorioProgramaAsistente
+{
+    private readonly List<ProgramaAsistente> _tabla = new()
+    {
+        new ProgramaAsistente { FkAsistente = 2, FkPrograma = "M0221", FkPeriodo = "2026-1" },
+    };
+
+    public int LlamadasCambiar { get; private set; }
+
+    public Task<List<ProgramaAsistente>> ObtenerTodosAsync(long? fkAsistente, int limite) =>
+        Task.FromResult(_tabla
+            .Where(p => fkAsistente is null || p.FkAsistente == fkAsistente)
+            .Take(limite)
+            .Select(p => new ProgramaAsistente
+            { FkAsistente = p.FkAsistente, FkPrograma = p.FkPrograma, FkPeriodo = p.FkPeriodo, Estado = p.Estado })
+            .ToList());
+
+    public Task CrearAsync(ProgramaAsistente programa)
+    {
+        _tabla.Add(new ProgramaAsistente
+        { FkAsistente = programa.FkAsistente, FkPrograma = programa.FkPrograma, FkPeriodo = programa.FkPeriodo, Estado = programa.Estado });
+        return Task.CompletedTask;
+    }
+
+    public Task<int> CambiarEstadoAsync(long fkAsistente, string fkPrograma, string fkPeriodo, string estado)
+    {
+        LlamadasCambiar++;
+        var fila = _tabla.FirstOrDefault(p => p.FkAsistente == fkAsistente && p.FkPrograma == fkPrograma && p.FkPeriodo == fkPeriodo);
+        if (fila is null) return Task.FromResult(0);
+        fila.Estado = estado;
+        return Task.FromResult(1);
+    }
+}
+
+// ==========================================================================
+//  v3 · Repositorio FALSO de 'ConsentimientoDatos'. Sin actualizar ni borrar.
+// ==========================================================================
+class RepositorioConsentimientoDatosFalso : IRepositorioConsentimientoDatos
+{
+    private readonly Dictionary<long, ConsentimientoDatos> _tabla = new();
+    private long _siguienteId = 2;
+
+    public RepositorioConsentimientoDatosFalso()
+    {
+        _tabla[1] = new ConsentimientoDatos { IdConsentimiento = 1, FkAsistente = 1, VersionPolitica = "v1.0" };
+    }
+
+    public Task<List<ConsentimientoDatos>> ObtenerTodosAsync(long? fkAsistente, int limite) =>
+        Task.FromResult(_tabla.Values
+            .Where(c => fkAsistente is null || c.FkAsistente == fkAsistente)
+            .OrderBy(c => c.IdConsentimiento).Take(limite).ToList());
+
+    public Task<ConsentimientoDatos?> ObtenerPorIdAsync(long idConsentimiento) =>
+        Task.FromResult(_tabla.TryGetValue(idConsentimiento, out var c) ? c : null);
+
+    public Task<(long IdConsentimiento, DateTime AceptadoEn)> CrearAsync(ConsentimientoDatos consentimiento)
+    {
+        long id = _siguienteId++;
+        var ahora = DateTime.UtcNow;
+        _tabla[id] = new ConsentimientoDatos
+        {
+            IdConsentimiento = id, FkAsistente = consentimiento.FkAsistente,
+            VersionPolitica = consentimiento.VersionPolitica, Canal = consentimiento.Canal,
+            Ip = consentimiento.Ip, AceptadoEn = ahora,
+        };
+        return Task.FromResult((id, ahora));
+    }
+}
+
+// ==========================================================================
+//  v3 · Repositorio FALSO de 'LoteCargaAsistente'. 'LlamadasTotales' cuenta
+//  CUALQUIER uso del repositorio: la prueba lo usa para demostrar que las
+//  reglas de los contadores las corta el servicio. Al cerrar, guarda las
+//  novedades en la lista compartida con el falso de NovedadCarga (simula
+//  que el SP las insertó en la misma BD).
+// ==========================================================================
+class RepositorioLoteCargaAsistenteFalso : IRepositorioLoteCargaAsistente
+{
+    private readonly Dictionary<long, LoteCargaAsistente> _tabla = new();
+    private readonly List<NovedadCarga> _novedades;
+    private long _siguienteId = 2;
+
+    public int LlamadasTotales { get; private set; }
+
+    public RepositorioLoteCargaAsistenteFalso(List<NovedadCarga> novedades)
+    {
+        _novedades = novedades;
+        _tabla[1] = new LoteCargaAsistente { IdLoteCarga = 1, NombreArchivo = "USBME_EMPLID_CATED_V1.xlsx", FilasLeidas = 16093, FilasAceptadas = 14811, FilasRechazadas = 1282 };
+    }
+
+    public Task<List<LoteCargaAsistente>> ObtenerTodosAsync(int limite)
+    {
+        LlamadasTotales++;
+        return Task.FromResult(_tabla.Values.OrderByDescending(l => l.IdLoteCarga).Take(limite).ToList());
+    }
+
+    public Task<LoteCargaAsistente?> ObtenerPorIdAsync(long idLoteCarga)
+    {
+        LlamadasTotales++;
+        // COPIA: el "estado guardado" solo cambia a través de CerrarAsync.
+        return Task.FromResult(_tabla.TryGetValue(idLoteCarga, out var l)
+            ? new LoteCargaAsistente
+            {
+                IdLoteCarga = l.IdLoteCarga, NombreArchivo = l.NombreArchivo, CargadoEn = l.CargadoEn,
+                FkUsuario = l.FkUsuario, FilasLeidas = l.FilasLeidas, FilasAceptadas = l.FilasAceptadas,
+                FilasRechazadas = l.FilasRechazadas, Observaciones = l.Observaciones,
+            }
+            : null);
+    }
+
+    public Task<(long IdLoteCarga, DateTime CargadoEn)> CrearAsync(LoteCargaAsistente lote)
+    {
+        LlamadasTotales++;
+        long id = _siguienteId++;
+        var ahora = DateTime.UtcNow;
+        _tabla[id] = new LoteCargaAsistente { IdLoteCarga = id, NombreArchivo = lote.NombreArchivo, CargadoEn = ahora };
+        return Task.FromResult((id, ahora));
+    }
+
+    public Task CerrarAsync(LoteCargaAsistente lote, IReadOnlyList<NovedadCarga> novedades)
+    {
+        LlamadasTotales++;
+        var guardado = _tabla[lote.IdLoteCarga];
+        guardado.FilasLeidas = lote.FilasLeidas;
+        guardado.FilasAceptadas = lote.FilasAceptadas;
+        guardado.FilasRechazadas = lote.FilasRechazadas;
+        guardado.Observaciones = lote.Observaciones;
+
+        long siguienteNovedad = _novedades.Count + 1;
+        foreach (var n in novedades)
+        {
+            n.IdNovedad = siguienteNovedad++;   // simula IDENTITY de novedad_carga
+            _novedades.Add(n);
+        }
+        return Task.CompletedTask;
+    }
+}
+
+// ==========================================================================
+//  v3 · Repositorio FALSO de 'NovedadCarga'. Solo lectura, sobre la lista
+//  que llena el falso de LoteCargaAsistente al cerrar.
+// ==========================================================================
+class RepositorioNovedadCargaFalso : IRepositorioNovedadCarga
+{
+    private readonly List<NovedadCarga> _tabla;
+
+    public RepositorioNovedadCargaFalso(List<NovedadCarga> tabla)
+    {
+        _tabla = tabla;
+    }
+
+    public Task<List<NovedadCarga>> ObtenerTodosAsync(long? fkLoteCarga, int limite) =>
+        Task.FromResult(_tabla
+            .Where(n => fkLoteCarga is null || n.FkLoteCarga == fkLoteCarga)
+            .OrderBy(n => n.NumeroFila).Take(limite).ToList());
+
+    public Task<NovedadCarga?> ObtenerPorIdAsync(long idNovedad) =>
+        Task.FromResult(_tabla.FirstOrDefault(n => n.IdNovedad == idNovedad));
 }

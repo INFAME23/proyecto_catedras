@@ -1,10 +1,10 @@
 # Especificación — Versión 3 del proyecto: personas y carga de asistentes
 
-> ⚠️ **BORRADOR.** Escrito mientras V2 todavía no tiene su tag. El
-> Artículo 1 de la constitución dice que la spec siguiente se escribe
-> **después** de cerrar la versión en curso con su tag (`v2`). Este
-> documento se revisa una vez más contra lo que realmente quedó en V2
-> antes de considerarse spec oficial — puede cambiar.
+> ✅ **CONSTRUIDA Y VERIFICADA (2026-10-07)** — pendiente solo el commit
+> y el tag `v3` (Fase 31 de [8_tasks.md](8_tasks.md)). V2 quedó con su tag
+> `v2`. Esta spec se revisó contra la BD real y contra lo construido; las
+> correcciones respecto al borrador están marcadas con **(corregido)** y
+> resumidas en el ADR D19 de [4_research.md](4_research.md).
 >
 > Rige la constitución del proyecto:
 > [../1_constitution.md](../1_constitution.md) y la
@@ -130,13 +130,19 @@ Numeración de RF continúa desde v2 (terminó en RF94).
   sin descargar 14.811 filas de golpe (a diferencia del catálogo de
   `Catedra` en v2, que sí lo hacía — ver ADR D18 sobre por qué aquí NO
   se repite esa decisión), `?q=` que filtra por nombre, apellido o
-  `id_asis` **en SQL** (`ILIKE`), no en memoria.
+  `id_asis` **en SQL** (`ILIKE`), no en memoria, y `?pagina=` (desde 1,
+  de `limite` filas cada una: `LIMIT/OFFSET` en SQL; `pagina <= 0` → 400).
+  El sobre agrega `pagina`.
 - **RF96 — Obtener por id** (`GET /api/Asistente/{idAsistente}`): 200;
   inexistente → 404.
 - **RF97 — Crear** (`POST /api/Asistente` con **AsistenteCrear**):
   `nombres`, `apellidos` obligatorios; `id_asis` obligatorio si
   `es_externo` es `false` u omitido (formato `^[0-9A-Za-z]{5,15}$`);
-  al menos uno de `correo_institucional`/`correo_personal`. **Retrofit
+  al menos uno de `correo_institucional`/`correo_personal`. **(corregido)**
+  Estas dos reglas cruzan campos del mismo body: las valida el
+  **servicio** → **400**, antes de tocar la BD (ver RF101 y ADR D19).
+  Acepta también `nombre_completo_asis` (opcional). Responde
+  `200 {estado, mensaje, id_asistente}`. **Retrofit
   del mismo día (Guía IA, Regla 1):** acepta además 4 listas
   **opcionales** — `documentos`, `vinculaciones`, `programas`,
   `consentimiento` (un solo objeto, no lista) — que se guardan en la
@@ -151,19 +157,24 @@ Numeración de RF continúa desde v2 (terminó en RF94).
   todo opcional; body vacío → 400; inexistente → 404.
 - **RF100 — Eliminar** (`DELETE .../{idAsistente}`): `filasEliminadas`;
   inexistente → 404. `documento_asistente`, `vinculacion_asistente`,
-  `programa_asistente` y `consentimiento_datos` son `ON DELETE CASCADE`
-  (se borran con el asistente); pero `usuario`, `ponencia` y
-  `registro_asistencia` (de v4/v5, **ya sembradas** con datos de
-  ejemplo) son `RESTRICT` — borrar un asistente que ya tiene cualquiera
-  de esas filas → 500, sin que la cascada hacia los 4 detalles llegue a
-  ejecutarse (mismo patrón que `ProgramaAcademico` en v2, RF79).
-- **RF101 — `id_asis` nulo si y solo si `es_externo`:** la petición NO
-  valida este cruce de campos (es autorreferencia entre dos campos del
-  mismo body, igual que D10 de v2): el `CHECK
-  chk_asistente_externo` de la BD lo vigila y, si falla, sube como 500.
-  Se documenta aquí porque es la primera vez que una violación de
-  `CHECK` de una sola tabla (no de FK) queda deliberadamente sin
-  revalidar en el servicio — extensión natural de D9.
+  `programa_asistente` y `consentimiento_datos` (y `clave_acceso`, de v5)
+  son `ON DELETE CASCADE` (se borran con el asistente); pero `usuario`,
+  `ponencia` y `registro_asistencia` (de v4/v5) son `RESTRICT` — borrar
+  un asistente que ya tiene cualquiera de esas filas → 500, sin que la
+  cascada hacia los 4 detalles llegue a ejecutarse (mismo patrón que
+  `ProgramaAcademico` en v2, RF79). **(corregido)** El borrador decía que
+  `programa_asistente` era `RESTRICT`: en el esquema es `CASCADE`
+  (`fk_progasi_asistente`). Lo que de verdad bloquea en los datos de
+  ejemplo son las **168** filas de `registro_asistencia` y la **1** de
+  `usuario` (`ponencia` aún no tiene filas).
+- **RF101 — `id_asis` obligatorio si NO es externo:** **(corregido)** el
+  `CHECK chk_asistente_externo` es `(es_externo = false AND id_asis IS NOT
+  NULL) OR es_externo = true`: un externo **puede** tener `id_asis` (no
+  son excluyentes). En `POST` y `PUT` (donde llega la fila completa) el
+  **servicio** valida el cruce → **400** con un mensaje claro; en `PATCH`
+  (que solo trae una parte de la fila) no puede hacerlo, y el `CHECK` de
+  la BD queda como última muralla → 500. Mismo criterio para "al menos un
+  correo" (`chk_asistente_correo`). Ver ADR D19.
 
 ### DocumentoAsistente
 
@@ -232,7 +243,8 @@ Numeración de RF continúa desde v2 (terminó en RF94).
 > RF112-RF113. Ley 1581 de 2012: el consentimiento es un **hecho**
 > registrado, nunca un aviso en pantalla ni una fila editable.
 
-- **RF112 — Listar, obtener, crear** (`GET`, `GET/{id}`, `POST` con
+- **RF112 — Listar, obtener, crear** (`GET` con `?fkAsistente=`
+  opcional **(corregido: el quickstart ya lo usaba)**, `GET/{id}`, `POST` con
   **ConsentimientoDatosCrear**): `fk_asistente`, `version_politica`
   obligatorios; `canal` opcional (por defecto `WEB`, lista cerrada:
   `WEB`, `PRESENCIAL`, `CORREO`, `IMPORTADO`); `aceptado_en` lo pone la
@@ -258,16 +270,21 @@ Numeración de RF continúa desde v2 (terminó en RF94).
   ejecución.
 - **RF116 — Cerrar un lote** (`POST
   /api/LoteCargaAsistente/{id}/cerrar` con **LoteCargaAsistenteCerrar**):
-  body = `filasLeidas`, `filasAceptadas`, `filasRechazadas`,
+  body = `filas_leidas`, `filas_aceptadas`, `filas_rechazadas`,
   `observaciones` opcional, y `novedades` (lista, puede ser vacía) con
-  `numeroFila`, `contenidoCrudo`, `motivo` por cada fila rechazada.
-  Guarda los contadores y las novedades en **una sola transacción**
-  (`sp_guardar_lote_carga`, Guía IA Regla 1). `filasAceptadas +
-  filasRechazadas > filasLeidas` → 400 (se valida en el servicio: es un
-  cruce de 3 campos del mismo body, igual criterio que D10/D16).
-  Lote ya cerrado (tiene `observaciones` o algún contador > 0 — ver
-  nota de diseño en [5_data_model.md](5_data_model.md) §2.1) → 400: un
-  lote no se cierra dos veces.
+  `numero_fila`, `contenido_crudo`, `motivo` por cada fila rechazada
+  **(corregido: snake_case, como todo el JSON del proyecto; el borrador
+  mezclaba camelCase)**. Guarda los contadores y las novedades en **una
+  sola transacción** (`sp_guardar_lote_carga`, Guía IA Regla 1).
+  `filas_aceptadas + filas_rechazadas > filas_leidas` → 400, y **una
+  novedad por cada fila rechazada** (`novedades.length !=
+  filas_rechazadas` → 400, RNF8) — ambas en el servicio, ANTES de tocar
+  el repositorio. `motivo` de más de 200 caracteres → 422 (es
+  `VARCHAR(200)`: si llegara a la BD, revertiría el cierre entero).
+  Lote inexistente → 404. Lote ya cerrado (algún contador > 0 o
+  `observaciones` con valor — ver [5_data_model.md](5_data_model.md)
+  §2.1) → 400: un lote no se cierra dos veces. Responde
+  `200 {estado, mensaje, lote}`.
 - **RF117 — Sin `PUT`/`PATCH` genérico ni `DELETE`:** el lote es la
   bitácora de una ejecución ya ocurrida (mismo espíritu que `Bitacora`
   de v7, de solo lectura por triggers — aquí de "solo lectura tras
@@ -296,7 +313,9 @@ Rigen los mismos RNF1-RNF7 de v1/v2, sin cambios. Se añaden:
    7 de v3) respondiendo en `/swagger`.
 2. `GET /api/Asistente?limite=5` devuelve 5 de los 14.811 asistentes de
    ejemplo, con `total` reflejando el límite (mismo criterio que
-   `Catedra` en v2); `GET /api/Asistente?q=Garcia` filtra por SQL.
+   `Catedra` en v2); `GET /api/Asistente?q=1000445` filtra por SQL
+   **(corregido: los nombres sembrados son genéricos —"Asistente ASIS
+   1000445"—, así que `?q=Garcia` no encuentra a nadie y responde 204)**.
 3. `POST /api/Asistente` con `documentos`, `vinculaciones`, `programas`
    y `consentimiento` en el mismo body → 200, y las 4 tablas de detalle
    muestran las filas correspondientes con el `id_asistente` recién
@@ -312,14 +331,15 @@ Rigen los mismos RNF1-RNF7 de v1/v2, sin cambios. Se añaden:
    cerrada).
 6. `POST /api/LoteCargaAsistente` abre un lote; crear 2 `Asistente` con
    ese `fk_lote_carga` y luego `POST .../{id}/cerrar` con
-   `filasLeidas: 3, filasAceptadas: 2, filasRechazadas: 1` y 1 novedad
+   `filas_leidas: 3, filas_aceptadas: 2, filas_rechazadas: 1` y 1 novedad
    → 200; `GET /api/NovedadCarga?fkLoteCarga={id}` muestra esa fila con
    su motivo. El mismo `POST .../cerrar` repetido → 400 (ya cerrado).
-7. `DELETE /api/Asistente/{id}` sobre uno de los 14.810 asistentes con
-   `programa_asistente` ya sembrado (15.349 filas, `RESTRICT`) → 500;
-   sus `documento_asistente`/`vinculacion_asistente` NO se borran (la
-   cascada no llegó a ejecutarse — mismo patrón que `ProgramaAcademico`
-   en v2).
+7. `DELETE /api/Asistente/1` (tiene `registro_asistencia` sembrado,
+   `RESTRICT`) → 500; sus `documento_asistente`/`vinculacion_asistente`
+   NO se borran (la cascada no llegó a ejecutarse — mismo patrón que
+   `ProgramaAcademico` en v2). **(corregido: el borrador usaba
+   `programa_asistente`, que es `CASCADE` y no bloquea.)** Un asistente
+   creado en la prueba sí se borra, y con él sus 4 detalles.
 8. **Prueba de capas ampliada:** `dotnet run --project pruebas` cubre
    las 22 entidades sin PostgreSQL, incluida la validación de
    `id_asis`/`es_externo` y de los contadores del cierre de lote con
@@ -333,4 +353,7 @@ Rigen los mismos RNF1-RNF7 de v1/v2, sin cambios. Se añaden:
 10. El panel de administración (`/admin`) muestra las 7 tarjetas nuevas
     (o 5, si `NovedadCarga` y los detalles de `Asistente` se integran
     en su pantalla — decisión de UI, no de contrato, libre en
-    [3_plan.md](3_plan.md)).
+    [3_plan.md](3_plan.md)). **Decisión tomada:** las 7 tarjetas más una
+    de "Carga de datos"; los detalles se crean y se cierran desde la
+    ficha del asistente (`/admin/asistentes/{id}`), así su
+    `fk_asistente` nunca se digita (Guía IA, Regla 2).

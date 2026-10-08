@@ -56,6 +56,11 @@ services:
       # Solo corren con el volumen vacío; con una BD ya creada se aplican
       # a mano (ver docs/spec_kit/Versiones/version2/7_quickstart.md).
       - ./db/postgres/migraciones/001_sp_guardar_programa_academico.sql:/docker-entrypoint-initdb.d/z001_sp_guardar_programa_academico.sql:ro
+      # V3: los 2 SP maestro-detalle de la versión (asistente + sus 4
+      # detalles; cierre del lote de carga + novedades). Mismo mecanismo:
+      # 'z002_' y 'z003_' corren después de 'script_' y de 'z001_'.
+      - ./db/postgres/migraciones/002_sp_guardar_asistente.sql:/docker-entrypoint-initdb.d/z002_sp_guardar_asistente.sql:ro
+      - ./db/postgres/migraciones/003_sp_guardar_lote_carga.sql:/docker-entrypoint-initdb.d/z003_sp_guardar_lote_carga.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.

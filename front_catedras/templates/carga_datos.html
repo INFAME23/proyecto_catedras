@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block titulo %}Carga de datos · Cátedras USB{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Carga de datos</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-file-upload text-primary-custom me-2"></i>Carga de asistentes</h1>
+<p class="text-muted">Sube el archivo de personas. Cada fila se guarda por separado: una fila con errores no impide que se guarden las demás, y queda registrada con el motivo del rechazo.</p>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+{% if resultado %}
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <h2 class="h5 fw-bold">Resultado · lote <a href="{{ url_for('admin.lotes_detalle', id_lote_carga=resultado.id_lote_carga) }}">{{ resultado.id_lote_carga }}</a>
+            <span class="badge {{ 'badge-success' if resultado.cerrado else 'badge-danger' }}">{{ 'Cerrado' if resultado.cerrado else 'Abierto' }}</span></h2>
+        <p class="small text-muted mb-3">{{ resultado.nombre_archivo }} · {{ resultado.total_archivo }} filas con datos en el archivo</p>
+        {% with lote = resultado %}{% include 'partials/resumen_lote.html' %}{% endwith %}
+        <h3 class="h6 fw-bold mt-2">Filas rechazadas</h3>
+        {% with novedades = resultado.novedades %}{% include 'partials/tabla_novedades.html' %}{% endwith %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form id="form-carga" method="post" enctype="multipart/form-data" action="{{ url_for('carga.carga_datos') }}">
+            <div class="mb-3">
+                <label class="form-label" for="archivo">Archivo (.xlsx o .csv)</label>
+                <input class="form-control" type="file" id="archivo" name="archivo" accept=".xlsx,.csv" required>
+            </div>
+            <button id="boton-carga" class="btn btn-primary" type="submit"><i class="fas fa-upload me-1"></i>Cargar</button>
+            <span id="aviso-carga" class="text-muted small ms-2 d-none"><i class="fas fa-spinner fa-spin me-1"></i>Cargando fila por fila... con archivos grandes puede tardar varios minutos.</span>
+        </form>
+
+        <hr>
+        <h2 class="h6 fw-bold">Formato del archivo</h2>
+        <p class="small mb-1">La primera fila debe tener los nombres de las columnas (no importan mayúsculas ni tildes). Columnas reconocidas:</p>
+        <p class="small"><code>id_asis</code> · <code>nombres</code> · <code>apellidos</code> · <code>nombre_completo</code> · <code>correo_institucional</code> · <code>correo_personal</code> · <code>celular</code> · <code>es_externo</code> (si/no) · <code>tipo_documento</code> (por defecto CC) · <code>documento</code> · <code>tipo_vinculacion</code> · <code>programa</code> (código, nombre o alias) · <code>periodo</code></p>
+        <p class="small mb-0">El archivo se interpreta aquí; quien decide si una fila es válida es la API. <a href="{{ url_for('static', filename='ejemplos/asistentes_ejemplo.csv') }}">Descargar un archivo de ejemplo</a> (3 filas, la tercera inválida a propósito).</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Mientras el servidor procesa (puede tardar), se desactiva el botón para
+// no enviar el archivo dos veces y se muestra un aviso.
+document.getElementById('form-carga').addEventListener('submit', function () {
+    document.getElementById('boton-carga').disabled = true;
+    document.getElementById('aviso-carga').classList.remove('d-none');
+});
+</script>
+{% endblock %}

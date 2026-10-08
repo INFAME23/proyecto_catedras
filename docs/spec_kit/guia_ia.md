@@ -13,8 +13,11 @@ Cuando una operación de negocio crea o reemplaza un **maestro junto con
 sus detalles** en una sola petición del cliente, esa operación se resuelve
 con **un único `CREATE PROCEDURE`** en PostgreSQL que inserta/actualiza
 maestro y detalles **en una sola transacción**. El repositorio lo invoca
-con `CALL` (o `SELECT * FROM` si el SP usa `INOUT`/`RETURNS TABLE`) a
-través de Dapper — nunca con dos `INSERT` sueltos desde C#.
+con `CALL` a través de Dapper — nunca con dos `INSERT` sueltos desde C#.
+Si el procedimiento devuelve un valor (p. ej. el id generado), lo hace con
+un parámetro `INOUT`: el `CALL` responde una fila con ese valor y Dapper la
+lee con `QuerySingleAsync<T>` (así lo hace `sp_guardar_asistente`, v3).
+(`SELECT * FROM` y `RETURNS TABLE` son de `FUNCTION`, no de `PROCEDURE`.)
 
 **No aplica** cuando el detalle se crea en un momento distinto al maestro,
 por su cuenta (ej. agregar un alias a un programa ya existente semanas
@@ -23,14 +26,16 @@ después): ahí cada tabla conserva su propio CRUD normal, porque no hay
 
 Patrón de nombre: `sp_guardar_<maestro>` — parámetros del maestro +
 un parámetro `jsonb` con el arreglo de detalles (mismo estilo que los SP
-que ya trae la BD, ej. `sp_responder_encuesta`).
+que ya trae la BD, ej. `sp_responder_encuesta`). Se admite abreviar el
+nombre del maestro cuando es largo (`sp_guardar_lote_carga` para
+`lote_carga_asistente`).
 
 **Maestro-detalle identificados en el proyecto:**
 | Maestro | Detalle(s) | Versión |
 |---|---|---|
 | `programa_academico` | `alias_programa` | V2 (retrofit hecho: `sp_guardar_programa_academico`) |
-| `asistente` | `documento_asistente`, `vinculacion_asistente`, `programa_asistente`, `consentimiento_datos` | V3 |
-| `lote_carga_asistente` | `novedad_carga` | V3 |
+| `asistente` | `documento_asistente`, `vinculacion_asistente`, `programa_asistente`, `consentimiento_datos` | V3 (hecho: `sp_guardar_asistente`, 4 parámetros `jsonb`) |
+| `lote_carga_asistente` | `novedad_carga` | V3 (hecho: `sp_guardar_lote_carga`, al CERRAR el lote — ADR D15) |
 
 ## Regla 2 — Las claves foráneas se seleccionan, no se digitan
 
@@ -46,10 +51,10 @@ cifrado reversible. El hash se calcula en el **servicio**, nunca en el
 controlador ni en el repositorio. Se compara con `BCrypt.Verify`, nunca
 comparando el hash manualmente.
 
-## Estado de cumplimiento (revisado 2026-10-07)
+## Estado de cumplimiento (revisado 2026-10-07, al construir la V3)
 
-| Regla | V1/V2 actuales | Acción |
+| Regla | V1/V2/V3 actuales | Acción |
 |---|---|---|
-| 1. SP maestro-detalle | `programa_academico`/`alias_programa`: **retrofit hecho** con `sp_guardar_programa_academico` (2026-10-07) | Ninguna — ver Fase 20b de `Versiones/version2/8_tasks.md` y ADR D14 |
-| 2. FK = select | Ya cumple en todos los formularios de admin | Ninguna |
+| 1. SP maestro-detalle | V2: `sp_guardar_programa_academico` (ADR D14). V3: `sp_guardar_asistente` y `sp_guardar_lote_carga` (Fase 22 de `Versiones/version3/8_tasks.md`) | Ninguna |
+| 2. FK = select | Cumple en todos los formularios de admin. En V3, el `fk_asistente` de los detalles (14.811 personas: un `<select>` no es viable) no se digita: lo fija la URL de la ficha del asistente | Ninguna |
 | 3. BCrypt | No aplica todavía (no hay tabla con contraseña hasta `usuario`, V5) | Queda registrada para cuando se escriba V5 |

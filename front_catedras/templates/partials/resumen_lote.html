@@ -1,0 +1,19 @@
+{#  Los 3 contadores de un lote de carga (leídas / aceptadas / rechazadas).
+    Espera 'lote' con filas_leidas, filas_aceptadas y filas_rechazadas. #}
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card text-center shadow-sm"><div class="card-body">
+            <div class="h3 fw-bold mb-0">{{ lote.filas_leidas }}</div><div class="text-muted small">Filas leídas</div>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center shadow-sm"><div class="card-body">
+            <div class="h3 fw-bold mb-0 text-success">{{ lote.filas_aceptadas }}</div><div class="text-muted small">Aceptadas</div>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center shadow-sm"><div class="card-body">
+            <div class="h3 fw-bold mb-0 text-danger">{{ lote.filas_rechazadas }}</div><div class="text-muted small">Rechazadas</div>
+        </div></div>
+    </div>
+</div>

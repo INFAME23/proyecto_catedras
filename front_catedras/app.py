@@ -9,6 +9,7 @@ from routes.admin import admin_bp
 from routes.ponente import ponente_bp
 from routes.estudiante import estudiante_bp
 from routes.auth import auth_bp
+from routes.carga import carga_bp   # v3: pantalla de carga de datos
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -24,6 +25,7 @@ app.register_blueprint(auth_bp, url_prefix='/')
 app.register_blueprint(admin_bp, url_prefix='/admin')
 app.register_blueprint(ponente_bp, url_prefix='/ponente')
 app.register_blueprint(estudiante_bp, url_prefix='/estudiante')
+app.register_blueprint(carga_bp, url_prefix='/')
 
 
 @app.errorhandler(404)

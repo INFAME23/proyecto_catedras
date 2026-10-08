@@ -1,6 +1,6 @@
 # Modelo de datos — Versión 3: personas y carga de asistentes
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Construida y verificada (2026-10-07)** — ver nota de [2_spec.md](2_spec.md); correcciones al borrador en el ADR D19 de [4_research.md](4_research.md).
 
 ## 1. Las 7 tablas de esta versión y su cadena de FK
 
@@ -52,13 +52,18 @@ public class LoteCargaAsistente
     public int FilasAceptadas { get; set; }
     public int FilasRechazadas { get; set; }
     public string? Observaciones { get; set; }
+    public bool EstaCerrado =>                          // calculada, no es columna
+        FilasLeidas > 0 || FilasAceptadas > 0 || FilasRechazadas > 0 || Observaciones is not null;
 }
 ```
 
 **"Ya cerrado" no es una columna explícita:** se infiere por
 convención — un lote recién abierto tiene los 3 contadores en 0 y
 `observaciones` nulo; el servicio (`ServicioLoteCargaAsistente.CerrarAsync`)
-rechaza (400) cerrar un lote cuyo `filas_leidas` ya sea mayor que 0.
+rechaza (400) cerrar un lote con algún contador mayor que 0 u
+`observaciones` con valor (propiedad calculada `EstaCerrado` del modelo,
+que la API devuelve como `"cerrado"`). **(corregido: el borrador solo
+miraba `filas_leidas`; ver ADR D19.)**
 
 ### 2.2 `asistente`
 
@@ -80,8 +85,10 @@ rechaza (400) cerrar un lote cuyo `filas_leidas` ya sea mayor que 0.
 | `fk_lote_carga` | `BIGINT` | Opcional — FK a `lote_carga_asistente.id_lote_carga`, `ON DELETE SET NULL` |
 
 Restricción adicional: `chk_asistente_externo` —
-`(es_externo = false AND id_asis IS NOT NULL) OR es_externo = true`
-(RF101 de [2_spec.md](2_spec.md): no se revalida en C#, se deja fallar).
+`(es_externo = false AND id_asis IS NOT NULL) OR es_externo = true`.
+Un externo PUEDE tener `id_asis` (no son excluyentes). **(corregido)** En
+`POST`/`PUT` el servicio valida este cruce y "al menos un correo" (→ 400,
+RF101, ADR D19); el `CHECK` queda como última muralla (p. ej. en `PATCH`).
 
 ```csharp
 public class Asistente
@@ -105,13 +112,15 @@ public class Asistente
 | Tabla (versión) | Regla |
 |---|---|
 | `documento_asistente`, `vinculacion_asistente`, `programa_asistente`, `consentimiento_datos` (v3, estas mismas) | `ON DELETE CASCADE` |
+| `clave_acceso` (v5, ya sembrada: 167 filas) | `ON DELETE CASCADE` |
 | `usuario` (v5, ya sembrada: 1 fila) | `ON DELETE RESTRICT` |
 | `ponencia` (v4, aún sin datos) | `ON DELETE RESTRICT` |
-| `registro_asistencia` (v5, aún sin datos) | `ON DELETE RESTRICT` |
+| `registro_asistencia` (v5, **ya sembrada: 168 filas** — corregido) | `ON DELETE RESTRICT` |
 
 Como en v2, `RESTRICT` gana sobre `CASCADE` en la misma sentencia: si
-el asistente tiene `usuario`, su `DELETE` falla con 500 **antes** de
-que la cascada hacia sus 4 detalles llegue a ejecutarse.
+el asistente tiene `usuario` o `registro_asistencia` (p. ej. el asistente
+1), su `DELETE` falla con 500 **antes** de que la cascada hacia sus 4
+detalles llegue a ejecutarse.
 
 #### 2.2.1 Maestro-detalle con 4 tablas (retrofit del mismo día, Guía IA · Regla 1)
 
@@ -125,8 +134,9 @@ CREATE OR REPLACE PROCEDURE catedras.sp_guardar_asistente(
     IN p_id_asis       varchar(15),
     IN p_nombres       varchar(100),
     IN p_apellidos     varchar(100),
-    IN p_correo_inst   citext DEFAULT NULL,
-    IN p_correo_pers   citext DEFAULT NULL,
+    IN p_nombre_completo_asis varchar(200) DEFAULT NULL,  -- (agregado al construir, D19)
+    IN p_correo_inst   varchar(254) DEFAULT NULL,  -- texto; al insertar se convierte a citext
+    IN p_correo_pers   varchar(254) DEFAULT NULL,
     IN p_celular       varchar(20) DEFAULT NULL,
     IN p_es_externo    boolean DEFAULT false,
     IN p_activo        boolean DEFAULT true,

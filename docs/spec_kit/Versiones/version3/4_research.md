@@ -1,6 +1,6 @@
 # Decisiones de diseño — Versión 3: personas y carga de asistentes
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Construida y verificada (2026-10-07)** — ver nota de [2_spec.md](2_spec.md); correcciones al borrador en el ADR D19 de [4_research.md](4_research.md).
 
 ## D15 — El cierre del lote de carga es parcial, no todo-o-nada
 
@@ -84,7 +84,36 @@ es la spec de ESTA versión definiéndolo desde el principio, no una
 ampliación de un contrato ya cerrado.
 
 **Consecuencias.** (+) El buscador de administración no descarga toda
-la tabla en cada tecla. (−) Segunda forma de paginar/filtrar en el
+la tabla en cada tecla. Se agregó además `?pagina=` (LIMIT/OFFSET en SQL),
+que [6_contracts.md](6_contracts.md) §9 ya mencionaba. (−) Segunda forma de paginar/filtrar en el
 proyecto (`?q=` en SQL para `Asistente`, todo-en-Flask para `Catedra`)
 — aceptado porque reflejan escalas y usos distintos (3000 vs. 14811+
 filas, público vs. administración), no una inconsistencia accidental.
+
+## D19 — Ajustes al borrador al construir la v3 contra la BD real
+
+**Contexto.** El spec kit de la v3 se escribió como borrador antes de que
+la v2 tuviera su tag. Al construirla (2026-10-07) se contrastó cada regla
+con `db/postgres/script_bdcatedras.sql` (Artículo 5: la BD viene DADA y
+manda) y con las convenciones ya vigentes en v1/v2. Aparecieron
+contradicciones; cada una se resolvió así:
+
+| # | Borrador decía | Realidad / decisión |
+|---|---|---|
+| 1 | `programa_asistente` → `asistente` es `RESTRICT` (criterio 7) | Es `CASCADE` (`fk_progasi_asistente`). Bloquean el `DELETE`: `registro_asistencia` (168 filas sembradas) y `usuario` (1); la prueba usa el asistente 1 |
+| 2 | `chk_asistente_externo` hace excluyentes `id_asis` y `es_externo` | Solo exige `id_asis` si NO es externo; un externo puede tenerlo |
+| 3 | Cruce `id_asis`/`es_externo` → 500 del `CHECK` (RF101) | El criterio 8 exige probarlo SIN PostgreSQL: solo es posible si lo valida el **servicio**. → **400** en `POST`/`PUT` (igual "al menos un correo"); el `CHECK` sigue de última muralla (p. ej. en `PATCH`) |
+| 4 | Body de `cerrar` en camelCase (`filasLeidas`) | Todo el JSON del proyecto es snake_case (y el propio plan §5 lo usaba): `filas_leidas`, `numero_fila`... |
+| 5 | "Lote cerrado" = `observaciones` o contador > 0 (spec) vs. `filas_leidas > 0` (modelo) | Se usa la regla de la spec, que cubre ambas (`LoteCargaAsistente.EstaCerrado`, expuesta como `cerrado`). La pantalla de carga siempre manda `observaciones`, así que incluso un archivo de 0 filas queda cerrado |
+| 6 | `motivo` sin límite en la petición | Es `VARCHAR(200)`: un motivo largo revertiría el cierre ENTERO del lote. Se valida en la petición (422) y el front lo recorta |
+| 7 | (no estaba) | Una novedad por cada fila rechazada (`novedades.length == filas_rechazadas`, 400): consecuencia directa de RNF8 |
+| 8 | Firma del SP sin `nombre_completo_asis` | Se agregó: la carga necesita conservar el nombre tal como llega del ASIS |
+| 9 | `?q=Garcia` en criterio 2 / quickstart | Los nombres sembrados son genéricos ("Asistente ASIS …"): `Garcia` da 204. Se usa `?q=1000445` |
+| 10 | `ConsentimientoDatos?fkAsistente=` usado en el quickstart, ausente en RF112 | Se agregó el filtro |
+| 11 | El front no está en `docker-compose.yml` | Sí lo está desde la v2 (servicio `front`, puerto 5000) |
+
+**Consecuencias.** (+) La spec describe lo que el sistema hace de verdad,
+y cada corrección tiene su causa en la BD o en una convención ya vigente.
+(−) RF101 y el paso 7 del quickstart cambian respecto al borrador
+(500 → 400); se marcan **(corregido)** en [2_spec.md](2_spec.md) para que
+se lean como decisión, no como olvido.

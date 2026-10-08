@@ -1,5 +1,5 @@
 // ==========================================================================
-//  Program.cs  ·  Proyecto Cátedras · Versión 2
+//  Program.cs  ·  Proyecto Cátedras · Versión 3
 // --------------------------------------------------------------------------
 //  Punto de entrada de la API. Aquí ocurren CUATRO cosas y nada más:
 //    1. Se registran los controladores y se personaliza el 422.
@@ -270,6 +270,53 @@ builder.Services.AddScoped<IRepositorioCatedra>(
     _ => new RepositorioCatedraPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioCatedra, ServicioCatedra>();
 
+// ---------------------------- Versión 3 ---------------------------------
+// Personas y carga de asistentes. Mismo patrón: una pareja interfaz ->
+// clase por entidad. Que dos repositorios hagan 'CALL' a un SP (Asistente
+// y LoteCargaAsistente) es un detalle INTERNO suyo: el ensamblador no cambia.
+
+// IRepositorioAsistente -> RepositorioAsistentePostgres (CALL sp_guardar_asistente),
+// IServicioAsistente -> ServicioAsistente (valida id_asis/es_externo y correos).
+builder.Services.AddScoped<IRepositorioAsistente>(
+    _ => new RepositorioAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioAsistente, ServicioAsistente>();
+
+// IRepositorioDocumentoAsistente -> RepositorioDocumentoAsistentePostgres,
+// IServicioDocumentoAsistente -> ServicioDocumentoAsistente.
+builder.Services.AddScoped<IRepositorioDocumentoAsistente>(
+    _ => new RepositorioDocumentoAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioDocumentoAsistente, ServicioDocumentoAsistente>();
+
+// IRepositorioVinculacionAsistente -> RepositorioVinculacionAsistentePostgres,
+// IServicioVinculacionAsistente -> ServicioVinculacionAsistente (llave compuesta, D16).
+builder.Services.AddScoped<IRepositorioVinculacionAsistente>(
+    _ => new RepositorioVinculacionAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioVinculacionAsistente, ServicioVinculacionAsistente>();
+
+// IRepositorioProgramaAsistente -> RepositorioProgramaAsistentePostgres,
+// IServicioProgramaAsistente -> ServicioProgramaAsistente (llave compuesta, D16).
+builder.Services.AddScoped<IRepositorioProgramaAsistente>(
+    _ => new RepositorioProgramaAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioProgramaAsistente, ServicioProgramaAsistente>();
+
+// IRepositorioConsentimientoDatos -> RepositorioConsentimientoDatosPostgres,
+// IServicioConsentimientoDatos -> ServicioConsentimientoDatos (sin editar ni borrar).
+builder.Services.AddScoped<IRepositorioConsentimientoDatos>(
+    _ => new RepositorioConsentimientoDatosPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioConsentimientoDatos, ServicioConsentimientoDatos>();
+
+// IRepositorioLoteCargaAsistente -> RepositorioLoteCargaAsistentePostgres
+// (CALL sp_guardar_lote_carga), IServicioLoteCargaAsistente -> ServicioLoteCargaAsistente.
+builder.Services.AddScoped<IRepositorioLoteCargaAsistente>(
+    _ => new RepositorioLoteCargaAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioLoteCargaAsistente, ServicioLoteCargaAsistente>();
+
+// IRepositorioNovedadCarga -> RepositorioNovedadCargaPostgres (solo lectura),
+// IServicioNovedadCarga -> ServicioNovedadCarga.
+builder.Services.AddScoped<IRepositorioNovedadCarga>(
+    _ => new RepositorioNovedadCargaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioNovedadCarga, ServicioNovedadCarga>();
+
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
@@ -283,8 +330,8 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Json(new
 {
     mensaje = "API Cátedras en línea.",
-    version = "v2",
-    contratos = "docs/spec_kit/Versiones/version2/6_contracts.md",
+    version = "v3",
+    contratos = "docs/spec_kit/Versiones/version3/6_contracts.md",
 }));
 
 // Conecta las rutas de los controladores ([Route("api/Sede")]...).
