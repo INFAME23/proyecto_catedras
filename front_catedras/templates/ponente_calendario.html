@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% import 'partials/macros_sesion.html' as ms %}
+{# ==========================================================================
+   ponente_calendario.html  ·  Front Cátedras · Versión 4
+   Calendario del ponente. Sin login hasta la v5: la persona se ELIGE
+   (buscar -> elegir), no se deduce de una sesión autenticada.
+   ========================================================================== #}
+{% block titulo %}Calendario del ponente · Cátedras USB{% endblock %}
+{% block contenido %}
+<div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
+    <h1 class="fw-bold mb-0"><i class="fas fa-chalkboard-teacher me-2"></i>Calendario del ponente</h1>
+    <p class="text-white-50 mb-0">Sesiones en las que una persona participa como ponente, moderador, invitado u organizador.</p>
+</div>
+
+<div class="alert alert-info small">
+    <i class="fas fa-info-circle me-1"></i>Hasta la v5 no hay inicio de sesión: busca a la persona y abre su calendario.
+</div>
+
+<form class="d-flex gap-2 mb-3" method="get" action="{{ url_for('ponente.inicio') }}">
+    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Buscar persona por nombre, apellido o código ASIS" autocomplete="off">
+    <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
+</form>
+
+{% if personas %}
+<div class="list-group mb-4">
+    {% for a in personas %}
+    <a class="list-group-item list-group-item-action {{ 'active' if asistente and asistente.id_asistente == a.id_asistente }}"
+       href="{{ url_for('ponente.inicio', q=q, asistente=a.id_asistente) }}">
+        {{ a.nombres }} {{ a.apellidos }} <span class="small opacity-75">· id {{ a.id_asistente }}{% if a.id_asis %} · ASIS {{ a.id_asis }}{% endif %}</span>
+    </a>
+    {% endfor %}
+</div>
+{% elif q %}
+<p class="text-muted">Nadie coincide con «{{ q }}».</p>
+{% endif %}
+
+{% if asistente %}
+<div class="card shadow-sm">
+    <div class="card-header fw-bold">
+        <i class="fas fa-user me-2"></i>{{ asistente.nombres }} {{ asistente.apellidos }}
+        <span class="badge badge-secondary ms-1">{{ calendario|length }} sesi{{ 'ón' if calendario|length == 1 else 'ones' }}</span>
+    </div>
+    <div class="card-body p-0">
+        {% if calendario %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Fecha</th><th>Horario</th><th>Cátedra</th><th>Reunión</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+                <tbody>
+                {% for fila in calendario %}
+                <tr>
+                    <td>{{ fila.sesion.inicio|fecha_hora('%Y-%m-%d') }}</td>
+                    <td class="small">{{ fila.sesion.inicio|fecha_hora('%H:%M') }} – {{ fila.sesion.fin|fecha_hora('%H:%M') }}</td>
+                    <td><a href="{{ url_for('catedras.detalle', id_catedra=fila.catedra.id_catedra) }}">{{ fila.catedra.nombre }}</a></td>
+                    <td>{{ fila.sesion.numero_reunion }}</td>
+                    <td>{% for r in fila.roles %}<span class="badge badge-primary me-1">{{ r }}</span>{% endfor %}</td>
+                    <td>{{ ms.estado(fila.sesion.estado) }}</td>
+                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('sesiones.detalle', id_sesion=fila.sesion.id_sesion) }}"><i class="fas fa-eye"></i></a></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">Esta persona no tiene participaciones registradas. Se asignan desde el detalle de cada sesión.</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,10 +1,18 @@
 # Especificación — Versión 4 del proyecto: sesiones y ponencias
 
-> ⚠️ **BORRADOR.** Escrito mientras V2 y V3 todavía no tienen su tag. El
-> Artículo 1 de la constitución dice que la spec siguiente se escribe
-> **después** de cerrar la versión en curso con su tag. Este documento
-> se revisa una vez más contra lo que realmente quedó en V3 antes de
-> considerarse spec oficial — puede cambiar.
+> ✅ **Revisada contra la BD real y construida (2026-10-08).** El borrador
+> original se contrastó con `script_bdcatedras.sql` cargado en PostgreSQL
+> 16 y con el código de V3. Correcciones de esa revisión: la cátedra 3975
+> tiene un **hueco** en su numeración (criterio 2); los 168
+> `registro_asistencia` están todos en la sesión **5712** (criterio 6);
+> **3** sesiones de ejemplo sí traen `fk_encuesta`; se agregan RF125
+> (PATCH), la regla `numero_reunion >= 1` en PUT/PATCH (RF122/RF123) y el
+> ADR **D21** (fechas con hora). Pendiente para cerrar la versión: correr
+> los criterios en Docker y poner el tag `v4` (Fase 37 de
+> [8_tasks.md](8_tasks.md)).
+>
+> Guía operativa para construir/verificar esta versión con un asistente
+> de IA: [guia_ia_v4.md](guia_ia_v4.md).
 >
 > Rige la constitución del proyecto:
 > [../1_constitution.md](../1_constitution.md) y la
@@ -23,7 +31,7 @@
 > |---|---|
 > | **2_spec.md** (este) | QUÉ construir en v4 y sus criterios de aceptación |
 > | [3_plan.md](3_plan.md) | CÓMO: capas de la API, sin SP nuevo esta vez |
-> | [4_research.md](4_research.md) | Decisiones y alternativas *(lectura opcional)* |
+> | [4_research.md](4_research.md) | Decisiones D19-D21 y alternativas *(lectura opcional)* |
 > | [5_data_model.md](5_data_model.md) | Las 2 tablas de esta versión, documentadas |
 > | [6_contracts.md](6_contracts.md) | Contratos de integración |
 > | [7_quickstart.md](7_quickstart.md) | Arranque y smoke test de v4 |
@@ -54,9 +62,12 @@ catedra (v2) ──< sesion >── modalidad, sede, periodo_academico (v1)
 A diferencia de v2 y v3, **v4 no agrega ningún SP nuevo** (Guía IA,
 Regla 1 no aplica aquí: ninguna operación de v4 crea un maestro y sus
 detalles en la misma petición — `sesion` y `ponencia` se crean cada una
-por su cuenta, con un `INSERT` sencillo). Lo único no trivial de esta
-versión es que la BD, no la API, calcula automáticamente el número de
-reunión consecutivo de cada cátedra (ver RF126 y ADR D20).
+por su cuenta, con un `INSERT` sencillo). Lo no trivial de esta versión
+son dos cosas: la BD, no la API, calcula automáticamente el número de
+reunión consecutivo de cada cátedra (ver RF126 y ADR D20), y aparecen
+las primeras columnas con **fecha y hora** (`inicio`, `fin`:
+`TIMESTAMPTZ`), que obligan a decidir cómo viaja la zona horaria (ADR
+D21).
 
 ## 2. Alcance
 
@@ -81,7 +92,8 @@ reunión consecutivo de cada cátedra (ver RF126 y ADR D20).
   (v6): el campo `fk_encuesta` de `sesion` ya apunta a `encuesta` (v1,
   ya construida), así que **no hay** aquí ninguna salvedad de FK
   circular como la de `fk_usuario` en v3 — `fk_encuesta` se expone y
-  funciona desde ya, simplemente ninguna encuesta se responde todavía.
+  funciona desde ya (3 sesiones de ejemplo, 5712-5714, ya traen la
+  encuesta 1), simplemente ninguna encuesta se responde todavía.
 - `lote_migracion`, `detalle_migracion`, `bitacora`, `parametro` (v7).
 
 ## 3. Entidades y requisitos funcionales
@@ -105,16 +117,25 @@ Numeración de RF continúa desde v3 (terminó en RF118).
   `0` → la BD lo calcula automática y consecutivamente para esa
   `fk_catedra` (ver RF126); un valor explícito mayor a 0 se respeta tal
   cual (y compite por la misma restricción `uq_sesion_reunion` si ya
-  existe). `numero_reunion_asis`, `titulo`, `lugar`, `enlace_virtual`,
+  existe → 500). `inicio`/`fin` se reciben **con zona horaria**
+  (`"2026-10-20T14:00:00-05:00"`) y se devuelven en UTC
+  (`"2026-10-20T19:00:00Z"`) — ADR D21. Respuesta:
+  `{estado, mensaje, id_sesion, numero_reunion, creado_en}`, con el
+  `numero_reunion` que **decidió la BD**. `numero_reunion_asis`, `titulo`, `lugar`, `enlace_virtual`,
   `fk_encuesta` opcionales. `cupo` opcional, `> 0` si se envía
   (`[Range(1, int.MaxValue)]`, formato — 422). `estado` opcional, lista
   cerrada (`PROGRAMADA`, `ABIERTA`, `CERRADA`, `MIGRADA`), por defecto
   `PROGRAMADA`. Un `fk_modalidad`/`fk_sede`/`fk_periodo`/`fk_catedra`/
   `fk_encuesta` inexistente → 500 (D9, sin revalidar).
 - **RF122 — Reemplazar** (`PUT .../{idSesion}` con **SesionReemplazo**):
-  igual molde que siempre; inexistente → 404.
+  igual molde que siempre; inexistente → 404. Obligatorias todas las
+  columnas `NOT NULL`, **incluido `numero_reunion` (≥ 1)** y `estado`: el
+  trigger de RF126 es `BEFORE INSERT` y **no corre en un `UPDATE`**, así
+  que un `0` no se reemplazaría por nada y el `CHECK chk_sesion_reunion`
+  lo rechazaría. Mejor un 422 claro en la petición.
 - **RF123 — Actualizar parcialmente** (`PATCH .../{idSesion}`): todo
-  opcional; body vacío → 400; inexistente → 404.
+  opcional; body vacío → 400; inexistente → 404. `numero_reunion`, si
+  llega, ≥ 1 (misma razón que RF122).
 - **RF124 — Eliminar** (`DELETE .../{idSesion}`): `filasEliminadas`;
   inexistente → 404. `ponencia` (de esta misma versión) y
   `enlace_registro` (v5, **ya sembrada** con 9 filas de ejemplo) son
@@ -128,7 +149,10 @@ Numeración de RF continúa desde v3 (terminó en RF118).
 - **RF125 — `fin` debe ser posterior a `inicio`:** se valida en el
   **servicio** (`ArgumentException` → 400) antes de llegar a la BD —
   mismo criterio que `PeriodoAcademico` en v1
-  (`fecha_fin > fecha_ini`), no una novedad de v4. El `CHECK
+  (`fecha_fin > fecha_ini`), no una novedad de v4. Aplica a POST, PUT y
+  PATCH; en el PATCH, si llega **una sola** de las dos fechas, el servicio
+  la combina con la que ya tiene la fila (así "mover el fin antes del
+  inicio guardado" también es 400 y no 500). El `CHECK
   chk_sesion_fechas` de la BD es la última muralla si algo se cuela.
 - **RF126 — Numeración consecutiva automática (ADR D20):** si el
   cliente no manda `numero_reunion` (o manda `0`), la BD lo calcula ella
@@ -139,6 +163,8 @@ Numeración de RF continúa desde v3 (terminó en RF118).
   **no reimplementa** este cálculo en C# (extensión de D9: la BD ya
   resuelve esta regla, y resolverla además en el servicio duplicaría la
   lógica y podría desincronizarse de la BD bajo concurrencia real).
+  Ojo: es `MAX + 1`, **no** "el primer hueco libre" — si la cátedra tiene
+  huecos (la 3975 no tiene la reunión 23), el trigger nunca los rellena.
 
 ### Ponencia
 
@@ -189,7 +215,7 @@ Numeración de RF continúa desde v3 (terminó en RF118).
 
 ## 4. Requisitos no funcionales
 
-Rigen los mismos RNF1-RNF9 de v1-v3, sin cambios. Se añade:
+Rigen los mismos RNF1-RNF9 de v1-v3, sin cambios. Se añaden:
 
 - **RNF10 — Reglas que la BD ya resuelve no se duplican en C# (D9,
   extendido):** la numeración consecutiva de `numero_reunion` (RF126)
@@ -198,14 +224,20 @@ Rigen los mismos RNF1-RNF9 de v1-v3, sin cambios. Se añade:
   un trigger. El servicio no intenta "adivinar" el siguiente número
   antes de insertar ni lo recalcula después — confía en lo que la fila
   insertada trae de vuelta.
+- **RNF11 — Un instante viaja con su zona y se guarda en UTC (ADR D21):**
+  la API acepta `inicio`/`fin` con desfase (`-05:00`), el servicio los
+  convierte a UTC antes del repositorio y las respuestas los devuelven en
+  UTC (`...Z`). Convertir a hora de Colombia es tarea de quien **muestra**
+  (el front), no de la API.
 
 ## 5. Criterios de aceptación
 
 1. `docker compose up -d --build` deja los 24 recursos (22 de v1-v3 + 2
    de v4) respondiendo en `/swagger`.
 2. `GET /api/Sesion?fkCatedra=3975` devuelve las 59 sesiones de ejemplo
-   de esa cátedra, cada una con `numero_reunion` entre 1 y 59 sin
-   huecos ni repetidos.
+   de esa cátedra, ordenadas, con `numero_reunion` entre 1 y **60** sin
+   repetidos — **falta la 23**: es un hueco que ya trae el dato de ejemplo
+   (verificado contra la BD el 2026-10-08), no un error de la API.
 3. `POST /api/Sesion` sin `numero_reunion` sobre una cátedra **sin**
    sesiones de ejemplo (p. ej. `fk_catedra: 5498`) → 200 con
    `numero_reunion: 1`; un segundo `POST` igual sobre la misma cátedra
@@ -218,18 +250,23 @@ Rigen los mismos RNF1-RNF9 de v1-v3, sin cambios. Se añade:
    200 (fila nueva, misma sesión y asistente). `GET
    /api/Ponencia/{fkSesion}/{fkAsistente}/PONENTE` → 200; `DELETE` sobre
    esa misma ruta → `filasEliminadas: 1`; repetir el `GET` → 404.
-6. `DELETE /api/Sesion/{id}` sobre una sesión de ejemplo con
-   `registro_asistencia` ya sembrado (168 filas en total) → 500; la
-   misma prueba sobre una de las 5 sesiones de ejemplo sin ninguna fila
-   de `enlace_registro`/`registro_asistencia`/`lote_migracion` (`id_sesion`
+6. `DELETE /api/Sesion/5712` (la única sesión de ejemplo con
+   `registro_asistencia` — las 168 filas — y con `lote_migracion`) → 500,
+   y la sesión sigue existiendo; la misma prueba sobre una de las 5
+   sesiones de ejemplo sin ninguna fila de
+   `enlace_registro`/`registro_asistencia`/`lote_migracion` (`id_sesion`
    1-5, ver [5_data_model.md](5_data_model.md) §2.1) → 200.
 7. **Prueba de capas ampliada:** `dotnet run --project pruebas` cubre
    las 24 entidades sin PostgreSQL, incluida la validación de
    `fin > inicio` y la asignación/desasignación de `Ponencia` con
    repositorios FALSOS.
 8. El front muestra, en el detalle de una cátedra, el calendario de sus
-   sesiones (fecha, modalidad, estado) y, en el detalle de una sesión,
-   la lista de ponentes con su rol.
+   sesiones (fecha y hora **de Colombia**, modalidad, estado) y, en el
+   detalle de una sesión (`/sesiones/{id}`), la lista de ponentes con su
+   rol y un formulario para asignar/quitar (buscar persona → `<select>`,
+   Regla 2). El **calendario del ponente** (`/ponente/`, mapa de
+   versiones §4) muestra las sesiones de una persona elegida (sin login
+   hasta v5).
 9. El panel de administración (`/admin`) muestra 2 tarjetas nuevas
    (`Sesion` con CRUD completo; `Ponencia` con asignar/desasignar, sin
    "editar").

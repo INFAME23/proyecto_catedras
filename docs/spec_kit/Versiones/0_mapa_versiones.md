@@ -45,6 +45,14 @@ actualizar sus documentos (`version1/`) de "parcial" a "completa", marcar
 la Fase 12 de su `8_tasks.md` como hecha, y hacer el commit con el tag
 `v1` (Artículo 1: solo entonces se escribe la spec siguiente).
 
+### Estado de la V4 (2026-10-08)
+
+Código completo (API, prueba de capas y front, incluido el calendario del
+ponente); su spec kit se revisó contra la BD real y quedó como oficial.
+Falta correr sus criterios en Docker y poner el tag `v4` (Fase 37 de
+`version4/8_tasks.md`). Guía para hacerlo con IA:
+[version4/guia_ia_v4.md](version4/guia_ia_v4.md).
+
 ## 3. Salvedad: la FK circular con `usuario`
 
 `lote_carga_asistente` (V3) y `enlace_registro` (V5) tienen una FK a

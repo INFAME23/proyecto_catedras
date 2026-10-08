@@ -1,6 +1,6 @@
 # Modelo de datos — Versión 4: sesiones y ponencias
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Revisada y construida (2026-10-08)** — ver nota de [2_spec.md](2_spec.md).
 
 ## 1. Cadena de FK de esta versión
 
@@ -15,9 +15,9 @@ Referido también DESDE tablas de versiones futuras, ya sembradas con
 datos de ejemplo (Artículo 5: la BD viene dada completa):
 
 ```
-sesion ←── enlace_registro (v5, 9 filas, CASCADE)
-sesion ←── registro_asistencia (v5, 168 filas, RESTRICT)
-sesion ←── lote_migracion (v7, 5 filas, RESTRICT)
+sesion ←── enlace_registro (v5, 9 filas — sesiones 5712-5714 — CASCADE)
+sesion ←── registro_asistencia (v5, 168 filas — TODAS en la sesión 5712 — RESTRICT)
+sesion ←── lote_migracion (v7, 5 filas — todas en la sesión 5712 — RESTRICT)
 asistente ←── ponencia (esta versión, RESTRICT hacia asistente)
 ```
 
@@ -29,10 +29,10 @@ asistente ←── ponencia (esta versión, RESTRICT hacia asistente)
 |---|---|---|---|---|
 | `id_sesion` | `bigint` | NO | identity | PK |
 | `fk_catedra` | `bigint` | NO | — | FK → `catedra` (v2), `CASCADE` |
-| `numero_reunion` | `smallint` | NO | — | `CHECK >= 1`; lo calcula el trigger si llega `NULL`/`0` (ADR D20) |
+| `numero_reunion` | `smallint` | NO | — | `CHECK >= 1`; lo calcula el trigger si llega `NULL`/`0` **solo en INSERT** (ADR D20) |
 | `numero_reunion_asis` | `smallint` | sí | — | número de reunión del ASIS original, sin FK; de utilidad para v7 (migración), v4 solo lo expone |
 | `titulo` | `varchar(200)` | sí | — | |
-| `inicio` | `timestamptz` | NO | — | `CHECK fin > inicio` |
+| `inicio` | `timestamptz` | NO | — | `CHECK fin > inicio`; entra con zona, se guarda/devuelve en UTC (ADR D21) |
 | `fin` | `timestamptz` | NO | — | |
 | `fk_modalidad` | `varchar(15)` | NO | — | FK → `modalidad` (v1), `RESTRICT` |
 | `fk_sede` | `varchar(15)` | NO | — | FK → `sede` (v1), `RESTRICT` |
@@ -70,17 +70,29 @@ una modalidad/sede/periodo que alguna sesión use); `fk_encuesta` →
 | Tabla | Versión | Filas de ejemplo | Regla | Efecto de `DELETE /api/Sesion/{id}` |
 |---|---|---|---|---|
 | `ponencia` | v4 (esta) | 0 (nace con esta versión) | `CASCADE` | se borran junto con la sesión, sin aviso |
-| `enlace_registro` | v5 | 9 | `CASCADE` | idem — oculto hasta que v5 lo exponga |
-| `registro_asistencia` | v5 | 168 | `RESTRICT` | `DELETE` → 500 si existe al menos una |
-| `lote_migracion` | v7 | 5 | `RESTRICT` | idem |
+| `enlace_registro` | v5 | 9 (sesiones 5712, 5713, 5714) | `CASCADE` | idem — oculto hasta que v5 lo exponga |
+| `registro_asistencia` | v5 | 168 (todas en la 5712) | `RESTRICT` | `DELETE` → 500 si existe al menos una |
+| `lote_migracion` | v7 | 5 (todas en la 5712) | `RESTRICT` | idem |
 
 **Sesiones de ejemplo seguras para pruebas de `DELETE` sin tocar datos
 reales:** `id_sesion` 1-5 (confirmado contra la BD real: ninguna tiene
 fila en `enlace_registro`, `registro_asistencia` ni `lote_migracion`).
+**La sesión bloqueada a propósito:** `id_sesion` **5712** (cátedra 5497,
+estado `MIGRADA`) tiene los 168 `registro_asistencia` y los 5
+`lote_migracion` → es la que demuestra el `RESTRICT` (criterio 6).
 **Cátedras de ejemplo sin ninguna sesión todavía** (útiles para probar
 `numero_reunion` automático desde 1): `id_catedra` 5498, 5500, 5502,
 5503, 5504 — las mismas 5 que v2 ya señalaba como "sin sesiones" al
 documentar el `DELETE` de `Catedra`.
+**La cátedra con más sesiones:** `id_catedra` 3975 (59 sesiones,
+`numero_reunion` 1-60 **sin la 23**: hueco del dato ASIS original; el
+trigger es `MAX + 1` y nunca rellena huecos — un alta automática ahí
+recibe el 61).
+**Asistente seguro para probar `RESTRICT` desde `ponencia` (RF131):**
+`id_asistente` 167 (sin `registro_asistencia` ni `usuario`: si el
+`DELETE` falla, es por la ponencia y por nada más). El asistente 1 **no**
+sirve para esa prueba: ya tiene `registro_asistencia` y fallaría igual
+sin ponencia.
 
 **Modelo C#:**
 ```csharp
@@ -91,8 +103,8 @@ public class Sesion
     public short NumeroReunion { get; set; }          // sin 'required': puede llegar 0 y la BD la reemplaza
     public short? NumeroReunionAsis { get; set; }
     public string? Titulo { get; set; }
-    public required DateTimeOffset Inicio { get; set; }
-    public required DateTimeOffset Fin { get; set; }
+    public required DateTime Inicio { get; set; }       // UTC (ADR D21)
+    public required DateTime Fin { get; set; }          // UTC (ADR D21)
     public required string FkModalidad { get; set; }
     public required string FkSede { get; set; }
     public required string FkPeriodo { get; set; }
@@ -101,7 +113,7 @@ public class Sesion
     public string? EnlaceVirtual { get; set; }
     public int? Cupo { get; set; }
     public string Estado { get; set; } = "PROGRAMADA";
-    public DateTimeOffset CreadoEn { get; set; }        // sin 'required': la pone la BD
+    public DateTime CreadoEn { get; set; }              // sin 'required': la pone la BD (UTC)
 }
 ```
 
@@ -159,11 +171,10 @@ public class Ponencia
   provisto (Artículo 5); v4 no agrega ninguna migración (a diferencia
   de v2 y v3) porque ninguna de sus operaciones es maestro-detalle.
 - `fk_encuesta` se expone y funciona end-to-end desde ya (no hay
-  salvedad de FK circular como la de `fk_usuario` en v3): simplemente
-  ninguna sesión de ejemplo trae una encuesta asociada todavía
-  (`fk_encuesta` es `NULL` en las 5714 filas sembradas), porque esa
-  asociación es un dato de negocio que v6 empezará a poblar, no una
-  limitación técnica de v4.
+  salvedad de FK circular como la de `fk_usuario` en v3): 3 sesiones de
+  ejemplo (5712, 5713, 5714) ya traen la encuesta 1 y las otras 5711
+  tienen `NULL`. Que nadie la responda todavía es un dato de negocio que
+  v6 empezará a poblar, no una limitación técnica de v4.
 - `docker compose down -v && docker compose up -d --build` resetea las
   37 tablas de siempre, con las 5714 filas de `sesion` y 0 de
   `ponencia` (nace vacía: ningún ponente de ejemplo viene sembrado) de

@@ -1,6 +1,6 @@
 # Decisiones de diseño — Versión 4: sesiones y ponencias
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Revisada y construida (2026-10-08)** — ver nota de [2_spec.md](2_spec.md).
 
 ## D19 — `Ponencia`: llave compuesta sin historial, por eso SÍ admite `DELETE`
 
@@ -44,7 +44,8 @@ más reciente por costumbre.
 ## D20 — La numeración consecutiva de `sesion` no se calcula en C# (extensión de D9)
 
 **Contexto.** `numero_reunion` debe ser consecutivo por `fk_catedra`
-(1, 2, 3, ... sin huecos) y la BD ya resuelve esto con un trigger
+(1, 2, 3, ... para las altas nuevas; el trigger no rellena huecos
+viejos, ver criterio 2) y la BD ya resuelve esto con un trigger
 `BEFORE INSERT` (`fn_trg_sesion_consecutivo`) que, si el valor entrante
 es `NULL` o `0`, calcula `MAX(numero_reunion) + 1` para esa cátedra —
 bloqueando la fila de `catedra` (`FOR UPDATE`) mientras lo hace, para
@@ -77,3 +78,39 @@ negocio" de la numeración no es visible leyendo solo el código C# — hay
 que saber que vive en el trigger (se documenta aquí y en RF126/RNF10
 de [2_spec.md](2_spec.md) exactamente para que no se busque en el lugar
 equivocado).
+
+## D21 — Fechas con hora: la petición acepta zona, el modelo guarda UTC
+
+**Contexto.** `sesion.inicio` y `sesion.fin` son las primeras columnas
+`TIMESTAMPTZ` que la API **escribe** (hasta v3 solo se leían
+`creado_en`/`registrado_en`, que pone la BD). El cliente piensa en hora
+de Colombia ("la sesión es a las 14:00"); la BD guarda un instante.
+
+**Opciones evaluadas:**
+(a) `DateTimeOffset` de punta a punta (petición, modelo, parámetro de
+Dapper);
+(b) `DateTime` sin zona (`Kind = Unspecified`) y "se entiende que es hora
+de Colombia";
+(c) `DateTimeOffset?` solo en la **petición** (acepta `-05:00`) y
+`DateTime` en **UTC** en el modelo, como ya es `CreadoEn` desde la v2.
+
+**Decisión: (c).** Revisado en el código fuente de las versiones que usa
+el proyecto: Dapper 2.1.66 mapea `DateTimeOffset` a
+`DbType.DateTimeOffset`, y Npgsql 9 **rechaza** escribir un
+`DateTimeOffset` con desfase distinto de cero en `timestamptz` ("only
+offset 0 (UTC) is supported") — (a) fallaría con cualquier hora de
+Colombia. (b) también falla: Npgsql rechaza un `DateTime` sin `Kind`
+para `timestamptz`, y además pierde el dato de la zona. Con (c), Dapper
+no fija `DbType` para `DateTime` y Npgsql infiere `timestamptz` para
+`Kind = Utc`: escribe sin conversiones. Leer ya funcionaba igual desde
+la v2 (Npgsql devuelve `timestamptz` como `DateTime` UTC).
+
+**Consecuencias.** (+) Un único criterio para todas las fechas con hora
+del proyecto: UTC adentro, zona solo en la frontera. (+) El cliente puede
+mandar la hora "como la piensa" (`14:00-05:00`) sin hacer cuentas.
+(−) Las respuestas salen en UTC (`19:00Z`): quien muestra (el front)
+convierte a hora de Colombia — `servicios/fechas.py`, con desfase fijo
+UTC-5 porque Colombia no tiene horario de verano. (−) Un cliente que
+mande la hora **sin** zona (`"2026-10-20T14:00:00"`) obtiene la zona del
+servidor (UTC en el contenedor): el contrato pide siempre el desfase.
+

@@ -51,10 +51,13 @@ cifrado reversible. El hash se calcula en el **servicio**, nunca en el
 controlador ni en el repositorio. Se compara con `BCrypt.Verify`, nunca
 comparando el hash manualmente.
 
-## Estado de cumplimiento (revisado 2026-10-07, al construir la V3)
+## Estado de cumplimiento (revisado 2026-10-08, al construir la V4)
 
-| Regla | V1/V2/V3 actuales | Acción |
+| Regla | V1-V4 actuales | Acción |
 |---|---|---|
-| 1. SP maestro-detalle | V2: `sp_guardar_programa_academico` (ADR D14). V3: `sp_guardar_asistente` y `sp_guardar_lote_carga` (Fase 22 de `Versiones/version3/8_tasks.md`) | Ninguna |
-| 2. FK = select | Cumple en todos los formularios de admin. En V3, el `fk_asistente` de los detalles (14.811 personas: un `<select>` no es viable) no se digita: lo fija la URL de la ficha del asistente | Ninguna |
+| 1. SP maestro-detalle | V2: `sp_guardar_programa_academico` (ADR D14). V3: `sp_guardar_asistente` y `sp_guardar_lote_carga` (Fase 22 de `Versiones/version3/8_tasks.md`). **V4: no aplica** — `sesion` y `ponencia` se crean cada una por su cuenta, en peticiones distintas (es el caso "No aplica" de arriba); no hay migración nueva | Ninguna |
+| 2. FK = select | Cumple en todos los formularios de admin. En V3, el `fk_asistente` de los detalles (14.811 personas: un `<select>` no es viable) no se digita: lo fija la URL de la ficha del asistente. En V4: `fk_catedra` de una sesión lo fija la URL (`?fk_catedra=`, se entra desde la cátedra); `fk_asistente` de una ponencia sale de un `<select>` llenado con una búsqueda (`?q=`); modalidad, sede, periodo y encuesta, de `<select>` con el catálogo | Ninguna |
 | 3. BCrypt | No aplica todavía (no hay tabla con contraseña hasta `usuario`, V5) | Queda registrada para cuando se escriba V5 |
+
+Guía específica de la V4 (orden de lectura, prompts por fase, trampas):
+[Versiones/version4/guia_ia_v4.md](Versiones/version4/guia_ia_v4.md).

@@ -40,6 +40,7 @@
                         <td>{{ c.fk_dependencia or '—' }}</td>
                         <td><span class="badge {{ 'badge-success' if c.activo else 'badge-danger' }}">{{ 'Sí' if c.activo else 'No' }}</span></td>
                         <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.sesiones_listar', fk_catedra=c.id_catedra) }}" title="Sesiones (v4)"><i class="fas fa-calendar-check"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.catedras_editar', id_catedra=c.id_catedra) }}"><i class="fas fa-edit"></i></a>
                             <form class="d-inline" method="post" action="{{ url_for('admin.catedras_eliminar', id_catedra=c.id_catedra) }}"
                                   onsubmit="return confirm('¿Eliminar la cátedra {{ c.id_catedra }}? También se borrarán sus SESIONES (ON DELETE CASCADE).');">

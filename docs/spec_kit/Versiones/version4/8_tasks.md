@@ -1,10 +1,15 @@
 # Tareas — Versión 4: sesiones y ponencias
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md). Igual que el
-> `8_tasks.md` de v3, ninguna casilla está marcada: es un plan, no un
-> registro de trabajo ya hecho. Se marcan a medida que cada fase se
-> construye y se verifica contra Docker + PostgreSQL reales (Artículo
-> 1).
+> ✅ **Construida el 2026-10-08** — ver nota de [2_spec.md](2_spec.md).
+> Las casillas marcadas `[x]` son código escrito. Cada fase dice además
+> **qué se verificó y dónde**: el SQL de los repositorios se ejecutó
+> contra la BD real (PostgreSQL 16 con `script_bdcatedras.sql` y las 3
+> migraciones) y el front se probó de punta a punta contra esa BD; lo que
+> exige el SDK de .NET (`dotnet run`, Swagger, smoke test en Docker)
+> queda marcado como **pendiente** y es lo primero que se corre en la
+> Fase 37 (Artículo 1: la versión se cierra solo en Docker).
+>
+> Guía para hacerlo con un asistente de IA: [guia_ia_v4.md](guia_ia_v4.md).
 >
 > Continúa la numeración de fases de
 > [version3/8_tasks.md](../version3/8_tasks.md) (termina en Fase 31).
@@ -24,34 +29,36 @@
 > (v2), `Modalidad`/`Sede`/`PeriodoAcademico`/`Encuesta` (v1), todas ya
 > construidas.
 
-- [ ] `Modelos/Sesion.cs` — `IdSesion` y `CreadoEn` sin `required`;
+- [x] `Modelos/Sesion.cs` — `IdSesion` y `CreadoEn` sin `required`;
       `NumeroReunion` sin `required` (puede llegar `0`, lo reemplaza la
       BD).
-- [ ] `Peticiones/Sesion{Crear,Reemplazo,Actualizar}.cs` — `Cupo` con
+- [x] `Peticiones/Sesion{Crear,Reemplazo,Actualizar}.cs` — `Cupo` con
       `[Range(1, int.MaxValue)]`; `Estado` con
       `[RegularExpression]` sobre la lista cerrada; **ninguna de las 3**
       valida `fin > inicio` con una anotación (es cruce de dos campos
       del mismo body, le toca al servicio — RF125).
-- [ ] `Repositorios/IRepositorioSesion.cs` +
+- [x] `Repositorios/IRepositorioSesion.cs` +
       `RepositorioSesionPostgres.cs` — `ObtenerTodosAsync` recibe
       `long? fkCatedra` y lo usa en un `WHERE` solo si no es `null`;
       `CrearAsync` usa `RETURNING id_sesion, numero_reunion, creado_en`
       (código exacto en §4.1 de [3_plan.md](3_plan.md)) y **no**
       recalcula `numero_reunion` en ningún punto del C#.
-- [ ] `Servicios/IServicioSesion.cs` + `ServicioSesion.cs` —
+- [x] `Servicios/IServicioSesion.cs` + `ServicioSesion.cs` —
       `CrearAsync`/`ReemplazarAsync`/`ActualizarAsync` validan
       `fin > inicio` (`ArgumentException` si no) ANTES de llamar al
       repositorio.
-- [ ] `Controllers/SesionController.cs` — 6 endpoints; `GET` lista
+- [x] `Controllers/SesionController.cs` — 6 endpoints; `GET` lista
       recibe `[FromQuery] long? fkCatedra` además de `limite`.
-- [ ] `Program.cs` — registrar la pareja nueva.
+- [x] `Program.cs` — registrar la pareja nueva.
 
-**Verificación planeada** (contra PostgreSQL real): `GET
-/api/Sesion?fkCatedra=3975` → 59 filas, `numero_reunion` 1-59 sin
-huecos; `POST` sin `numero_reunion` sobre `fk_catedra: 5498` (sin
-sesiones de ejemplo) → `numero_reunion: 1`, y un segundo `POST` igual →
-`numero_reunion: 2`; `POST` con `fin` anterior a `inicio` → 400, sin
-fila nueva en la BD; un `fk_modalidad`/`fk_sede`/`fk_periodo`
+**Verificado (2026-10-08, SQL de `RepositorioSesionPostgres` como
+sentencias preparadas con los tipos que manda Npgsql):** `?fkCatedra=3975`
+→ 59 filas, `numero_reunion` 1-60 **con hueco en la 23** (spec
+corregida); `INSERT` con `numero_reunion = 0` sobre 5498 → 1 y luego 2;
+sobre 3975 → 61; número explícito repetido → `uq_sesion_reunion`;
+`UPDATE` de `estado`/`fin` con `timestamptz` OK.
+**Pendiente en Docker:** las mismas llamadas por HTTP (incluido el 400 de
+`fin` anterior a `inicio`, que es del servicio C#) y un `fk_modalidad`
 inexistente → 500.
 
 ## Fase 33 — La aplicación (capas de `Ponencia`)
@@ -63,38 +70,38 @@ inexistente → 500.
 > de no copiar por costumbre el patrón de "cerrar" de v3 donde no
 > corresponde (ver ADR D19 antes de empezar esta fase).
 
-- [ ] `Modelos/Ponencia.cs` — SIN propiedad `Id`: la llave primaria son
+- [x] `Modelos/Ponencia.cs` — SIN propiedad `Id`: la llave primaria son
       sus 3 columnas de negocio.
-- [ ] `Peticiones/PonenciaCrear.cs` — **única** petición de esta
+- [x] `Peticiones/PonenciaCrear.cs` — **única** petición de esta
       entidad (mismo criterio que `AliasProgramaCrear`/
       `ConsentimientoDatosCrear`): `fk_sesion`, `fk_asistente`
       obligatorios; `rol` opcional con `[RegularExpression]` sobre la
       lista cerrada, por defecto `PONENTE`.
-- [ ] `Repositorios/IRepositorioPonencia.cs` +
+- [x] `Repositorios/IRepositorioPonencia.cs` +
       `RepositorioPonenciaPostgres.cs` — 4 métodos exactamente (código
       de la interfaz en §4.2 de [3_plan.md](3_plan.md)):
       `ObtenerTodosAsync`, `ObtenerUnoAsync`, `CrearAsync`,
       `EliminarAsync`. **Sin** `ActualizarAsync` en la interfaz (no hay
       nada que actualizar — RF130).
-- [ ] `Servicios/IServicioPonencia.cs` + `ServicioPonencia.cs`.
-- [ ] `Controllers/PonenciaController.cs` — **4** endpoints:
+- [x] `Servicios/IServicioPonencia.cs` + `ServicioPonencia.cs`.
+- [x] `Controllers/PonenciaController.cs` — **4** endpoints:
       `[HttpGet]` lista (con `fkSesion`/`fkAsistente` opcionales),
       `[HttpGet("{fkSesion}/{fkAsistente}/{rol}")]`, `[HttpPost]`,
       `[HttpDelete("{fkSesion}/{fkAsistente}/{rol}")]`. Sin
       `[HttpPut]` ni `[HttpPatch]`.
-- [ ] `Program.cs` — registrar la pareja nueva.
+- [x] `Program.cs` — registrar la pareja nueva.
 
-**Verificación planeada** (contra PostgreSQL real): `POST
-/api/Ponencia` → 200; repetir con la misma llave exacta → 500 (PK
-duplicada); el mismo body con `rol` distinto → 200 (fila nueva); `GET
-/api/Ponencia/{fkSesion}/{fkAsistente}/{rol}` → 200; `DELETE` sobre esa
-misma ruta → `filasEliminadas: 1`; repetir el `GET` → 404; un `GET
-/api/Ponencia/3` (ruta de un solo segmento) → 404 de ASP.NET.
+**Verificado (2026-10-08, SQL de `RepositorioPonenciaPostgres`):**
+`INSERT` → OK; misma llave → `pk_ponencia`; otro rol → fila nueva; los 2
+filtros del listado solos y combinados; `DELETE` por la llave → 1 fila y
+luego 0; borrar la sesión arrastra la ponencia (CASCADE).
+**Pendiente en Docker:** los códigos HTTP (200/500/404) y que
+`GET /api/Ponencia/3` responda 404 de ASP.NET.
 
 ## Fase 34 — Prueba de capas ampliada (criterio de aceptación 7)
 > Depende de las Fases 32-33 (las 2 entidades deben existir).
 
-- [ ] Agregar a `pruebas/Programa.cs` un repositorio FALSO y sus
+- [x] Agregar a `pruebas/Programa.cs` un repositorio FALSO y sus
       verificaciones para `Sesion` y `Ponencia`. Puntos especiales:
       - `RepositorioSesionFalso` simula el `RETURNING`: si recibe
         `numero_reunion: 0`, el repositorio FALSO calcula el consecutivo
@@ -109,16 +116,22 @@ misma ruta → `filasEliminadas: 1`; repetir el `GET` → 404; un `GET
         repositorio falso (PK duplicada), y otro caso confirma que un
         `rol` distinto sí se acepta como fila nueva.
 
-**Verificación planeada**: `dotnet run --project pruebas` → cubre las
-**24** entidades, código de salida 0. Anotar aquí el total final de
-verificaciones pasadas una vez construido.
+**Construida:** 2 secciones nuevas en `pruebas/Programa.cs` (Sesion: 21
+verificaciones; Ponencia: 15) y los repositorios falsos
+`RepositorioSesionFalso` (simula IDENTITY, `now()`, el trigger y
+`uq_sesion_reunion`) y `RepositorioPonenciaFalso`. Sintaxis de los 214
+`.cs` revisada con un parser de C#.
+**Pendiente:** `docker compose exec api dotnet run --project pruebas` →
+anotar aquí el total (v3 tenía 220; se esperan **256**).
 
 ## Fase 35 — Verificación de integridad referencial y reglas de negocio (criterios de aceptación 4-6)
 > Depende de las Fases 32-33. Como en v2 (Fase 18) y v3 (Fase 28), es
 > la fase dedicada exclusivamente a probar lo que la BD hace sola, sin
 > código nuevo.
 
-- [ ] Ejecutar, contra Docker + PostgreSQL reales y EN ESTE ORDEN:
+- [ ] Ejecutar, contra Docker + PostgreSQL reales y EN ESTE ORDEN
+      (a nivel SQL ya se comprobaron los 6 — ver Fases 32-33; aquí se
+      repiten por HTTP):
   1. `POST /api/Sesion` con `fin` anterior a `inicio` → 400, sin fila
      nueva.
   2. `POST /api/Sesion` sin `numero_reunion` dos veces sobre la misma
@@ -127,10 +140,12 @@ verificaciones pasadas una vez construido.
      `rol` distinto → 200.
   4. `DELETE /api/Ponencia/{fkSesion}/{fkAsistente}/{rol}` → 200;
      repetir → 404.
-  5. `DELETE /api/Sesion/1` (segura, sin filas de v5/v7) → 200.
-  6. `DELETE /api/Asistente/{id usado en el paso 3}` (ya es ponente) →
-     500 (`fk_ponencia_asistente`); confirmar que sus documentos de v3
-     siguen intactos.
+  5. `DELETE /api/Sesion/1` (segura, sin filas de v5/v7) → 200;
+     `DELETE /api/Sesion/5712` → 500 y la sesión sigue ahí.
+  6. `DELETE /api/Asistente/167` (usar el **167** en el paso 3: no tiene
+     `registro_asistencia` ni `usuario`) → 500
+     (`fk_ponencia_asistente`); confirmar que su documento de v3 sigue
+     intacto.
 - [ ] `docker compose down -v && docker compose up -d --build` —
       revertir los efectos de arriba antes de seguir con cualquier otra
       prueba manual.
@@ -143,24 +158,34 @@ de aceptación 4-6 de [2_spec.md](2_spec.md).
 > Criterios 8-9 de [2_spec.md](2_spec.md), §5 de [3_plan.md](3_plan.md).
 > Depende de las Fases 32-33 (API completa).
 
-- [ ] `templates/detalle_catedra.html` (v2) — agregar la sección de
+- [x] `templates/detalle_catedra.html` (v2) — agregar la sección de
       calendario: tabla de sesiones (`GET /api/Sesion?fkCatedra={id}`)
       con fecha, modalidad y estado.
-- [ ] `routes/sesiones.py` (o el nombre que fije la implementación) +
-      `templates/detalle_sesion.html` — detalle de una sesión con la
-      lista de ponentes (`GET /api/Ponencia?fkSesion={id}`) y un
-      formulario para asignar uno nuevo (`<select>` de asistentes
-      poblado vía `GET /api/Asistente?q=...`, Regla 2 de la guía IA).
-- [ ] `routes/admin.py` — 2 bloques nuevos (`Sesion` con CRUD completo;
+- [x] `routes/sesiones.py` + `templates/detalle_sesion.html` — detalle
+      de una sesión (`/sesiones/<id>`) con la lista de ponentes
+      (`GET /api/Ponencia?fkSesion={id}`) y un formulario para asignar
+      uno nuevo (`<select>` de asistentes poblado vía
+      `GET /api/Asistente?q=...`, Regla 2 de la guía IA) o quitarlo.
+- [x] `routes/ponente.py` + `templates/ponente_calendario.html` —
+      calendario del ponente (mapa de versiones §4), con la persona
+      elegida por búsqueda hasta que la v5 traiga login.
+- [x] `servicios/fechas.py` (UTC ↔ hora de Colombia, ADR D21),
+      `servicios/api_catedras.llave()` (ruta de llave compuesta) y
+      `templates/partials/macros_sesion.html` (piezas compartidas).
+- [x] `routes/admin.py` — 2 bloques nuevos (`Sesion` con CRUD completo;
       `Ponencia` con asignar/quitar, sin "editar").
-- [ ] `templates/admin/` — templates nuevos siguiendo el layout
+- [x] `templates/admin/` — templates nuevos siguiendo el layout
       existente.
 
-**Verificación planeada**: el detalle de una cátedra con sesiones de
-ejemplo muestra su calendario completo; el detalle de una sesión
-permite asignar un ponente nuevo y lo refleja sin recargar manualmente
-el `<select>`; `/admin/` muestra las 2 tarjetas nuevas con CRUD/
-asignación de punta a punta contra Docker/PostgreSQL reales.
+**Verificado (2026-10-08):** 31 comprobaciones de punta a punta del
+front contra un doble HTTP de la API que ejecuta el mismo SQL sobre la
+BD real: calendario de 3975 (59 filas, horas en hora de Colombia),
+detalle de sesión, buscar → asignar → duplicado (error visible) → otro
+rol → quitar, calendario del ponente, CRUD de sesión en el admin
+(número automático 1 y 2, 400 por fechas con el formulario conservado,
+PUT, DELETE con CASCADE, 5712 bloqueada), y API apagada → error claro en
+las 5 pantallas nuevas.
+**Pendiente en Docker:** repetirlo contra la API .NET real.
 
 ## Fase 37 — Cierre de la v4
 > Última fase. Solo entonces se escribe la spec de la v5 (Artículo 1).

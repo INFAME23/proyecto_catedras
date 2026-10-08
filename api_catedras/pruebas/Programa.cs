@@ -1,6 +1,7 @@
 // ==========================================================================
-//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versiones 1, 2 y 3
-//  (criterio 6 de la v1 · criterio 8 de la v2 · criterio 8 de la v3)
+//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versiones 1, 2, 3 y 4
+//  (criterio 6 de la v1 · criterio 8 de la v2 · criterio 8 de la v3 ·
+//   criterio 7 de la v4)
 // --------------------------------------------------------------------------
 //  "Prueba de capas": se construye ServicioSede pasándole un repositorio
 //  FALSO que guarda las sedes en un diccionario en memoria (implementa
@@ -1167,6 +1168,169 @@ Afirmar("LoteCargaAsistenteCrear no expone los contadores ni fk_usuario",
     new[] { "FilasLeidas", "FilasAceptadas", "FilasRechazadas", "FkUsuario" }
         .All(p => typeof(LoteCargaAsistenteCrear).GetProperty(p) is null));
 
+// ============================================================================
+//  v4 · Prueba de capas: ServicioSesion + repositorio falso
+//  El repositorio falso SIMULA EL TRIGGER (ADR D20): si recibe
+//  numero_reunion = 0, calcula él mismo el consecutivo de la cátedra. Ese
+//  cálculo vive SOLO en el repositorio falso; la prueba comprueba que el
+//  SERVICIO le pasó el 0 tal cual (no lo calculó por su cuenta).
+// ============================================================================
+var repoSesion = new RepositorioSesionFalso();
+var servicioSesion = new ServicioSesion(repoSesion);
+
+Console.WriteLine("\n== v4 · Prueba de capas: ServicioSesion + repositorio falso en memoria ==\n");
+
+var (datosSes, totalSes) = await servicioSesion.ListarAsync(null, null);
+Afirmar("Listar() devuelve las 3 sesiones semilla", totalSes == 3 && datosSes.Count == 3);
+
+var (datosSes3975, _) = await servicioSesion.ListarAsync(3975, null);
+Afirmar("Listar(fkCatedra=3975) trae solo las de esa cátedra, en orden",
+    datosSes3975.Count == 2 && datosSes3975.All(s => s.FkCatedra == 3975)
+    && datosSes3975[0].NumeroReunion == 1 && datosSes3975[1].NumeroReunion == 2);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(limite 0) lanza ArgumentException", () => servicioSesion.ListarAsync(null, 0));
+
+// Hora de Bogotá (-05:00): 14:00 local = 19:00 UTC.
+var inicioBogota = new DateTimeOffset(2026, 10, 20, 14, 0, 0, TimeSpan.FromHours(-5));
+SesionCrear NuevaSesion(DateTimeOffset inicio, DateTimeOffset fin, short? numero = null) => new()
+{
+    FkCatedra = 5498, Inicio = inicio, Fin = fin, NumeroReunion = numero,
+    FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-2",
+};
+
+var (idSes1, numSes1, creadaSes1) = await servicioSesion.CrearAsync(NuevaSesion(inicioBogota, inicioBogota.AddHours(2)));
+Afirmar("Crear() sin numero_reunion: el servicio le pasa 0 al repositorio (no lo calcula)",
+    repoSesion.UltimoNumeroRecibido == 0);
+Afirmar("...y devuelve el número que puso la 'BD' (1, primera de la cátedra)",
+    numSes1 == 1 && idSes1 > 0 && creadaSes1 != default);
+
+var (_, numSes2, _) = await servicioSesion.CrearAsync(NuevaSesion(inicioBogota.AddDays(7), inicioBogota.AddDays(7).AddHours(2)));
+Afirmar("Crear() otra vez en la misma cátedra -> numero_reunion 2", numSes2 == 2);
+
+var (_, numSes7, _) = await servicioSesion.CrearAsync(NuevaSesion(inicioBogota.AddDays(14), inicioBogota.AddDays(14).AddHours(2), 7));
+Afirmar("Crear() con numero_reunion explícito (7) lo respeta tal cual",
+    numSes7 == 7 && repoSesion.UltimoNumeroRecibido == 7);
+
+var ses1 = await servicioSesion.ObtenerAsync(idSes1);
+Afirmar("Crear() guarda las fechas en UTC (14:00 -05:00 -> 19:00 UTC) y estado PROGRAMADA",
+    ses1.Inicio == new DateTime(2026, 10, 20, 19, 0, 0, DateTimeKind.Utc)
+    && ses1.Inicio.Kind == DateTimeKind.Utc && ses1.Estado == "PROGRAMADA");
+
+int creacionesAntes = repoSesion.LlamadasCrear;
+await AfirmarLanza<ArgumentException>(
+    "Crear() con fin anterior a inicio lanza ArgumentException (RF125)",
+    () => servicioSesion.CrearAsync(NuevaSesion(inicioBogota, inicioBogota.AddHours(-1))));
+await AfirmarLanza<ArgumentException>(
+    "Crear() con fin IGUAL a inicio lanza ArgumentException",
+    () => servicioSesion.CrearAsync(NuevaSesion(inicioBogota, inicioBogota)));
+Afirmar("...y en ninguno de los dos casos se llamó al repositorio", repoSesion.LlamadasCrear == creacionesAntes);
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(99999) lanza NoEncontradoExcepcion", () => servicioSesion.ObtenerAsync(99999));
+
+int filasPutSes = await servicioSesion.ReemplazarAsync(idSes1, new SesionReemplazo
+{
+    FkCatedra = 5498, NumeroReunion = 1, Inicio = inicioBogota, Fin = inicioBogota.AddHours(3),
+    FkModalidad = "VIRTUAL", FkSede = "VIRTUAL", FkPeriodo = "2026-2", Estado = "ABIERTA",
+    EnlaceVirtual = "https://ejemplo.edu.co/sala", Cupo = 40,
+});
+var trasPutSes = await servicioSesion.ObtenerAsync(idSes1);
+Afirmar("PUT reemplaza todo (modalidad, estado, enlace, cupo y fin)",
+    filasPutSes == 1 && trasPutSes.FkModalidad == "VIRTUAL" && trasPutSes.Estado == "ABIERTA"
+    && trasPutSes.Cupo == 40 && trasPutSes.Fin == new DateTime(2026, 10, 20, 22, 0, 0, DateTimeKind.Utc));
+
+await AfirmarLanza<ArgumentException>(
+    "PUT con fin anterior a inicio lanza ArgumentException",
+    () => servicioSesion.ReemplazarAsync(idSes1, new SesionReemplazo
+    {
+        FkCatedra = 5498, NumeroReunion = 1, Inicio = inicioBogota, Fin = inicioBogota.AddMinutes(-30),
+        FkModalidad = "VIRTUAL", FkSede = "VIRTUAL", FkPeriodo = "2026-2", Estado = "ABIERTA",
+    }));
+
+int filasPatchSes = await servicioSesion.ActualizarAsync(idSes1, new SesionActualizar { Estado = "CERRADA" });
+var trasPatchSes = await servicioSesion.ObtenerAsync(idSes1);
+Afirmar("PATCH cambia solo 'estado'",
+    filasPatchSes == 1 && trasPatchSes.Estado == "CERRADA" && trasPatchSes.FkModalidad == "VIRTUAL");
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH que manda SOLO 'fin' antes del inicio guardado lanza ArgumentException",
+    () => servicioSesion.ActualizarAsync(idSes1, new SesionActualizar { Fin = inicioBogota.AddHours(-2) }));
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioSesion.ActualizarAsync(idSes1, new SesionActualizar()));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH con fecha a una sesión inexistente lanza NoEncontradoExcepcion",
+    () => servicioSesion.ActualizarAsync(99999, new SesionActualizar { Inicio = inicioBogota }));
+
+Afirmar("DELETE elimina 1 fila", await servicioSesion.EliminarAsync(idSes1) == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioSesion.EliminarAsync(idSes1));
+
+// RNF10 por REFLEXIÓN: la interfaz del repositorio no ofrece ningún método
+// para "calcular el siguiente número"; el número lo decide la BD.
+Afirmar("IRepositorioSesion no declara un método para calcular el consecutivo (ADR D20)",
+    typeof(IRepositorioSesion).GetMethods().All(m => !m.Name.Contains("Siguiente") && !m.Name.Contains("Max")));
+
+// ============================================================================
+//  v4 · Prueba de capas: ServicioPonencia + repositorio falso
+//  LLAVE COMPUESTA SIN VIGENCIA (ADR D19): se asigna y se BORRA; no se
+//  "cierra" ni se edita.
+// ============================================================================
+var servicioPonencia = new ServicioPonencia(new RepositorioPonenciaFalso());
+
+Console.WriteLine("\n== v4 · Prueba de capas: ServicioPonencia + repositorio falso en memoria ==\n");
+
+var ponente = await servicioPonencia.CrearAsync(new PonenciaCrear { FkSesion = 10, FkAsistente = 167 });
+Afirmar("Crear() sin rol asigna PONENTE por defecto", ponente.Rol == "PONENTE");
+
+await AfirmarLanza<InvalidOperationException>(
+    "Crear() con la MISMA llave exacta falla (PK duplicada simulada; en la API real -> 500)",
+    () => servicioPonencia.CrearAsync(new PonenciaCrear { FkSesion = 10, FkAsistente = 167, Rol = "PONENTE" }));
+
+var moderador = await servicioPonencia.CrearAsync(new PonenciaCrear { FkSesion = 10, FkAsistente = 167, Rol = "MODERADOR" });
+Afirmar("Crear() con el mismo asistente y OTRO rol es una fila nueva válida", moderador.Rol == "MODERADOR");
+
+var (datosPonS10, _) = await servicioPonencia.ListarAsync(10, null, null);
+Afirmar("Listar(fkSesion=10) trae las 2 filas del asistente 167", datosPonS10.Count == 2);
+
+var (datosPonA167, _) = await servicioPonencia.ListarAsync(null, 167, null);
+Afirmar("Listar(fkAsistente=167) trae también la semilla (sesión 1)", datosPonA167.Count == 3);
+
+var (datosPonAmbos, _) = await servicioPonencia.ListarAsync(1, 167, null);
+Afirmar("Listar(fkSesion=1, fkAsistente=167) combina los dos filtros", datosPonAmbos.Count == 1);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(limite 0) lanza ArgumentException", () => servicioPonencia.ListarAsync(null, null, 0));
+
+var leida = await servicioPonencia.ObtenerAsync(10, 167, "PONENTE");
+Afirmar("Obtener(10, 167, PONENTE) encuentra la llave exacta", leida.FkSesion == 10 && leida.Rol == "PONENTE");
+
+Afirmar("DELETE por la llave completa elimina 1 fila", await servicioPonencia.EliminarAsync(10, 167, "PONENTE") == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener la llave borrada lanza NoEncontradoExcepcion (404)",
+    () => servicioPonencia.ObtenerAsync(10, 167, "PONENTE"));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion (404)",
+    () => servicioPonencia.EliminarAsync(10, 167, "PONENTE"));
+
+var (datosPonS10b, _) = await servicioPonencia.ListarAsync(10, null, null);
+Afirmar("...y el MODERADOR de la misma sesión sigue ahí (otra fila)",
+    datosPonS10b.Count == 1 && datosPonS10b[0].Rol == "MODERADOR");
+
+// ADR D19 por REFLEXIÓN: lo que NO existe también es la especificación.
+Afirmar("IRepositorioPonencia no declara ObtenerPorIdAsync ni ActualizarAsync, pero SÍ EliminarAsync (D19 ≠ D16)",
+    typeof(IRepositorioPonencia).GetMethod("ObtenerPorIdAsync") is null
+    && typeof(IRepositorioPonencia).GetMethod("ActualizarAsync") is null
+    && typeof(IRepositorioPonencia).GetMethod("EliminarAsync") is not null);
+Afirmar("El modelo Ponencia no tiene propiedad 'Id' (llave compuesta)",
+    typeof(Ponencia).GetProperty("Id") is null && typeof(Ponencia).GetProperty("IdPonencia") is null);
+Afirmar("PonenciaCrear es la ÚNICA petición: no existen PonenciaReemplazo ni PonenciaActualizar",
+    typeof(PonenciaCrear).Assembly.GetType("ApiCatedras.Peticiones.PonenciaReemplazo") is null
+    && typeof(PonenciaCrear).Assembly.GetType("ApiCatedras.Peticiones.PonenciaActualizar") is null);
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -2267,4 +2431,133 @@ class RepositorioNovedadCargaFalso : IRepositorioNovedadCarga
 
     public Task<NovedadCarga?> ObtenerPorIdAsync(long idNovedad) =>
         Task.FromResult(_tabla.FirstOrDefault(n => n.IdNovedad == idNovedad));
+}
+
+
+// ==========================================================================
+//  v4 · Repositorio FALSO de 'Sesion'. Simula lo que hace la BD:
+//   · IDENTITY -> contador '_siguienteId';
+//   · DEFAULT now() -> 'CreadoEn = DateTime.UtcNow';
+//   · EL TRIGGER (ADR D20): numero_reunion 0 -> MAX + 1 de esa cátedra.
+//     Solo AQUÍ, dentro del falso: el servicio no sabe nada de este cálculo;
+//   · uq_sesion_reunion: un número explícito repetido en la cátedra -> error.
+//  Cuenta las llamadas a CrearAsync y guarda el último número RECIBIDO, para
+//  que la prueba compruebe qué le entregó el servicio.
+// ==========================================================================
+class RepositorioSesionFalso : IRepositorioSesion
+{
+    private readonly Dictionary<long, Sesion> _tabla = new();
+    private long _siguienteId = 5715; // en el script real el último id es 5714
+
+    public int LlamadasCrear { get; private set; }
+    public short UltimoNumeroRecibido { get; private set; } = -1;
+
+    public RepositorioSesionFalso()
+    {
+        var inicio = new DateTime(2026, 8, 31, 13, 0, 0, DateTimeKind.Utc);
+        Guardar(new Sesion { IdSesion = 1, FkCatedra = 1, NumeroReunion = 33, Inicio = inicio, Fin = inicio.AddHours(2),
+            FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-1", Estado = "CERRADA" });
+        Guardar(new Sesion { IdSesion = 100, FkCatedra = 3975, NumeroReunion = 2, Inicio = inicio.AddDays(7), Fin = inicio.AddDays(7).AddHours(2),
+            FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-1", Estado = "CERRADA" });
+        Guardar(new Sesion { IdSesion = 99, FkCatedra = 3975, NumeroReunion = 1, Inicio = inicio, Fin = inicio.AddHours(2),
+            FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-1", Estado = "CERRADA" });
+    }
+
+    private void Guardar(Sesion s) => _tabla[s.IdSesion] = s;
+
+    public Task<List<Sesion>> ObtenerTodosAsync(long? fkCatedra, int limite) =>
+        Task.FromResult(_tabla.Values
+            .Where(s => fkCatedra is null || s.FkCatedra == fkCatedra)
+            .OrderBy(s => s.FkCatedra).ThenBy(s => s.NumeroReunion)
+            .Take(limite)
+            .ToList());
+
+    public Task<Sesion?> ObtenerPorIdAsync(long idSesion) =>
+        Task.FromResult(_tabla.TryGetValue(idSesion, out var sesion) ? sesion : null);
+
+    public Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(Sesion sesion)
+    {
+        LlamadasCrear++;
+        UltimoNumeroRecibido = sesion.NumeroReunion;
+
+        if (sesion.NumeroReunion == 0)
+        {
+            // Lo que hace 'fn_trg_sesion_consecutivo': coalesce(max, 0) + 1.
+            var deLaCatedra = _tabla.Values.Where(s => s.FkCatedra == sesion.FkCatedra).ToList();
+            sesion.NumeroReunion = (short)((deLaCatedra.Count == 0 ? 0 : deLaCatedra.Max(s => s.NumeroReunion)) + 1);
+        }
+        else if (_tabla.Values.Any(s => s.FkCatedra == sesion.FkCatedra && s.NumeroReunion == sesion.NumeroReunion))
+        {
+            throw new InvalidOperationException("uq_sesion_reunion (simulado).");
+        }
+
+        sesion.IdSesion = _siguienteId++;
+        sesion.CreadoEn = DateTime.UtcNow;
+        Guardar(sesion);
+        return Task.FromResult((sesion.IdSesion, sesion.NumeroReunion, sesion.CreadoEn));
+    }
+
+    public Task<int> ActualizarAsync(long idSesion, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idSesion, out var s))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("fk_catedra", out var c)) s.FkCatedra = (long)c!;
+        if (datos.TryGetValue("numero_reunion", out var n)) s.NumeroReunion = (short)n!;
+        if (datos.TryGetValue("numero_reunion_asis", out var na)) s.NumeroReunionAsis = (short?)na;
+        if (datos.TryGetValue("titulo", out var t)) s.Titulo = (string?)t;
+        if (datos.TryGetValue("inicio", out var i)) s.Inicio = (DateTime)i!;
+        if (datos.TryGetValue("fin", out var f)) s.Fin = (DateTime)f!;
+        if (datos.TryGetValue("fk_modalidad", out var m)) s.FkModalidad = (string)m!;
+        if (datos.TryGetValue("fk_sede", out var se)) s.FkSede = (string)se!;
+        if (datos.TryGetValue("fk_periodo", out var p)) s.FkPeriodo = (string)p!;
+        if (datos.TryGetValue("fk_encuesta", out var e)) s.FkEncuesta = (long?)e;
+        if (datos.TryGetValue("lugar", out var l)) s.Lugar = (string?)l;
+        if (datos.TryGetValue("enlace_virtual", out var ev)) s.EnlaceVirtual = (string?)ev;
+        if (datos.TryGetValue("cupo", out var cu)) s.Cupo = (int?)cu;
+        if (datos.TryGetValue("estado", out var es)) s.Estado = (string)es!;
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(long idSesion) =>
+        Task.FromResult(_tabla.Remove(idSesion) ? 1 : 0);
+}
+
+// ==========================================================================
+//  v4 · Repositorio FALSO de 'Ponencia' (llave compuesta SIN vigencia).
+//  NO implementa ActualizarAsync: no existe en la interfaz (ADR D19). La
+//  PK duplicada se simula con una excepción, como hace la BD.
+// ==========================================================================
+class RepositorioPonenciaFalso : IRepositorioPonencia
+{
+    private readonly List<Ponencia> _tabla = new()
+    {
+        new Ponencia { FkSesion = 1, FkAsistente = 167, Rol = "INVITADO" },
+    };
+
+    // ¿Esta fila tiene EXACTAMENTE esta llave de 3 columnas?
+    private static bool MismaLlave(Ponencia p, long fkSesion, long fkAsistente, string rol) =>
+        p.FkSesion == fkSesion && p.FkAsistente == fkAsistente && p.Rol == rol;
+
+    public Task<List<Ponencia>> ObtenerTodosAsync(long? fkSesion, long? fkAsistente, int limite) =>
+        Task.FromResult(_tabla
+            .Where(p => (fkSesion is null || p.FkSesion == fkSesion)
+                     && (fkAsistente is null || p.FkAsistente == fkAsistente))
+            .Take(limite)
+            .ToList());
+
+    public Task<Ponencia?> ObtenerUnoAsync(long fkSesion, long fkAsistente, string rol) =>
+        Task.FromResult(_tabla.FirstOrDefault(p => MismaLlave(p, fkSesion, fkAsistente, rol)));
+
+    public Task CrearAsync(Ponencia ponencia)
+    {
+        if (_tabla.Any(p => MismaLlave(p, ponencia.FkSesion, ponencia.FkAsistente, ponencia.Rol)))
+            throw new InvalidOperationException("pk_ponencia duplicada (simulado).");
+        _tabla.Add(ponencia);
+        return Task.CompletedTask;
+    }
+
+    public Task<int> EliminarAsync(long fkSesion, long fkAsistente, string rol) =>
+        // 'RemoveAll' devuelve cuántas quitó: 1 si existía, 0 si no.
+        Task.FromResult(_tabla.RemoveAll(p => MismaLlave(p, fkSesion, fkAsistente, rol)));
 }

@@ -12,8 +12,23 @@
 #  algo que la plantilla pueda mostrar.
 # ==========================================================================
 
+from urllib.parse import quote
+
 from flask import current_app
 import requests
+
+
+def llave(*partes):
+    """v4 · Arma el "id" de un recurso de LLAVE COMPUESTA en la URL.
+
+    'Ponencia' no tiene una columna 'id': su llave son 3 columnas y la API
+    las recibe como 3 segmentos de ruta (ADR D19):
+        llave(10, 167, 'PONENTE') -> '10/167/PONENTE'
+        obtener('Ponencia', llave(10, 167, 'PONENTE'))
+        -> GET /api/Ponencia/10/167/PONENTE
+    'quote' escapa cada segmento por si trae espacios o '/'.
+    """
+    return '/'.join(quote(str(parte), safe='') for parte in partes)
 
 
 class ErrorApi(Exception):

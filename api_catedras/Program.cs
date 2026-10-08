@@ -1,5 +1,5 @@
 // ==========================================================================
-//  Program.cs  ·  Proyecto Cátedras · Versión 3
+//  Program.cs  ·  Proyecto Cátedras · Versión 4
 // --------------------------------------------------------------------------
 //  Punto de entrada de la API. Aquí ocurren CUATRO cosas y nada más:
 //    1. Se registran los controladores y se personaliza el 422.
@@ -317,6 +317,24 @@ builder.Services.AddScoped<IRepositorioNovedadCarga>(
     _ => new RepositorioNovedadCargaPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioNovedadCarga, ServicioNovedadCarga>();
 
+// ---------------------------- Versión 4 ---------------------------------
+// Sesiones y ponencias. Primera versión desde la v1 sin ningún 'CALL' a un
+// SP: los dos repositorios son INSERT/UPDATE/DELETE sencillos. El
+// ensamblador, otra vez, no cambia de forma: una pareja por entidad.
+
+// IRepositorioSesion -> RepositorioSesionPostgres (el número de reunión lo
+// pone el trigger de la BD, ADR D20), IServicioSesion -> ServicioSesion
+// (valida fin > inicio, RF125).
+builder.Services.AddScoped<IRepositorioSesion>(
+    _ => new RepositorioSesionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioSesion, ServicioSesion>();
+
+// IRepositorioPonencia -> RepositorioPonenciaPostgres (llave compuesta SIN
+// vigencia, ADR D19: sí se borra), IServicioPonencia -> ServicioPonencia.
+builder.Services.AddScoped<IRepositorioPonencia>(
+    _ => new RepositorioPonenciaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioPonencia, ServicioPonencia>();
+
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
@@ -330,8 +348,8 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Json(new
 {
     mensaje = "API Cátedras en línea.",
-    version = "v3",
-    contratos = "docs/spec_kit/Versiones/version3/6_contracts.md",
+    version = "v4",
+    contratos = "docs/spec_kit/Versiones/version4/6_contracts.md",
 }));
 
 // Conecta las rutas de los controladores ([Route("api/Sede")]...).

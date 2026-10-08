@@ -1,6 +1,6 @@
 # Contratos de integración — Versión 4: sesiones y ponencias
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Revisada y construida (2026-10-08)** — ver nota de [2_spec.md](2_spec.md).
 >
 > **Documento 6 de 8** del spec kit: cómo se hablan las piezas entre sí
 > (puertos, hosts, variables, healthchecks). Los endpoints HTTP de la
@@ -33,8 +33,17 @@ Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §2.
   `GET/PUT/PATCH/DELETE /api/Sesion/{idSesion}`. `POST`/`PUT`/`PATCH`
   con `fin <= inicio` → **400** (`ArgumentException`, validado en el
   servicio). `numero_reunion` ausente o `0` en `POST` → la BD lo
-  calcula; un valor explícito se respeta. Un `fk_modalidad`/`fk_sede`/
-  `fk_periodo`/`fk_catedra`/`fk_encuesta` inexistente → **500**.
+  calcula; un valor explícito se respeta; en `PUT`/`PATCH` debe ser ≥ 1
+  (si no, **422**). Un `fk_modalidad`/`fk_sede`/`fk_periodo`/
+  `fk_catedra`/`fk_encuesta` inexistente → **500**.
+  - Fechas (ADR D21): se **envían con zona**
+    (`"inicio": "2026-10-20T14:00:00-05:00"`) y se **reciben en UTC**
+    (`"inicio": "2026-10-20T19:00:00Z"`).
+  - Respuesta del `POST`:
+    ```json
+    { "estado": "creada", "mensaje": "Sesión 1 de la cátedra 5498 creada.",
+      "id_sesion": 5715, "numero_reunion": 1, "creado_en": "2026-10-08T16:20:57.588655Z" }
+    ```
 - **`Ponencia` — rutas de llave compuesta, 4 verbos (ADR D19):**
   - `GET /api/Ponencia?fkSesion=&fkAsistente=` — lista, ambos filtros
     opcionales.
@@ -42,8 +51,9 @@ Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §2.
     si existe esa combinación exacta, **404** si no.
   - `POST /api/Ponencia` con body
     `{"fk_sesion": 10, "fk_asistente": 500, "rol": "PONENTE"}` (`rol`
-    opcional, por defecto `PONENTE`). Combinación exacta ya existente
-    → **500** (PK duplicada).
+    opcional, por defecto `PONENTE`) → **200**
+    `{estado, mensaje, ponencia: {fk_sesion, fk_asistente, rol}}`.
+    Combinación exacta ya existente → **500** (PK duplicada).
   - `DELETE /api/Ponencia/{fkSesion}/{fkAsistente}/{rol}` —
     `{estado, mensaje, filasEliminadas}`; combinación inexistente →
     **404**.
@@ -109,13 +119,20 @@ Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §8.
   `GET /api/Sesion?fkCatedra={id}` para mostrar el calendario de esa
   cátedra — no cambia el contrato de `Catedra` en sí, solo agrega una
   llamada nueva desde una plantilla existente.
-- `detalle_sesion.html` (nueva) llama `GET /api/Ponencia?fkSesion={id}`
-  para la lista de ponentes, y `POST /api/Ponencia` desde un formulario
-  simple (seleccionar un asistente existente — `<select>` poblado de
+- `detalle_sesion.html` (nueva, ruta `/sesiones/{id}`) llama
+  `GET /api/Ponencia?fkSesion={id}` para la lista de ponentes (y
+  `GET /api/Asistente/{id}` por cada uno, para el nombre), y
+  `POST /api/Ponencia` / `DELETE /api/Ponencia/{s}/{a}/{rol}` desde un
+  formulario (seleccionar un asistente existente — `<select>` poblado de
   `GET /api/Asistente?q=...`, Regla 2 de la guía IA — y un rol de la
   lista cerrada).
-- El front sigue sin estar en `docker-compose.yml`; `API_BASE_URL`
-  sigue en `http://localhost:8142/api`, sin cambios.
+- `/ponente/` (calendario del ponente) usa `GET /api/Ponencia?fkAsistente=`.
+- El front envía las horas con `-05:00` y muestra las que recibe (UTC)
+  en hora de Colombia (`servicios/fechas.py`).
+- El front **sí** está en `docker-compose.yml` desde la v1 (servicio
+  `front`, puerto 5000, `API_BASE_URL=http://api:8042/api` dentro de la
+  red de Docker); fuera de Docker, `API_BASE_URL` por defecto es
+  `http://localhost:8142/api`. Sin cambios en v4.
 
 ## 10. Reset completo
 

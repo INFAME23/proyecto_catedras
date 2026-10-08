@@ -3,7 +3,7 @@
 {% block contenido %}
 <div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
     <h1 class="fw-bold mb-0"><i class="fas fa-cogs me-2"></i>Administración</h1>
-    <p class="text-white-50 mb-0">Las 22 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2 + 7 de la v3)</p>
+    <p class="text-white-50 mb-0">Las 24 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2 + 7 de la v3 + 2 de la v4)</p>
 </div>
 
 <div class="row g-3">
@@ -219,6 +219,37 @@
                 <i class="fas fa-file-upload fa-2x text-primary-custom mb-2"></i>
                 <h6 class="fw-bold mb-1">Carga de datos</h6>
                 <p class="text-muted small mb-0">Subir el archivo de personas (Excel o CSV).</p>
+            </div>
+        </a>
+    </div>
+</div>
+
+<h2 class="h5 fw-bold mt-5 mb-3"><i class="fas fa-calendar-check text-primary-custom me-2"></i>Sesiones y ponentes <span class="badge badge-primary">v4</span></h2>
+<div class="row g-3">
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.sesiones_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-calendar-check fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Sesión</h6>
+                <p class="text-muted small mb-0">Reuniones de cada cátedra (CRUD; el número lo pone la BD).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.ponencias_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-chalkboard-teacher fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Ponencia</h6>
+                <p class="text-muted small mb-0">Ponentes por sesión: asignar y quitar (sin editar).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100 border-primary" href="{{ url_for('ponente.inicio') }}">
+            <div class="card-body">
+                <i class="fas fa-calendar-alt fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Calendario del ponente</h6>
+                <p class="text-muted small mb-0">Las sesiones de una persona, por fecha.</p>
             </div>
         </a>
     </div>

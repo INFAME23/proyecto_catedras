@@ -1,10 +1,11 @@
 # ==========================================================================
 #  routes/admin.py  ·  Front Cátedras
 # --------------------------------------------------------------------------
-#  Panel de administración: las 22 tablas que ya expone ApiCatedras
+#  Panel de administración: las 24 tablas que ya expone ApiCatedras
 #  (las 10 sin FK de la v1; las 5 de la v2: Facultad, Dependencia,
-#  ProgramaAcademico, AliasPrograma y Catedra; y las 7 de la v3: personas
-#  y lotes de carga, al final del archivo). Cada sección usa
+#  ProgramaAcademico, AliasPrograma y Catedra; las 7 de la v3: personas
+#  y lotes de carga; y las 2 de la v4: Sesion y Ponencia, al final del
+#  archivo). Cada sección usa
 #  formularios HTML normales (los navegadores no mandan PUT/DELETE, así que
 #  el botón "Guardar" hace POST y esta ruta traduce a PUT/DELETE contra la
 #  API con 'requests').
@@ -19,6 +20,9 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from servicios.api_catedras import (ErrorApi, actualizar_parcial, crear, eliminar, listar,
                                     obtener, reemplazar)
+from servicios.fechas import desde_input
+from routes.sesiones import (ROLES_PONENCIA, asignar_ponente, buscar_candidatos, ponentes_de,
+                             quitar_ponente)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -1667,3 +1671,198 @@ def novedades_listar():
         _avisar(ex)
         novedades = []
     return render_template('admin/novedad_lista.html', novedades=novedades)
+
+
+# ==========================================================================
+#  v4 · SESIÓN  (recurso API: "Sesion", clave: id_sesion numérica)
+# --------------------------------------------------------------------------
+#  CRUD completo. Tres decisiones de esta pantalla:
+#   · 'fk_catedra' NO se digita ni sale de un <select> de 5502 cátedras: lo
+#     fija la URL (?fk_catedra=), igual que 'fk_asistente' en la v3 (Regla 2
+#     de la guía IA). Se llega desde el botón "Sesiones" de cada cátedra.
+#   · 'numero_reunion' en el alta se deja VACÍO por defecto: la BD pone el
+#     consecutivo (ADR D20). En la edición es obligatorio (en un UPDATE el
+#     trigger no corre).
+#   · Las horas del formulario (datetime-local, sin zona) se envían con la
+#     zona de Colombia (-05:00); la API las guarda en UTC (ADR D21).
+#  "fin > inicio" NO se revisa aquí: lo valida la API (400) y se muestra.
+# ==========================================================================
+
+ESTADOS_SESION = ['PROGRAMADA', 'ABIERTA', 'CERRADA', 'MIGRADA']
+SESIONES_LIMITE_LISTA = 200
+
+
+def _catalogos_sesion():
+    """Catálogos de la v1 que llenan los <select> del formulario de sesión."""
+    return {
+        'modalidades': _opciones('Modalidad'),
+        'sedes': _opciones('Sede'),
+        'periodos': _opciones('PeriodoAcademico'),
+        'encuestas': _opciones('Encuesta'),
+        'estados': ESTADOS_SESION,
+    }
+
+
+def _leer_form_sesion():
+    """Campos del formulario -> body de la API (los vacíos van como null)."""
+    return {
+        'numero_reunion': _entero_o_none(request.form.get('numero_reunion')),
+        'numero_reunion_asis': _entero_o_none(request.form.get('numero_reunion_asis')),
+        'titulo': _texto_o_none('titulo'),
+        'inicio': desde_input(request.form.get('inicio')),
+        'fin': desde_input(request.form.get('fin')),
+        'fk_modalidad': request.form.get('fk_modalidad', ''),
+        'fk_sede': request.form.get('fk_sede', ''),
+        'fk_periodo': request.form.get('fk_periodo', ''),
+        'fk_encuesta': _entero_o_none(request.form.get('fk_encuesta')),
+        'lugar': _texto_o_none('lugar'),
+        'enlace_virtual': _texto_o_none('enlace_virtual'),
+        'cupo': _entero_o_none(request.form.get('cupo')),
+        'estado': request.form.get('estado') or 'PROGRAMADA',
+    }
+
+
+def _render_sesion_form(modo, sesion, catedra, errores):
+    return render_template('admin/sesion_form.html', modo=modo, sesion=sesion, catedra=catedra,
+                           errores=errores, **_catalogos_sesion())
+
+
+def _catedra_o_none(id_catedra):
+    """La cátedra (para mostrar su nombre), o None si no se pudo leer."""
+    if not id_catedra:
+        return None
+    try:
+        return obtener('Catedra', id_catedra)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return None
+
+
+@admin_bp.route('/sesiones')
+def sesiones_listar():
+    fk_catedra = _entero_o_none(request.args.get('fk_catedra'))
+    try:
+        # Con 5714 sesiones, la API filtra por cátedra en SQL (?fkCatedra=).
+        sesiones = listar('Sesion', limite=SESIONES_LIMITE_LISTA, fkCatedra=fk_catedra)
+    except ErrorApi as ex:
+        _avisar(ex)
+        sesiones = []
+    return render_template('admin/sesion_lista.html', sesiones=sesiones, fk_catedra=fk_catedra,
+                           catedra=_catedra_o_none(fk_catedra), limite=SESIONES_LIMITE_LISTA)
+
+
+@admin_bp.route('/sesiones/nueva', methods=['GET', 'POST'])
+def sesiones_nueva():
+    fk_catedra = _entero_o_none(request.values.get('fk_catedra'))
+    if not fk_catedra:
+        flash('Elige primero la cátedra: botón "Sesiones" en la lista de cátedras.', 'error')
+        return redirect(url_for('admin.catedras_listar'))
+    catedra = _catedra_o_none(fk_catedra)
+
+    if request.method == 'GET':
+        return _render_sesion_form('nueva', {'fk_catedra': fk_catedra}, catedra, [])
+
+    datos = _leer_form_sesion()
+    datos['fk_catedra'] = fk_catedra          # lo fija la URL, no se digita
+    if datos['numero_reunion'] is None:
+        del datos['numero_reunion']            # ausente -> la BD pone el consecutivo
+    try:
+        respuesta = crear('Sesion', datos)
+    except ErrorApi as ex:
+        # 400 (fin <= inicio), 422 (forma) o 500 (FK, número repetido).
+        _avisar(ex)
+        return _render_sesion_form('nueva', datos, catedra, ex.errores)
+
+    flash(f"Sesión creada con id {respuesta['id_sesion']}: la base de datos le asignó "
+          f"el número de reunión {respuesta['numero_reunion']}.", 'exito')
+    return redirect(url_for('admin.sesiones_listar', fk_catedra=fk_catedra))
+
+
+@admin_bp.route('/sesiones/<int:id_sesion>/editar', methods=['GET', 'POST'])
+def sesiones_editar(id_sesion):
+    try:
+        actual = obtener('Sesion', id_sesion)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.sesiones_listar'))
+    catedra = _catedra_o_none(actual['fk_catedra'])
+
+    if request.method == 'GET':
+        return _render_sesion_form('editar', actual, catedra, [])
+
+    datos = _leer_form_sesion()
+    datos['fk_catedra'] = actual['fk_catedra']   # PUT = reemplazo completo; la cátedra no cambia aquí
+    try:
+        reemplazar('Sesion', id_sesion, datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        datos['id_sesion'] = id_sesion
+        return _render_sesion_form('editar', datos, catedra, ex.errores)
+
+    flash(f"Sesión {id_sesion} actualizada.", 'exito')
+    return redirect(url_for('admin.sesiones_listar', fk_catedra=actual['fk_catedra']))
+
+
+@admin_bp.route('/sesiones/<int:id_sesion>/eliminar', methods=['POST'])
+def sesiones_eliminar(id_sesion):
+    fk_catedra = _entero_o_none(request.form.get('fk_catedra'))
+    try:
+        eliminar('Sesion', id_sesion)
+        flash(f"Sesión {id_sesion} eliminada (y sus ponencias, por ON DELETE CASCADE).", 'exito')
+    except ErrorApi as ex:
+        # 500 típico: la sesión ya tiene registros de asistencia o un lote de
+        # migración (RESTRICT). No se borró NADA, ni siquiera sus ponencias.
+        _avisar(ex)
+    return redirect(url_for('admin.sesiones_listar', fk_catedra=fk_catedra))
+
+
+# ==========================================================================
+#  v4 · PONENCIA  (recurso API: "Ponencia", llave compuesta de 3 columnas)
+# --------------------------------------------------------------------------
+#  ADR D19: se ASIGNA y se QUITA; no hay "editar" (las 3 columnas son la
+#  llave). Para cambiar el rol de alguien: quitarlo y asignarlo de nuevo.
+#  Con '?fk_sesion=' la pantalla muestra además el formulario de asignar
+#  (la sesión queda fija por la URL, Regla 2).
+# ==========================================================================
+
+@admin_bp.route('/ponencias')
+def ponencias_listar():
+    fk_sesion = _entero_o_none(request.args.get('fk_sesion'))
+    fk_asistente = _entero_o_none(request.args.get('fk_asistente'))
+    texto = request.args.get('q', '').strip()
+
+    sesion = None
+    if fk_sesion:
+        try:
+            sesion = obtener('Sesion', fk_sesion)
+        except ErrorApi as ex:
+            _avisar(ex)
+
+    try:
+        if sesion:
+            ponencias = ponentes_de(fk_sesion)          # con el nombre de cada persona
+        else:
+            ponencias = listar('Ponencia', limite=200, fkSesion=fk_sesion, fkAsistente=fk_asistente)
+    except ErrorApi as ex:
+        _avisar(ex)
+        ponencias = []
+
+    return render_template('admin/ponencia_lista.html', ponencias=ponencias, sesion=sesion,
+                           fk_sesion=fk_sesion, fk_asistente=fk_asistente, q=texto,
+                           candidatos=buscar_candidatos(texto) if sesion else [],
+                           roles=ROLES_PONENCIA)
+
+
+@admin_bp.route('/ponencias/<int:fk_sesion>/asignar', methods=['POST'])
+def ponencias_asignar(fk_sesion):
+    asignar_ponente(fk_sesion, request.form)
+    return redirect(url_for('admin.ponencias_listar', fk_sesion=fk_sesion))
+
+
+@admin_bp.route('/ponencias/<int:fk_sesion>/quitar', methods=['POST'])
+def ponencias_quitar(fk_sesion):
+    quitar_ponente(fk_sesion, request.form)
+    volver = _entero_o_none(request.form.get('volver_fk_asistente'))
+    if volver:   # se quitó desde el listado filtrado por persona
+        return redirect(url_for('admin.ponencias_listar', fk_asistente=volver))
+    return redirect(url_for('admin.ponencias_listar', fk_sesion=fk_sesion))

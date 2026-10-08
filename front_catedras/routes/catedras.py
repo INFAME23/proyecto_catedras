@@ -13,6 +13,10 @@
 #  Sin JavaScript nuevo y sin cambiar el contrato de la API.
 #
 #  RF93: si la API falla, se MUESTRA el error. Nunca se inventan datos.
+#
+#  v4: el detalle de la cátedra agrega su CALENDARIO de sesiones
+#  (GET /api/Sesion?fkCatedra={id}); cada sesión enlaza a su detalle
+#  (routes/sesiones.py).
 # ==========================================================================
 
 from flask import Blueprint, abort, render_template, request
@@ -97,7 +101,8 @@ def detalle(id_catedra):
         if ex.codigo == 404:
             abort(404)  # cátedra inexistente -> página 404 del front
         return render_template('detalle_catedra.html', error=ex, catedra=None,
-                               dependencia=None, tipo_evento=None), 502
+                               dependencia=None, tipo_evento=None, sesiones=[],
+                               error_sesiones=None), 502
 
     dependencia = None
     tipo_evento = None
@@ -110,5 +115,16 @@ def detalle(id_catedra):
         # La cátedra se muestra igual; el dato secundario que falló, se avisa.
         error = ex
 
+    # v4 · Calendario de la cátedra (criterio 8 de version4/2_spec.md): la
+    # API filtra en SQL con '?fkCatedra=' — nunca se bajan las 5714 sesiones.
+    # Un error aquí se muestra APARTE: la ficha de la cátedra sigue visible.
+    sesiones = []
+    error_sesiones = None
+    try:
+        sesiones = listar('Sesion', fkCatedra=id_catedra)
+    except ErrorApi as ex:
+        error_sesiones = ex
+
     return render_template('detalle_catedra.html', error=error, catedra=catedra,
-                           dependencia=dependencia, tipo_evento=tipo_evento)
+                           dependencia=dependencia, tipo_evento=tipo_evento,
+                           sesiones=sesiones, error_sesiones=error_sesiones)

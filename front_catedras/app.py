@@ -10,6 +10,8 @@ from routes.ponente import ponente_bp
 from routes.estudiante import estudiante_bp
 from routes.auth import auth_bp
 from routes.carga import carga_bp   # v3: pantalla de carga de datos
+from routes.sesiones import sesiones_bp   # v4: detalle de sesión y sus ponentes
+from servicios import fechas               # v4: filtros de fecha y hora
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -19,6 +21,9 @@ CORS(app)
 # Ayudas de sesión para las plantillas (v2: siempre "sin sesión").
 registrar_en(app)
 
+# v4: filtros Jinja '|fecha_hora' y '|para_input' (UTC <-> hora de Colombia).
+fechas.registrar_en(app)
+
 app.register_blueprint(catedras_bp, url_prefix='/')
 app.register_blueprint(registro_bp, url_prefix='/')
 app.register_blueprint(auth_bp, url_prefix='/')
@@ -26,6 +31,7 @@ app.register_blueprint(admin_bp, url_prefix='/admin')
 app.register_blueprint(ponente_bp, url_prefix='/ponente')
 app.register_blueprint(estudiante_bp, url_prefix='/estudiante')
 app.register_blueprint(carga_bp, url_prefix='/')
+app.register_blueprint(sesiones_bp, url_prefix='/')
 
 
 @app.errorhandler(404)

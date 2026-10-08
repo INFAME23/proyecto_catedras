@@ -1,6 +1,6 @@
 # Plan técnico — Versión 4: sesiones y ponencias
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Revisada y construida (2026-10-08)** — ver nota de [2_spec.md](2_spec.md).
 
 ## 1. Stack
 
@@ -14,7 +14,7 @@ de v4 es maestro-detalle, así que no hay ninguna migración en
 ```
 api_catedras/
 ├── Modelos/
-│   ├── Sesion.cs      # 15 propiedades
+│   ├── Sesion.cs      # 16 propiedades; Inicio/Fin/CreadoEn como DateTime en UTC (ADR D21)
 │   └── Ponencia.cs    # 3 propiedades, SIN id (§4.2, ADR D19)
 ├── Peticiones/
 │   ├── SesionCrear.cs / SesionReemplazo.cs / SesionActualizar.cs
@@ -62,11 +62,17 @@ const string sql = @"
     RETURNING id_sesion, numero_reunion, creado_en;";
 ```
 
-Si `numero_reunion` llega en `0` o `null` desde `SesionCrear`, el
-servicio lo pasa igual (no lo convierte a un número calculado por su
-cuenta) — es el trigger `fn_trg_sesion_consecutivo` quien lo reemplaza
-ANTES del `INSERT` real. El C# nunca ve el valor intermedio: solo ve lo
-que `RETURNING` le devuelve, que ya es el definitivo.
+Si `numero_reunion` llega ausente desde `SesionCrear`, el servicio pone
+`0` (no un número calculado por su cuenta) — es el trigger
+`fn_trg_sesion_consecutivo` quien lo reemplaza ANTES del `INSERT` real.
+El C# nunca ve el valor intermedio: solo ve lo que `RETURNING` le
+devuelve, que ya es el definitivo. Por eso `CrearAsync` devuelve la
+tupla `(long IdSesion, short NumeroReunion, DateTime CreadoEn)`.
+
+Consecuencia que no se ve a simple vista: el trigger es `BEFORE INSERT`,
+así que en un `UPDATE` **no corre**. `SesionReemplazo` y
+`SesionActualizar` exigen `numero_reunion >= 1` (`[Range(1, ...)]` →
+422) en vez de dejar que el `CHECK chk_sesion_reunion` responda 500.
 
 ### 4.2 `Ponencia`: llave compuesta SIN el patrón de vigencia de v3 (ADR D19)
 
@@ -93,14 +99,36 @@ corresponde (`DELETE`, `GET` puntual) ya acepta identificar el recurso
 por la URL, así que no hace falta inventar una ruta de acción como
 `/cerrar`.
 
-## 5. Frontend: calendario de cátedra y ponentes
+### 4.3 Fechas con hora: zona en la entrada, UTC adentro (ADR D21)
 
-Sin pantalla nueva dedicada: se extiende `detalle_catedra.html` (v2)
-con la lista de sesiones (`GET /api/Sesion?fkCatedra={id}`) y se agrega
-`detalle_sesion.html` con la lista de ponentes
-(`GET /api/Ponencia?fkSesion={id}`) y un formulario simple para asignar
-uno nuevo. El panel de administración (`/admin`) gana las 2 tarjetas
-estándar.
+Ver [4_research.md](4_research.md) ADR D21. Las peticiones declaran
+`inicio`/`fin` como `DateTimeOffset?` (aceptan `-05:00`); el servicio
+hace `.UtcDateTime` y el modelo `Sesion` guarda `DateTime` con
+`Kind = Utc` — igual que `CreadoEn` en todas las tablas desde la v2.
+Así Dapper (que no fija `DbType` para `DateTime`) y Npgsql (que infiere
+`timestamptz` para un `DateTime` UTC) escriben sin conversiones. El
+PATCH hace la misma conversión dentro de `ACamposEnviados()`.
+
+## 5. Frontend: calendario de cátedra, detalle de sesión y ponente
+
+| Pantalla | Archivo(s) | Llamadas a la API |
+|---|---|---|
+| Calendario dentro del detalle de la cátedra | `routes/catedras.py` · `templates/detalle_catedra.html` | `GET /api/Sesion?fkCatedra={id}` |
+| Detalle de sesión + ponentes (asignar / quitar) | `routes/sesiones.py` · `templates/detalle_sesion.html` | `GET /api/Sesion/{id}`, `GET /api/Ponencia?fkSesion=`, `GET /api/Asistente?q=` (búsqueda), `POST /api/Ponencia`, `DELETE /api/Ponencia/{s}/{a}/{rol}` |
+| Calendario del ponente (sin login hasta v5) | `routes/ponente.py` · `templates/ponente_calendario.html` | `GET /api/Ponencia?fkAsistente=`, `GET /api/Sesion/{id}`, `GET /api/Catedra/{id}` |
+| Admin: Sesión (CRUD) y Ponencia (asignar/quitar) | `routes/admin.py` · `templates/admin/sesion_*.html`, `ponencia_lista.html` | las anteriores + `PUT`/`DELETE /api/Sesion/{id}` |
+
+Piezas compartidas: `servicios/fechas.py` (UTC ↔ hora de Colombia, filtros
+Jinja `|fecha_hora` y `|para_input`), `servicios/api_catedras.llave()`
+(arma `10/167/PONENTE` para la ruta de llave compuesta) y
+`templates/partials/macros_sesion.html` (badge de estado y bloque de
+ponentes, usado por la página pública y por el admin).
+
+**Regla 2 (FK = select):** `fk_catedra` de una sesión lo fija la URL
+(`/admin/sesiones/nueva?fk_catedra=`), igual que `fk_asistente` en v3;
+`fk_asistente` de una ponencia sale de un `<select>` llenado con una
+búsqueda (`?q=`); modalidad, sede, periodo y encuesta, de `<select>` con
+el catálogo completo.
 
 ## 6. Docker: sin cambios de infraestructura
 

@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% import 'partials/macros_sesion.html' as ms %}
+{# ==========================================================================
+   detalle_sesion.html  ·  Front Cátedras · Versión 4
+   Una sesión con sus datos y sus ponentes (criterio 8 de version4/2_spec.md).
+   Las horas llegan de la API en UTC; el filtro '|fecha_hora' las muestra en
+   hora de Colombia (servicios/fechas.py, ADR D21).
+   ========================================================================== #}
+{% block titulo %}Sesión {{ sesion.numero_reunion if sesion else '' }} · Cátedras USB{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('catedras.catalogo') }}">Catálogo</a></li>
+        {% if catedra %}
+        <li class="breadcrumb-item"><a href="{{ url_for('catedras.detalle', id_catedra=catedra.id_catedra) }}">{{ catedra.id_evento_asis }}</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active">{{ 'Sesión ' ~ sesion.numero_reunion if sesion else 'Error' }}</li>
+    </ol>
+</nav>
+
+{% if error %}
+<div class="alert alert-danger">
+    <strong><i class="fas fa-exclamation-triangle me-1"></i>{{ error.mensaje }}</strong>
+    {% if error.detalle %}<div class="small mt-1">{{ error.detalle }}</div>{% endif %}
+</div>
+{% endif %}
+
+{% if sesion %}
+<div class="card shadow-sm mb-4 animate-fade-in">
+    <div class="card-body p-4">
+        <p class="text-muted small mb-1">{{ catedra.nombre if catedra else 'Cátedra ' ~ sesion.fk_catedra }}</p>
+        <h1 class="h3 fw-bold mb-3">
+            <i class="fas fa-calendar-check text-primary-custom me-2"></i>Reunión {{ sesion.numero_reunion }}{% if sesion.titulo %} · {{ sesion.titulo }}{% endif %}
+            {{ ms.estado(sesion.estado) }}
+        </h1>
+        <dl class="row mb-0">
+            <dt class="col-sm-4">Fecha</dt>
+            <dd class="col-sm-8">{{ sesion.inicio|fecha_hora('%Y-%m-%d') }}, de {{ sesion.inicio|fecha_hora('%H:%M') }} a {{ sesion.fin|fecha_hora('%H:%M') }} <span class="text-muted small">(hora de Colombia)</span></dd>
+
+            <dt class="col-sm-4">Modalidad · sede</dt>
+            <dd class="col-sm-8"><span class="badge badge-secondary">{{ sesion.fk_modalidad }}</span> <span class="badge badge-secondary">{{ sesion.fk_sede }}</span></dd>
+
+            <dt class="col-sm-4">Periodo</dt>
+            <dd class="col-sm-8">{{ sesion.fk_periodo }}</dd>
+
+            {% if sesion.lugar %}<dt class="col-sm-4">Lugar</dt><dd class="col-sm-8">{{ sesion.lugar }}</dd>{% endif %}
+            {% if sesion.enlace_virtual %}<dt class="col-sm-4">Enlace</dt><dd class="col-sm-8"><a href="{{ sesion.enlace_virtual }}" target="_blank" rel="noopener">{{ sesion.enlace_virtual }}</a></dd>{% endif %}
+
+            <dt class="col-sm-4">Cupo</dt>
+            <dd class="col-sm-8">{{ sesion.cupo if sesion.cupo else 'Sin límite' }}</dd>
+
+            <dt class="col-sm-4">Número en el ASIS</dt>
+            <dd class="col-sm-8">{{ sesion.numero_reunion_asis if sesion.numero_reunion_asis else '—' }}</dd>
+
+            <dt class="col-sm-4">Encuesta al cierre</dt>
+            <dd class="col-sm-8">{{ 'Encuesta ' ~ sesion.fk_encuesta if sesion.fk_encuesta else 'Ninguna' }}</dd>
+        </dl>
+    </div>
+</div>
+
+{{ ms.ponentes(sesion.id_sesion, ponentes, candidatos, q, roles,
+               url_for('sesiones.detalle', id_sesion=sesion.id_sesion),
+               url_for('sesiones.asignar', id_sesion=sesion.id_sesion),
+               url_for('sesiones.quitar', id_sesion=sesion.id_sesion)) }}
+
+<a class="btn btn-outline-primary" href="{{ url_for('catedras.detalle', id_catedra=sesion.fk_catedra) }}">
+    <i class="fas fa-arrow-left me-1"></i>Volver al calendario de la cátedra
+</a>
+{% endif %}
+{% endblock %}
