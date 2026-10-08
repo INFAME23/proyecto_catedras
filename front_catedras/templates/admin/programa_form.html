@@ -54,6 +54,18 @@
                 <label class="form-check-label" for="activo">Activo</label>
             </div>
 
+            {# Retrofit V2 (Guía IA, Regla 1): alias iniciales, solo al CREAR.
+               Se guardan en la misma transacción que el programa. Para agregar
+               alias a un programa que ya existe se usa "Alias de programa". #}
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="alias">Alias iniciales <span class="text-muted small">(opcional)</span></label>
+                <textarea class="form-control" id="alias" name="alias" rows="3"
+                          placeholder="ingenieria de datos&#10;ing. datos y software">{% if programa and programa.alias %}{% for a in programa.alias %}{{ a.texto_normalizado }}{% if not loop.last %}&#10;{% endif %}{% endfor %}{% endif %}</textarea>
+                <div class="form-text">Uno por línea. Se guardan junto con el programa: si alguno ya existe, no se crea nada (ni el programa ni los alias).</div>
+            </div>
+            {% endif %}
+
             {% if errores %}
             <div class="alert alert-danger py-2">
                 <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>

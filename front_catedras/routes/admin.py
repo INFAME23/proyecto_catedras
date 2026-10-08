@@ -986,14 +986,27 @@ def programas_nuevo():
 
     datos = _leer_form_programa()
     datos['codigo'] = request.form.get('codigo', '').strip()
+    # Retrofit V2 (Guía IA, Regla 1): alias iniciales, UNO POR LÍNEA en el
+    # <textarea>. Se mandan en el MISMO POST que el programa, así la API los
+    # guarda juntos en una sola transacción (SP sp_guardar_programa_academico).
+    # splitlines() parte el texto por renglones; se descartan los vacíos.
+    datos['alias'] = [
+        {'texto_normalizado': linea.strip()}
+        for linea in request.form.get('alias', '').splitlines()
+        if linea.strip()
+    ]
     try:
         crear('ProgramaAcademico', datos)
     except ErrorApi as ex:
-        # Aquí llega, por ejemplo, el 422 de un código en minúscula.
+        # Aquí llega, por ejemplo, el 422 de un código en minúscula, o el
+        # 500 de un alias que ya existe (y entonces NO se creó nada: ni el
+        # programa ni ningún alias).
         _avisar(ex)
         return _render_programa_form('nueva', datos, ex.errores)
 
-    flash(f"Programa '{datos['codigo']}' creado.", 'exito')
+    cantidad = len(datos['alias'])
+    sufijo = f" con {cantidad} alias" if cantidad else ''
+    flash(f"Programa '{datos['codigo']}' creado{sufijo}.", 'exito')
     return redirect(url_for('admin.programas_listar'))
 
 

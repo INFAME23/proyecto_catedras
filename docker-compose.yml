@@ -49,6 +49,13 @@ services:
       # PostgreSQL lo ejecuta la PRIMERA vez que arranca con el volumen
       # vacío. Se monta, NO se genera ni se modifica (5_data_model.md §4).
       - ./db/postgres/script_bdcatedras.sql:/docker-entrypoint-initdb.d/script_bdcatedras.sql:ro
+      # Migraciones PROPIAS del proyecto (Guía IA, Regla 1): se ejecutan
+      # DESPUÉS del script provisto porque initdb corre los archivos en
+      # orden ALFABÉTICO y 'z001_' va después de 'script_'. Sin ese
+      # prefijo, '001_...' correría PRIMERO y fallaría (aún no hay tablas).
+      # Solo corren con el volumen vacío; con una BD ya creada se aplican
+      # a mano (ver docs/spec_kit/Versiones/version2/7_quickstart.md).
+      - ./db/postgres/migraciones/001_sp_guardar_programa_academico.sql:/docker-entrypoint-initdb.d/z001_sp_guardar_programa_academico.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.
