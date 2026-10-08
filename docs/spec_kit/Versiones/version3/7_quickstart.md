@@ -1,6 +1,6 @@
 # Quickstart — Versión 3: personas y carga de asistentes
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Construida y verificada (2026-10-07)** — ver nota de [2_spec.md](2_spec.md); correcciones al borrador en el ADR D19 de [4_research.md](4_research.md).
 >
 > **Documento 7 de 8** del spec kit. Validación del sistema ya
 > construido en v3, sobre lo que dejaron v1 y v2.
@@ -44,7 +44,8 @@ Get-Content db/postgres/migraciones/003_sp_guardar_lote_carga.sql | docker compo
 
 Sin los SP, `POST /api/Asistente` (con detalles) y
 `POST /api/LoteCargaAsistente/{id}/cerrar` responden 500 con
-`procedure catedras.sp_..._api(...) does not exist`.
+`procedure catedras.sp_guardar_asistente(...) does not exist` (o
+`sp_guardar_lote_carga`).
 
 ## 2. Verificación de la API — 10 pasos
 
@@ -61,9 +62,11 @@ docker compose ps
    `NovedadCarga`.
 2. **GET /api/Asistente?limite=5** → 5 de los 14.811 asistentes de
    ejemplo, con `total` reflejando el límite. **GET
-   /api/Asistente?q=Garcia** → solo los asistentes con "Garcia" en
-   nombre, apellido o `id_asis` (filtrado en SQL, confirmar que la
-   respuesta llega rápido incluso sin `?limite=` explícito).
+   /api/Asistente?q=1000445** → solo el asistente con ese texto en
+   nombre, apellido o `id_asis` (filtrado en SQL). Los nombres sembrados
+   son genéricos ("Asistente ASIS 1000445"): buscar un apellido real como
+   "Garcia" responde 204. **GET /api/Asistente?limite=2&pagina=2** →
+   los asistentes 3 y 4.
 3. **Maestro-detalle completo:** `POST /api/Asistente` con
    ```json
    { "nombres": "Prueba", "apellidos": "Uno", "id_asis": "Z9999999",
@@ -81,7 +84,8 @@ docker compose ps
    `GET /api/Asistente/{id}` del segundo intento → `404` (el SP revirtió
    todo, incluidos los 4 detalles).
 4. **Índice único parcial (RF103):** `POST /api/DocumentoAsistente` con
-   `{"fk_asistente": {id}, "fk_tipo_documento": "TI", "numero": "111", "vigente": true}`
+   `{"fk_asistente": {id}, "fk_tipo_documento": "TI", "numero": "11112222", "vigente": true}`
+   (**corregido**: con `"111"` respondería 422 — el número exige 4 a 20 caracteres)
    sobre el asistente del paso 3 (que ya tiene un documento vigente) →
    `500` (`ux_documento_vigente`). `PATCH` el documento del paso 3 a
    `{"vigente": false}` → `200`; repetir el `POST` de este paso → `200`.
@@ -95,26 +99,27 @@ docker compose ps
    /api/LoteCargaAsistente` con `{"nombre_archivo": "prueba.xlsx"}` →
    `200` con `id_lote_carga`; crear 1-2 `Asistente` con ese
    `fk_lote_carga`; luego `POST .../{id}/cerrar` con
-   `{"filasLeidas": 3, "filasAceptadas": 2, "filasRechazadas": 1, "novedades": [{"numeroFila": 2, "contenidoCrudo": "...", "motivo": "correo duplicado"}]}`
+   `{"filas_leidas": 3, "filas_aceptadas": 2, "filas_rechazadas": 1, "novedades": [{"numero_fila": 2, "contenido_crudo": "...", "motivo": "correo duplicado"}]}`
    → `200`; `GET /api/NovedadCarga?fkLoteCarga={id}` muestra esa fila.
    Repetir el mismo `POST .../cerrar` → `400` (ya cerrado).
-7. **`CHECK` de autorreferencia de campos (RF101):** `POST
-   /api/Asistente` con `{"nombres": "X", "apellidos": "Y", "es_externo": false}`
-   (sin `id_asis`) → `500` (`chk_asistente_externo`); con
-   `{"es_externo": true, "id_asis": "ABC"}` (ambos presentes) → también
-   `500` (el `CHECK` exige que sean mutuamente excluyentes, no solo
-   "uno de los dos").
-8. **`RESTRICT`, verificado (si falla):** `DELETE
-   /api/Asistente/{id}` sobre uno de los 14.810 asistentes reales con
-   `programa_asistente` ya sembrado (15.349 filas) → `500`; confirmar
-   con `GET /api/DocumentoAsistente?fkAsistente={id}` que sus
-   documentos de ejemplo SIGUEN ahí (la cascada no llegó a ejecutarse).
+7. **Cruce `id_asis`/`es_externo` (RF101 — corregido, ADR D19):** `POST
+   /api/Asistente` con `{"nombres": "X", "apellidos": "Y", "es_externo": false, "correo_personal": "x@y.co"}`
+   (sin `id_asis`) → `400` del servicio; sin ningún correo → `400`. Un
+   externo CON `id_asis` (`{"es_externo": true, "id_asis": "EXT00001", ...}`)
+   → `200`: el `CHECK chk_asistente_externo` no los hace excluyentes.
+8. **`RESTRICT`, verificado (corregido):** `DELETE /api/Asistente/1`
+   (tiene `registro_asistencia` sembrado) → `500`; confirmar con
+   `GET /api/DocumentoAsistente?fkAsistente=1` que su documento de
+   ejemplo SIGUE ahí (la cascada no llegó a ejecutarse). Ojo:
+   `programa_asistente` es `CASCADE` y no bloquea; bloquean
+   `registro_asistencia` (168 filas), `usuario` (1) y `ponencia`.
    **No** usar el asistente creado en el paso 3 para esta prueba — ese
    sí se puede borrar limpio (ver limpieza, abajo).
 9. **Consentimiento, solo lectura tras crear (RF113):** sobre el
    consentimiento creado en el paso 3, intentar
-   `PUT /api/ConsentimientoDatos/{id}` → `404` de ASP.NET (la ruta no
-   existe, ni `PUT` ni `PATCH` ni `DELETE` están declarados).
+   `PUT /api/ConsentimientoDatos/{id}` → `405` de ASP.NET (la ruta
+   `/{id}` existe solo para `GET`; ni `PUT` ni `PATCH` ni `DELETE` están
+   declarados).
 10. **Reset** (recomendado después de las pruebas anteriores, que
     agregan filas de prueba): `docker compose down -v && docker compose
     up -d --build` → las 22 tablas vuelven a sus datos originales. Si
@@ -124,24 +129,23 @@ docker compose ps
 
 **Prueba de capas (criterio de aceptación 8):**
 ```powershell
-cd api_catedras
-dotnet run --project pruebas
+docker compose exec api dotnet run --project pruebas
 ```
-Ahora cubre las **22** entidades con repositorios FALSOS en memoria,
-incluida la validación de `id_asis`/`es_externo` y los 3 contadores del
-cierre de lote. Termina con código 0 si todo pasa.
+Se corre dentro del contenedor: en Windows, el Control de aplicaciones
+puede bloquear la DLL recién compilada si se corre en el equipo. Cubre
+las **22** entidades con repositorios FALSOS en memoria, incluida la
+validación de `id_asis`/`es_externo` y los 3 contadores del cierre de
+lote. Termina con código 0 si todo pasa (al construir la v3: **220
+pasadas, 0 fallidas**).
 
-## 3. Frontend (`front_catedras/`, aparte del `docker compose` de arriba)
+## 3. Frontend (`front_catedras/`)
 
-Arranque sin cambios respecto a v1/v2
-([version1/7_quickstart.md](../version1/7_quickstart.md) §3):
+**(corregido)** El front es el servicio `front` del mismo
+`docker-compose.yml` (puerto 5000). La v3 agrega `openpyxl` a su
+`requirements.txt`, así que la primera vez hay que reconstruir su imagen:
 
 ```powershell
-cd front_catedras
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-python run.py
+docker compose up -d --build front
 ```
 
 Con la API corriendo (§1-2 de aquí):
@@ -176,7 +180,8 @@ Con la API corriendo (§1-2 de aquí):
 | `POST .../LoteCargaAsistente/{id}/cerrar` responde 500 "procedure ... does not exist" | Igual que arriba, con `003_sp_guardar_lote_carga.sql` |
 | `GET /api/VinculacionAsistente/3` responde 404 | Correcto: esta tabla no tiene `/{id}` (ADR D16) — usar `?fkAsistente=` para listar y `PATCH .../cerrar` con la llave completa para cerrar |
 | `PATCH /api/VinculacionAsistente/cerrar` responde 400 aunque la vinculación existe | Revisar que `fecha_fin` no esté ya puesta (una vinculación cerrada no se "re-cierra") |
-| `DELETE /api/Asistente/{id}` responde 500 en un asistente que "debería poder borrarse" | Normal si tiene `programa_asistente`/`usuario`/`ponencia`/`registro_asistencia` ya sembrados (`RESTRICT`) — usar un asistente creado en la propia prueba, no uno de los 14.810 reales |
+| `DELETE /api/Asistente/{id}` responde 500 en un asistente que "debería poder borrarse" | Normal si tiene `usuario`/`ponencia`/`registro_asistencia` (`RESTRICT`; p. ej. el asistente 1) — `programa_asistente` NO bloquea, es `CASCADE`. Usar un asistente creado en la propia prueba |
 | El buscador de `/admin/asistentes` tarda igual que el catálogo de `Catedra` | Revisar que el front esté mandando `?q=` a la API en cada búsqueda, no descargando todo y filtrando en Flask (eso sería repetir D13 en vez de D18) |
-| La carga de datos "se queda a medias" en un archivo grande | Esperado si el archivo es grande: son N peticiones HTTP secuenciales, una por fila (D15) — no es un error, es el costo aceptado de la carga parcial; revisar la barra de progreso o el conteo en pantalla, no asumir que se colgó |
-| Todo roto | `docker compose down -v && docker compose up -d --build` (API); para el front, confirmar que `API_BASE_URL` siga en `http://localhost:8142/api` |
+| La carga de datos "se queda a medias" en un archivo grande | Esperado si el archivo es grande: son N peticiones HTTP secuenciales, una por fila (D15) — no es un error, es el costo aceptado de la carga parcial; la pantalla muestra "Cargando fila por fila..." mientras procesa (como referencia, 4.000 filas tardan del orden de medio minuto) |
+| La carga dice "la API dejó de responder" | La API se cayó a mitad de la carga: las filas ya aceptadas quedaron guardadas y el lote quedó ABIERTO (sin contadores). Levantar la API y volver a cargar; las filas ya guardadas se rechazarán por `id_asis` duplicado |
+| Todo roto | `docker compose down -v && docker compose up -d --build`; dentro de Docker el front usa `API_BASE_URL=http://api:8042/api` (fuera de Docker, `http://localhost:8142/api`) |

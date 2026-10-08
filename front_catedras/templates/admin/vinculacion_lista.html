@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block titulo %}Vinculaciones · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Vinculación de asistente</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-id-badge text-primary-custom me-2"></i>Vinculaciones de asistentes</h1>
+{# ADR D16: llave compuesta (asistente + tipo + fecha_ini). No hay "editar"
+   ni "eliminar": una vinculación se ABRE y se CIERRA, desde la ficha. #}
+<p class="text-muted small">Las 200 primeras{% if fk_asistente %} del asistente {{ fk_asistente }}{% endif %}. Esta tabla no tiene id propio: una vinculación se abre y se cierra (nunca se edita ni se borra) desde la ficha del asistente.</p>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if vinculaciones %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Asistente</th><th>Tipo</th><th>Desde</th><th>Hasta</th></tr></thead>
+                <tbody>
+                    {% for v in vinculaciones %}
+                    <tr>
+                        <td><a href="{{ url_for('admin.asistentes_detalle', id_asistente=v.fk_asistente) }}">{{ v.fk_asistente }}</a></td>
+                        <td>{{ v.fk_tipo_vinculacion }}</td>
+                        <td>{{ v.fecha_ini }}</td>
+                        <td>{% if v.fecha_fin %}{{ v.fecha_fin }}{% else %}<span class="badge badge-success">Vigente</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay vinculaciones que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

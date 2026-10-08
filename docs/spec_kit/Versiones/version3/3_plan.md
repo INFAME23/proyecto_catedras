@@ -1,6 +1,6 @@
 # Plan técnico — Versión 3: personas y carga de asistentes
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Construida y verificada (2026-10-07)** — ver nota de [2_spec.md](2_spec.md); correcciones al borrador en el ADR D19 de [4_research.md](4_research.md).
 
 ## 1. Stack
 
@@ -37,7 +37,7 @@ api_catedras/
 │   ├── VinculacionAsistenteController.cs  # 3: GET lista, POST, PATCH /cerrar (§4.2)
 │   ├── ProgramaAsistenteController.cs     # 3: GET lista, POST, PATCH /cambiar-estado
 │   ├── ConsentimientoDatosController.cs   # 3: GET lista, GET/{id}, POST
-│   ├── LoteCargaAsistenteController.cs    # 3: GET lista, GET/{id}, POST, POST/{id}/cerrar (4)
+│   ├── LoteCargaAsistenteController.cs    # 4: GET lista, GET/{id}, POST, POST/{id}/cerrar
 │   └── NovedadCargaController.cs          # 2: GET lista, GET/{id}
 ├── Servicios/
 │   ├── IServicioAsistente.cs / ServicioAsistente.cs        # CrearAsync arma los 4 detalles (§4.1)
@@ -57,8 +57,10 @@ api_catedras/
     └── IRepositorioNovedadCarga.cs / RepositorioNovedadCargaPostgres.cs                   # solo ObtenerTodosAsync/ObtenerPorIdAsync
 ```
 
-**`front_catedras/`** (ver §5): nueva ruta `carga_datos` + servicio
-`servicios/carga_asistentes.py` que interpreta el archivo.
+**`front_catedras/`** (ver §5): nueva ruta `carga_datos` (`routes/carga.py`) +
+servicio `servicios/carga_asistentes.py` que interpreta el archivo
+(`openpyxl`, agregado a `front_catedras/requirements.txt`; la API no
+cambia de paquetes).
 
 ## 3. Arquitectura en capas
 
@@ -208,7 +210,9 @@ inexistente lo rechaza el motor (500), la API no revalida.
 ## 5. Frontend: pantalla de carga de datos
 
 ```python
-# routes/carga.py (forma, no código final)
+# routes/carga.py (forma; el código final además: lee el archivo COMPLETO antes
+# de abrir el lote, detiene la carga si la API deja de responder, y numera
+# las filas como en el archivo — el encabezado es la fila 1)
 # servicios/carga_asistentes.py interpreta el archivo subido (openpyxl)
 # y por cada fila llama a servicios/api_catedras.py (POST /api/Asistente)
 lote = crear('LoteCargaAsistente', {'nombre_archivo': archivo.filename})

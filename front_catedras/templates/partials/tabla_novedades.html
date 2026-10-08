@@ -1,0 +1,29 @@
+{#  Tabla de novedades (filas rechazadas) — la usan la ficha de un lote, el
+    listado de novedades y el resultado de la carga de datos.
+    Espera 'novedades' (lista con numero_fila, contenido_crudo, motivo) y,
+    opcionalmente, 'mostrar_lote' para añadir la columna del lote. #}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if novedades %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>{% if mostrar_lote %}<th>Lote</th>{% endif %}<th>Fila</th><th>Motivo</th><th>Contenido de la fila</th></tr>
+                </thead>
+                <tbody>
+                    {% for n in novedades %}
+                    <tr>
+                        {% if mostrar_lote %}<td><a href="{{ url_for('admin.lotes_detalle', id_lote_carga=n.fk_lote_carga) }}">{{ n.fk_lote_carga }}</a></td>{% endif %}
+                        <td class="fw-semibold">{{ n.numero_fila }}</td>
+                        <td class="text-danger small">{{ n.motivo }}</td>
+                        <td class="small text-muted"><code>{{ n.contenido_crudo }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3 mb-0">No hay filas rechazadas.</p>
+        {% endif %}
+    </div>
+</div>

@@ -1,6 +1,6 @@
 # Contratos de integración — Versión 3: personas y carga de asistentes
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Construida y verificada (2026-10-07)** — ver nota de [2_spec.md](2_spec.md); correcciones al borrador en el ADR D19 de [4_research.md](4_research.md).
 >
 > **Documento 6 de 8** del spec kit: cómo se hablan las piezas entre sí
 > (puertos, hosts, variables, healthchecks). Los endpoints HTTP de la
@@ -36,7 +36,9 @@ Ninguna de las 7 tablas nuevas necesita configuración propia.
   - `GET /api/Asistente` acepta `?q=` además de `?limite=` (ADR D18):
     filtra por nombre, apellido o `id_asis`, en SQL (`ILIKE`), no en
     memoria. `?q=` sin `?limite=` sigue limitando igual que siempre
-    (mismo tope por defecto que el resto de los recursos).
+    (mismo tope por defecto que el resto de los recursos). Acepta
+    también `?pagina=` (desde 1; `LIMIT/OFFSET`), y el sobre agrega
+    `pagina`: `{tabla, limite, pagina, total, datos}`.
   - **`POST /api/Asistente` acepta detalles iniciales** (Guía IA, Regla
     1). Body:
     ```json
@@ -66,9 +68,10 @@ Ninguna de las 7 tablas nuevas necesita configuración propia.
     Si cualquier detalle falla (documento duplicado, programa
     inexistente, vinculación repetida) → **500** y **no se crea nada**,
     ni el asistente (`sp_guardar_asistente` revierte todo el `CALL`).
-  - `id_asis` nulo con `es_externo: false` (o viceversa) → **500**
-    (`chk_asistente_externo`, D9 extendido a un `CHECK` de una sola
-    tabla — ver RF101).
+  - `id_asis` nulo con `es_externo: false`, o ningún correo → **400**
+    del servicio (RF101, ADR D19 — **corregido**: el borrador decía 500
+    "o viceversa", pero un externo SÍ puede tener `id_asis`). En `PATCH`
+    el servicio no ve la fila completa: ahí el `CHECK` de la BD responde 500.
 - **`DocumentoAsistente`** — 5 verbos, molde completo (a diferencia de
   `AliasPrograma` en v2, que solo tenía 4): `GET` lista (con
   `?fkAsistente=`), `GET/{id}`, `POST`, `PUT/{id}`, `PATCH/{id}`,
@@ -103,10 +106,15 @@ Ninguna de las 7 tablas nuevas necesita configuración propia.
 - **`LoteCargaAsistente`** — **4** verbos: `GET` lista, `GET/{id}`,
   `POST` (abre: solo `nombre_archivo`; `fk_usuario` siempre `null` en
   v3 — ver [2_spec.md](2_spec.md) §2), `POST /{id}/cerrar` (cierra: body
-  = los 3 contadores + `observaciones` opcional + `novedades[]`). Sin
-  `PUT`/`PATCH` genérico ni `DELETE`. `filasAceptadas + filasRechazadas
-  > filasLeidas` → **400** (validado en el servicio, antes de llegar al
-  `CHECK chk_lote_carga_filas` de la BD); un lote ya cerrado → **400**.
+  = `filas_leidas`, `filas_aceptadas`, `filas_rechazadas` +
+  `observaciones` opcional + `novedades[]` con `numero_fila`,
+  `contenido_crudo`, `motivo` — snake_case, **corregido**). Sin
+  `PUT`/`PATCH` genérico ni `DELETE`. `filas_aceptadas + filas_rechazadas
+  > filas_leidas` → **400**, y una novedad por fila rechazada → si no,
+  **400** (ambas en el servicio, antes del repositorio y del `CHECK
+  chk_lote_carga_filas`); `motivo` de más de 200 caracteres → **422**; un
+  lote ya cerrado → **400**; inexistente → **404**. Responde
+  `{estado, mensaje, lote}` (el lote incluye `"cerrado": true`).
 - **`NovedadCarga`** — **2** verbos: `GET` lista (con
   `?fkLoteCarga=`), `GET/{id}`. Sin `POST` propio — nace únicamente
   dentro de `POST /api/LoteCargaAsistente/{id}/cerrar`. Sin
@@ -193,9 +201,11 @@ Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §8.
   en cada tecla del buscador — el filtro vive en la API/BD, no en
   Flask. Este es el primer endpoint del proyecto donde el front NO
   descarga la tabla completa.
-- El front sigue sin estar en `docker-compose.yml`, arrancado aparte
-  con `python run.py`; `API_BASE_URL` sigue en
-  `http://localhost:8142/api`, sin cambios.
+- **(corregido)** El front SÍ está en `docker-compose.yml` desde la v2
+  (servicio `front`, puerto 5000, `API_BASE_URL=http://api:8042/api`
+  dentro de la red de Docker). La v3 agrega `openpyxl` a
+  `front_catedras/requirements.txt` (lectura de Excel, ADR D17): tras
+  actualizar, `docker compose up -d --build front`.
 
 ## 10. Reset completo
 

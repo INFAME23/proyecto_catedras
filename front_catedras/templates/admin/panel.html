@@ -3,7 +3,7 @@
 {% block contenido %}
 <div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
     <h1 class="fw-bold mb-0"><i class="fas fa-cogs me-2"></i>Administración</h1>
-    <p class="text-white-50 mb-0">Las 15 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2)</p>
+    <p class="text-white-50 mb-0">Las 22 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2 + 7 de la v3)</p>
 </div>
 
 <div class="row g-3">
@@ -143,6 +143,82 @@
                 <i class="fas fa-book-open fa-2x text-primary-custom mb-2"></i>
                 <h6 class="fw-bold mb-1">Cátedra</h6>
                 <p class="text-muted small mb-0">Catálogo de cátedras (eventos del ASIS).</p>
+            </div>
+        </a>
+    </div>
+</div>
+
+<h2 class="h5 fw-bold mt-5 mb-3"><i class="fas fa-users text-primary-custom me-2"></i>Personas y carga de asistentes <span class="badge badge-primary">v3</span></h2>
+<div class="row g-3">
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.asistentes_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-users fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Asistente</h6>
+                <p class="text-muted small mb-0">Personas (buscador en la API: 14.811 de ejemplo).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.documentos_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-address-card fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Documento de asistente</h6>
+                <p class="text-muted small mb-0">Documentos de identidad (uno vigente por persona).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.vinculaciones_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-id-badge fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Vinculación de asistente</h6>
+                <p class="text-muted small mb-0">Historial de vinculaciones (abrir y cerrar).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.programas_asistente_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-user-graduate fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Programa de asistente</h6>
+                <p class="text-muted small mb-0">Matrículas por periodo (cambiar estado).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.consentimientos_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-file-signature fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Consentimiento de datos</h6>
+                <p class="text-muted small mb-0">Ley 1581: solo se registra, nunca se edita.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.lotes_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-layer-group fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Lote de carga</h6>
+                <p class="text-muted small mb-0">Cada ejecución de la carga masiva y sus contadores.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.novedades_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-exclamation-triangle fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Novedad de carga</h6>
+                <p class="text-muted small mb-0">Filas rechazadas por una carga, con su motivo.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100 border-primary" href="{{ url_for('carga.carga_datos') }}">
+            <div class="card-body">
+                <i class="fas fa-file-upload fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Carga de datos</h6>
+                <p class="text-muted small mb-0">Subir el archivo de personas (Excel o CSV).</p>
             </div>
         </a>
     </div>

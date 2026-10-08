@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block titulo %}Documentos · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Documento de asistente</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-address-card text-primary-custom me-2"></i>Documentos de asistentes</h1>
+<p class="text-muted small">Los 200 primeros{% if fk_asistente %} del asistente {{ fk_asistente }}{% endif %}. Para agregar, editar o retirar la vigencia de un documento, abre la ficha de su asistente.</p>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if documentos %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Id</th><th>Asistente</th><th>Tipo</th><th>Número</th><th>Vigente</th><th>Registrado</th></tr></thead>
+                <tbody>
+                    {% for d in documentos %}
+                    <tr>
+                        <td class="fw-semibold">{{ d.id_documento }}</td>
+                        <td><a href="{{ url_for('admin.asistentes_detalle', id_asistente=d.fk_asistente) }}">{{ d.fk_asistente }}</a></td>
+                        <td>{{ d.fk_tipo_documento }}</td>
+                        <td>{{ d.numero }}</td>
+                        <td><span class="badge {{ 'badge-success' if d.vigente else 'badge-secondary' }}">{{ 'Sí' if d.vigente else 'No' }}</span></td>
+                        <td class="small text-muted">{{ d.registrado_en[:10] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay documentos que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

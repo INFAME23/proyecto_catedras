@@ -1,9 +1,10 @@
 # ==========================================================================
 #  routes/admin.py  ·  Front Cátedras
 # --------------------------------------------------------------------------
-#  Panel de administración: CRUD de las 15 tablas que ya expone ApiCatedras
-#  (las 10 sin FK de la v1 y las 5 de la v2: Facultad, Dependencia,
-#  ProgramaAcademico, AliasPrograma y Catedra). Cada sección usa
+#  Panel de administración: las 22 tablas que ya expone ApiCatedras
+#  (las 10 sin FK de la v1; las 5 de la v2: Facultad, Dependencia,
+#  ProgramaAcademico, AliasPrograma y Catedra; y las 7 de la v3: personas
+#  y lotes de carga, al final del archivo). Cada sección usa
 #  formularios HTML normales (los navegadores no mandan PUT/DELETE, así que
 #  el botón "Guardar" hace POST y esta ruta traduce a PUT/DELETE contra la
 #  API con 'requests').
@@ -16,7 +17,8 @@
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
-from servicios.api_catedras import ErrorApi, crear, eliminar, listar, obtener, reemplazar
+from servicios.api_catedras import (ErrorApi, actualizar_parcial, crear, eliminar, listar,
+                                    obtener, reemplazar)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -1191,3 +1193,477 @@ def catedras_eliminar(id_catedra):
     except ErrorApi as ex:
         _avisar(ex)
     return redirect(url_for('admin.catedras_listar'))
+
+
+# ==========================================================================
+#  v3 · ASISTENTE  (recurso API: "Asistente", clave: id_asistente numérica)
+# --------------------------------------------------------------------------
+#  ADR D18: con 14.811 filas, el buscador y la paginación los hace la API
+#  ('?q=' y '?pagina='), NO este front. Cada búsqueda pide solo la página
+#  visible; nunca se descarga la tabla completa (a diferencia de Cátedra,
+#  D13 de la v2, que sí filtra en Python).
+#
+#  Los detalles del asistente (documentos, vinculaciones, programas y
+#  consentimientos) se crean DESDE la ficha del asistente: así el
+#  'fk_asistente' nunca se digita (Guía IA, Regla 2) — lo fija la URL.
+# ==========================================================================
+
+ASISTENTES_POR_PAGINA = 50
+ESTADOS_PROGRAMA = ['ACTIVO', 'RETIRADO', 'GRADUADO', 'APLAZADO']
+CANALES_CONSENTIMIENTO = ['WEB', 'PRESENCIAL', 'CORREO', 'IMPORTADO']
+
+
+def _entero_o_none(texto):
+    """'12' -> 12; vacío o no numérico -> None."""
+    try:
+        return int(texto)
+    except (TypeError, ValueError):
+        return None
+
+
+def _catalogos_asistente():
+    """Los catálogos (v1/v2) que llenan los <select> de los detalles."""
+    return {
+        'tipos_documento': _opciones('TipoDocumento'),
+        'tipos_vinculacion': _opciones('TipoVinculacion'),
+        'programas': _opciones('ProgramaAcademico'),
+        'periodos': _opciones('PeriodoAcademico'),
+        'estados_programa': ESTADOS_PROGRAMA,
+        'canales': CANALES_CONSENTIMIENTO,
+    }
+
+
+def _leer_form_asistente():
+    """Columnas propias del asistente (las mismas en el alta y en el PUT)."""
+    return {
+        'id_asis': _texto_o_none('id_asis'),
+        'nombres': request.form.get('nombres', '').strip(),
+        'apellidos': request.form.get('apellidos', '').strip(),
+        'nombre_completo_asis': _texto_o_none('nombre_completo_asis'),
+        'correo_institucional': _texto_o_none('correo_institucional'),
+        'correo_personal': _texto_o_none('correo_personal'),
+        'celular': _texto_o_none('celular'),
+        'es_externo': request.form.get('es_externo') == 'on',
+        'activo': request.form.get('activo') == 'on',
+    }
+
+
+def _volver_a_asistente(fk_asistente, respaldo):
+    """Tras una acción sobre un detalle: a la ficha del asistente si se
+    conoce, o al listado 'respaldo' si no."""
+    if fk_asistente:
+        return redirect(url_for('admin.asistentes_detalle', id_asistente=fk_asistente))
+    return redirect(url_for(respaldo))
+
+
+@admin_bp.route('/asistentes')
+def asistentes_listar():
+    texto = request.args.get('q', '').strip()
+    pagina = max(1, _entero_o_none(request.args.get('pagina')) or 1)
+
+    try:
+        # La API filtra (ILIKE) y pagina (LIMIT/OFFSET) en SQL.
+        asistentes = listar('Asistente', limite=ASISTENTES_POR_PAGINA,
+                            q=texto or None, pagina=pagina)
+    except ErrorApi as ex:
+        _avisar(ex)
+        asistentes = []
+
+    # Sin pedir un conteo total: si la página llegó llena, puede haber otra.
+    hay_siguiente = len(asistentes) == ASISTENTES_POR_PAGINA
+    return render_template('admin/asistente_lista.html', asistentes=asistentes, q=texto,
+                           pagina=pagina, hay_siguiente=hay_siguiente)
+
+
+@admin_bp.route('/asistentes/nuevo', methods=['GET', 'POST'])
+def asistentes_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/asistente_form.html', modo='nueva', asistente=None,
+                               errores=[], **_catalogos_asistente())
+
+    datos = _leer_form_asistente()
+
+    # Guía IA, Regla 1: los detalles iniciales viajan en el MISMO POST y la
+    # API los guarda junto con el asistente (sp_guardar_asistente). Cada
+    # bloque se agrega solo si el formulario lo trae lleno.
+    if request.form.get('doc_tipo') and request.form.get('doc_numero', '').strip():
+        datos['documentos'] = [{'fk_tipo_documento': request.form['doc_tipo'],
+                                'numero': request.form['doc_numero'].strip()}]
+    if request.form.get('vinc_tipo'):
+        vinculacion = {'fk_tipo_vinculacion': request.form['vinc_tipo']}
+        if request.form.get('vinc_fecha_ini'):
+            vinculacion['fecha_ini'] = request.form['vinc_fecha_ini']
+        datos['vinculaciones'] = [vinculacion]
+    if request.form.get('prog_codigo') and request.form.get('prog_periodo'):
+        datos['programas'] = [{'fk_programa': request.form['prog_codigo'],
+                               'fk_periodo': request.form['prog_periodo']}]
+    if request.form.get('consentimiento') == 'on':
+        datos['consentimiento'] = {'version_politica': request.form.get('version_politica', '').strip(),
+                                   'canal': request.form.get('canal') or 'WEB'}
+
+    try:
+        respuesta = crear('Asistente', datos)
+    except ErrorApi as ex:
+        # 400 (id_asis/es_externo, correos), 422 (forma) o 500: si fue un
+        # detalle el que falló, NO se creó nada (ni el asistente).
+        _avisar(ex)
+        return render_template('admin/asistente_form.html', modo='nueva', asistente=datos,
+                               errores=ex.errores, **_catalogos_asistente())
+
+    flash(f"Asistente creado con id {respuesta['id_asistente']}.", 'exito')
+    return redirect(url_for('admin.asistentes_detalle', id_asistente=respuesta['id_asistente']))
+
+
+@admin_bp.route('/asistentes/<int:id_asistente>')
+def asistentes_detalle(id_asistente):
+    """Ficha del asistente con sus 4 tablas de detalle."""
+    try:
+        asistente = obtener('Asistente', id_asistente)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.asistentes_listar'))
+
+    detalles = {}
+    for clave, recurso in (('documentos', 'DocumentoAsistente'), ('vinculaciones', 'VinculacionAsistente'),
+                           ('programas', 'ProgramaAsistente'), ('consentimientos', 'ConsentimientoDatos')):
+        try:
+            detalles[clave] = listar(recurso, fkAsistente=id_asistente)
+        except ErrorApi as ex:
+            _avisar(ex)
+            detalles[clave] = []
+
+    return render_template('admin/asistente_detalle.html', asistente=asistente,
+                           estados_programa=ESTADOS_PROGRAMA, **detalles)
+
+
+@admin_bp.route('/asistentes/<int:id_asistente>/editar', methods=['GET', 'POST'])
+def asistentes_editar(id_asistente):
+    if request.method == 'GET':
+        try:
+            asistente = obtener('Asistente', id_asistente)
+        except ErrorApi as ex:
+            _avisar(ex)
+            return redirect(url_for('admin.asistentes_listar'))
+        return render_template('admin/asistente_form.html', modo='editar', asistente=asistente,
+                               errores=[], **_catalogos_asistente())
+
+    datos = _leer_form_asistente()
+    try:
+        reemplazar('Asistente', id_asistente, datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        datos['id_asistente'] = id_asistente
+        return render_template('admin/asistente_form.html', modo='editar', asistente=datos,
+                               errores=ex.errores, **_catalogos_asistente())
+
+    flash(f"Asistente {id_asistente} actualizado.", 'exito')
+    return redirect(url_for('admin.asistentes_detalle', id_asistente=id_asistente))
+
+
+@admin_bp.route('/asistentes/<int:id_asistente>/eliminar', methods=['POST'])
+def asistentes_eliminar(id_asistente):
+    try:
+        eliminar('Asistente', id_asistente)
+        flash(f"Asistente {id_asistente} eliminado (y sus documentos, vinculaciones, "
+              f"programas y consentimientos, por ON DELETE CASCADE).", 'exito')
+    except ErrorApi as ex:
+        # Lo normal con los asistentes sembrados: 500 porque tiene registros
+        # de asistencia o usuario (FK RESTRICT). No se borró nada.
+        _avisar(ex)
+        return redirect(url_for('admin.asistentes_detalle', id_asistente=id_asistente))
+    return redirect(url_for('admin.asistentes_listar'))
+
+
+# ==========================================================================
+#  v3 · DOCUMENTO DEL ASISTENTE  (recurso API: "DocumentoAsistente")
+#  CRUD completo. "Un solo vigente por persona" lo vigila la BD: para
+#  cambiar el vigente, primero se retira el anterior (vigente = false).
+# ==========================================================================
+
+@admin_bp.route('/documentos')
+def documentos_listar():
+    fk_asistente = _entero_o_none(request.args.get('fk_asistente'))
+    try:
+        documentos = listar('DocumentoAsistente', limite=200, fkAsistente=fk_asistente)
+    except ErrorApi as ex:
+        _avisar(ex)
+        documentos = []
+    return render_template('admin/documento_lista.html', documentos=documentos, fk_asistente=fk_asistente)
+
+
+@admin_bp.route('/asistentes/<int:id_asistente>/documentos/nuevo', methods=['GET', 'POST'])
+def documentos_nuevo(id_asistente):
+    if request.method == 'GET':
+        return render_template('admin/detalle_asistente_form.html', tipo='documento', id_asistente=id_asistente,
+                               dato=None, errores=[], **_catalogos_asistente())
+
+    datos = {
+        'fk_asistente': id_asistente,   # lo fija la URL, no se digita
+        'fk_tipo_documento': request.form.get('fk_tipo_documento', ''),
+        'numero': request.form.get('numero', '').strip(),
+        'vigente': request.form.get('vigente') == 'on',
+    }
+    try:
+        crear('DocumentoAsistente', datos)
+    except ErrorApi as ex:
+        # 500 típico: ya tiene un documento vigente (ux_documento_vigente).
+        _avisar(ex)
+        return render_template('admin/detalle_asistente_form.html', tipo='documento', id_asistente=id_asistente,
+                               dato=datos, errores=ex.errores, **_catalogos_asistente())
+
+    flash('Documento registrado.', 'exito')
+    return redirect(url_for('admin.asistentes_detalle', id_asistente=id_asistente))
+
+
+@admin_bp.route('/documentos/<int:id_documento>/editar', methods=['GET', 'POST'])
+def documentos_editar(id_documento):
+    try:
+        documento = obtener('DocumentoAsistente', id_documento)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.documentos_listar'))
+
+    if request.method == 'GET':
+        return render_template('admin/detalle_asistente_form.html', tipo='documento_editar',
+                               id_asistente=documento['fk_asistente'], dato=documento, errores=[],
+                               **_catalogos_asistente())
+
+    datos = {
+        'fk_tipo_documento': request.form.get('fk_tipo_documento', ''),
+        'numero': request.form.get('numero', '').strip(),
+        'vigente': request.form.get('vigente') == 'on',
+    }
+    try:
+        reemplazar('DocumentoAsistente', id_documento, datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        datos['id_documento'] = id_documento
+        return render_template('admin/detalle_asistente_form.html', tipo='documento_editar',
+                               id_asistente=documento['fk_asistente'], dato=datos, errores=ex.errores,
+                               **_catalogos_asistente())
+
+    flash(f"Documento {id_documento} actualizado.", 'exito')
+    return redirect(url_for('admin.asistentes_detalle', id_asistente=documento['fk_asistente']))
+
+
+@admin_bp.route('/documentos/<int:id_documento>/vigencia', methods=['POST'])
+def documentos_vigencia(id_documento):
+    """Cambia SOLO 'vigente' (PATCH): el paso previo a registrar un documento nuevo."""
+    fk_asistente = _entero_o_none(request.form.get('fk_asistente'))
+    vigente = request.form.get('vigente') == 'true'
+    try:
+        actualizar_parcial('DocumentoAsistente', id_documento, {'vigente': vigente})
+        flash(f"Documento {id_documento} marcado como {'vigente' if vigente else 'no vigente'}.", 'exito')
+    except ErrorApi as ex:
+        _avisar(ex)
+    return _volver_a_asistente(fk_asistente, 'admin.documentos_listar')
+
+
+@admin_bp.route('/documentos/<int:id_documento>/eliminar', methods=['POST'])
+def documentos_eliminar(id_documento):
+    fk_asistente = _entero_o_none(request.form.get('fk_asistente'))
+    try:
+        eliminar('DocumentoAsistente', id_documento)
+        flash(f"Documento {id_documento} eliminado.", 'exito')
+    except ErrorApi as ex:
+        _avisar(ex)
+    return _volver_a_asistente(fk_asistente, 'admin.documentos_listar')
+
+
+# ==========================================================================
+#  v3 · VINCULACIÓN DEL ASISTENTE  (recurso API: "VinculacionAsistente")
+#  LLAVE COMPUESTA (ADR D16): no hay "editar" ni "eliminar"; solo abrir y
+#  CERRAR. El cierre manda la llave completa (asistente, tipo, fecha_ini).
+# ==========================================================================
+
+@admin_bp.route('/vinculaciones')
+def vinculaciones_listar():
+    fk_asistente = _entero_o_none(request.args.get('fk_asistente'))
+    try:
+        vinculaciones = listar('VinculacionAsistente', limite=200, fkAsistente=fk_asistente)
+    except ErrorApi as ex:
+        _avisar(ex)
+        vinculaciones = []
+    return render_template('admin/vinculacion_lista.html', vinculaciones=vinculaciones, fk_asistente=fk_asistente)
+
+
+@admin_bp.route('/asistentes/<int:id_asistente>/vinculaciones/nueva', methods=['GET', 'POST'])
+def vinculaciones_nueva(id_asistente):
+    if request.method == 'GET':
+        return render_template('admin/detalle_asistente_form.html', tipo='vinculacion', id_asistente=id_asistente,
+                               dato=None, errores=[], **_catalogos_asistente())
+
+    datos = {'fk_asistente': id_asistente,
+             'fk_tipo_vinculacion': request.form.get('fk_tipo_vinculacion', '')}
+    if request.form.get('fecha_ini'):          # sin fecha -> la API usa hoy
+        datos['fecha_ini'] = request.form['fecha_ini']
+    try:
+        crear('VinculacionAsistente', datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return render_template('admin/detalle_asistente_form.html', tipo='vinculacion', id_asistente=id_asistente,
+                               dato=datos, errores=ex.errores, **_catalogos_asistente())
+
+    flash('Vinculación abierta.', 'exito')
+    return redirect(url_for('admin.asistentes_detalle', id_asistente=id_asistente))
+
+
+@admin_bp.route('/vinculaciones/cerrar', methods=['POST'])
+def vinculaciones_cerrar():
+    fk_asistente = _entero_o_none(request.form.get('fk_asistente'))
+    llave = {
+        'fk_asistente': fk_asistente,
+        'fk_tipo_vinculacion': request.form.get('fk_tipo_vinculacion', ''),
+        'fecha_ini': request.form.get('fecha_ini', ''),
+    }
+    if request.form.get('fecha_fin'):          # sin fecha -> la API usa hoy
+        llave['fecha_fin'] = request.form['fecha_fin']
+    try:
+        actualizar_parcial('VinculacionAsistente', 'cerrar', llave)
+        flash(f"Vinculación '{llave['fk_tipo_vinculacion']}' cerrada.", 'exito')
+    except ErrorApi as ex:
+        # 400 si ya estaba cerrada o la fecha de cierre es anterior al inicio.
+        _avisar(ex)
+    return _volver_a_asistente(fk_asistente, 'admin.vinculaciones_listar')
+
+
+# ==========================================================================
+#  v3 · PROGRAMA DEL ASISTENTE  (recurso API: "ProgramaAsistente")
+#  LLAVE COMPUESTA (ADR D16): matricular y CAMBIAR ESTADO; sin editar ni
+#  eliminar.
+# ==========================================================================
+
+@admin_bp.route('/programas-asistente')
+def programas_asistente_listar():
+    fk_asistente = _entero_o_none(request.args.get('fk_asistente'))
+    try:
+        programas = listar('ProgramaAsistente', limite=200, fkAsistente=fk_asistente)
+    except ErrorApi as ex:
+        _avisar(ex)
+        programas = []
+    return render_template('admin/programa_asistente_lista.html', programas=programas,
+                           fk_asistente=fk_asistente, estados_programa=ESTADOS_PROGRAMA)
+
+
+@admin_bp.route('/asistentes/<int:id_asistente>/programas/nuevo', methods=['GET', 'POST'])
+def programas_asistente_nuevo(id_asistente):
+    if request.method == 'GET':
+        return render_template('admin/detalle_asistente_form.html', tipo='programa', id_asistente=id_asistente,
+                               dato=None, errores=[], **_catalogos_asistente())
+
+    datos = {
+        'fk_asistente': id_asistente,
+        'fk_programa': request.form.get('fk_programa', ''),
+        'fk_periodo': request.form.get('fk_periodo', ''),
+        'estado': request.form.get('estado') or 'ACTIVO',
+    }
+    try:
+        crear('ProgramaAsistente', datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return render_template('admin/detalle_asistente_form.html', tipo='programa', id_asistente=id_asistente,
+                               dato=datos, errores=ex.errores, **_catalogos_asistente())
+
+    flash('Matrícula registrada.', 'exito')
+    return redirect(url_for('admin.asistentes_detalle', id_asistente=id_asistente))
+
+
+@admin_bp.route('/programas-asistente/cambiar-estado', methods=['POST'])
+def programas_asistente_cambiar_estado():
+    fk_asistente = _entero_o_none(request.form.get('fk_asistente'))
+    datos = {
+        'fk_asistente': fk_asistente,
+        'fk_programa': request.form.get('fk_programa', ''),
+        'fk_periodo': request.form.get('fk_periodo', ''),
+        'estado': request.form.get('estado', ''),
+    }
+    try:
+        actualizar_parcial('ProgramaAsistente', 'cambiar-estado', datos)
+        flash(f"Matrícula en '{datos['fk_programa']}' ({datos['fk_periodo']}) ahora en {datos['estado']}.", 'exito')
+    except ErrorApi as ex:
+        # 400 si ya tenía ese estado.
+        _avisar(ex)
+    return _volver_a_asistente(fk_asistente, 'admin.programas_asistente_listar')
+
+
+# ==========================================================================
+#  v3 · CONSENTIMIENTO DE DATOS  (recurso API: "ConsentimientoDatos")
+#  Ley 1581: solo se REGISTRA. Sin editar ni eliminar (la API no lo permite).
+# ==========================================================================
+
+@admin_bp.route('/consentimientos')
+def consentimientos_listar():
+    fk_asistente = _entero_o_none(request.args.get('fk_asistente'))
+    try:
+        consentimientos = listar('ConsentimientoDatos', limite=200, fkAsistente=fk_asistente)
+    except ErrorApi as ex:
+        _avisar(ex)
+        consentimientos = []
+    return render_template('admin/consentimiento_lista.html', consentimientos=consentimientos,
+                           fk_asistente=fk_asistente)
+
+
+@admin_bp.route('/asistentes/<int:id_asistente>/consentimientos/nuevo', methods=['GET', 'POST'])
+def consentimientos_nuevo(id_asistente):
+    if request.method == 'GET':
+        return render_template('admin/detalle_asistente_form.html', tipo='consentimiento', id_asistente=id_asistente,
+                               dato=None, errores=[], **_catalogos_asistente())
+
+    datos = {
+        'fk_asistente': id_asistente,
+        'version_politica': request.form.get('version_politica', '').strip(),
+        'canal': request.form.get('canal') or 'WEB',
+    }
+    # La IP: la que escriba el administrador, o la de quien usa el formulario.
+    datos['ip'] = _texto_o_none('ip') or request.remote_addr
+    try:
+        crear('ConsentimientoDatos', datos)
+    except ErrorApi as ex:
+        # 500 típico: esa versión de la política ya estaba aceptada.
+        _avisar(ex)
+        return render_template('admin/detalle_asistente_form.html', tipo='consentimiento', id_asistente=id_asistente,
+                               dato=datos, errores=ex.errores, **_catalogos_asistente())
+
+    flash('Consentimiento registrado.', 'exito')
+    return redirect(url_for('admin.asistentes_detalle', id_asistente=id_asistente))
+
+
+# ==========================================================================
+#  v3 · LOTES DE CARGA Y SUS NOVEDADES  (solo lectura en el panel)
+#  Un lote se ABRE y se CIERRA desde la pantalla de carga de datos
+#  (routes/carga.py); aquí solo se consulta la evidencia que dejó.
+# ==========================================================================
+
+@admin_bp.route('/lotes')
+def lotes_listar():
+    try:
+        lotes = listar('LoteCargaAsistente', limite=200)
+    except ErrorApi as ex:
+        _avisar(ex)
+        lotes = []
+    return render_template('admin/lote_lista.html', lotes=lotes)
+
+
+@admin_bp.route('/lotes/<int:id_lote_carga>')
+def lotes_detalle(id_lote_carga):
+    try:
+        lote = obtener('LoteCargaAsistente', id_lote_carga)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.lotes_listar'))
+    try:
+        novedades = listar('NovedadCarga', fkLoteCarga=id_lote_carga)
+    except ErrorApi as ex:
+        _avisar(ex)
+        novedades = []
+    return render_template('admin/lote_detalle.html', lote=lote, novedades=novedades)
+
+
+@admin_bp.route('/novedades')
+def novedades_listar():
+    try:
+        novedades = listar('NovedadCarga', limite=500)
+    except ErrorApi as ex:
+        _avisar(ex)
+        novedades = []
+    return render_template('admin/novedad_lista.html', novedades=novedades)

@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+{% block titulo %}Asistente {{ asistente.id_asistente }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_listar') }}">Asistente</a></li>
+        <li class="breadcrumb-item active">{{ asistente.id_asistente }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div>
+        <h1 class="h3 fw-bold mb-1"><i class="fas fa-id-card text-primary-custom me-2"></i>{{ asistente.nombres }} {{ asistente.apellidos }}</h1>
+        <p class="text-muted mb-0 small">
+            Id {{ asistente.id_asistente }} · ASIS {{ asistente.id_asis or '—' }}
+            {% if asistente.es_externo %}· <span class="badge badge-secondary">Externo</span>{% endif %}
+            · <span class="badge {{ 'badge-success' if asistente.activo else 'badge-danger' }}">{{ 'Activo' if asistente.activo else 'Inactivo' }}</span>
+            {% if asistente.fk_lote_carga %}· llegó en el <a href="{{ url_for('admin.lotes_detalle', id_lote_carga=asistente.fk_lote_carga) }}">lote {{ asistente.fk_lote_carga }}</a>{% endif %}
+        </p>
+        <p class="mb-0 small">{{ asistente.correo_institucional or '' }} {{ asistente.correo_personal or '' }} {{ asistente.celular or '' }}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.asistentes_editar', id_asistente=asistente.id_asistente) }}"><i class="fas fa-edit me-1"></i>Editar</a>
+        <form method="post" action="{{ url_for('admin.asistentes_eliminar', id_asistente=asistente.id_asistente) }}"
+              onsubmit="return confirm('¿Eliminar al asistente {{ asistente.id_asistente }}? Se borrarán también sus documentos, vinculaciones, programas y consentimientos (ON DELETE CASCADE). Si tiene registros de asistencia, la BD no lo permitirá.');">
+            <button class="btn btn-outline-danger" type="submit"><i class="fas fa-trash me-1"></i>Eliminar</button>
+        </form>
+    </div>
+</div>
+
+{# ---------------- Documentos (CRUD completo) ---------------- #}
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="fas fa-address-card me-2"></i>Documentos</span>
+        <a class="btn btn-sm btn-primary" href="{{ url_for('admin.documentos_nuevo', id_asistente=asistente.id_asistente) }}"><i class="fas fa-plus me-1"></i>Agregar</a>
+    </div>
+    <div class="card-body p-0">
+        {% if documentos %}
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr><th>Tipo</th><th>Número</th><th>Vigente</th><th>Registrado</th><th class="text-end">Acciones</th></tr></thead>
+            <tbody>
+            {% for d in documentos %}
+            <tr>
+                <td>{{ d.fk_tipo_documento }}</td>
+                <td class="fw-semibold">{{ d.numero }}</td>
+                <td><span class="badge {{ 'badge-success' if d.vigente else 'badge-secondary' }}">{{ 'Vigente' if d.vigente else 'No vigente' }}</span></td>
+                <td class="small text-muted">{{ d.registrado_en[:10] }}</td>
+                <td class="text-end text-nowrap">
+                    {# PATCH solo de 'vigente': retirar el vigente antes de registrar uno nuevo. #}
+                    <form class="d-inline" method="post" action="{{ url_for('admin.documentos_vigencia', id_documento=d.id_documento) }}">
+                        <input type="hidden" name="fk_asistente" value="{{ asistente.id_asistente }}">
+                        <input type="hidden" name="vigente" value="{{ 'false' if d.vigente else 'true' }}">
+                        <button class="btn btn-sm btn-outline-secondary" type="submit">{{ 'Retirar vigencia' if d.vigente else 'Marcar vigente' }}</button>
+                    </form>
+                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.documentos_editar', id_documento=d.id_documento) }}"><i class="fas fa-edit"></i></a>
+                    <form class="d-inline" method="post" action="{{ url_for('admin.documentos_eliminar', id_documento=d.id_documento) }}"
+                          onsubmit="return confirm('¿Eliminar el documento {{ d.numero }}?');">
+                        <input type="hidden" name="fk_asistente" value="{{ asistente.id_asistente }}">
+                        <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}<p class="text-muted text-center py-3 mb-0">Sin documentos.</p>{% endif %}
+    </div>
+</div>
+
+{# ---------------- Vinculaciones (llave compuesta: abrir / cerrar) ---------------- #}
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="fas fa-id-badge me-2"></i>Vinculaciones</span>
+        <a class="btn btn-sm btn-primary" href="{{ url_for('admin.vinculaciones_nueva', id_asistente=asistente.id_asistente) }}"><i class="fas fa-plus me-1"></i>Abrir vinculación</a>
+    </div>
+    <div class="card-body p-0">
+        {% if vinculaciones %}
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr><th>Tipo</th><th>Desde</th><th>Hasta</th><th class="text-end">Cerrar</th></tr></thead>
+            <tbody>
+            {% for v in vinculaciones %}
+            <tr>
+                <td>{{ v.fk_tipo_vinculacion }}</td>
+                <td>{{ v.fecha_ini }}</td>
+                <td>{% if v.fecha_fin %}{{ v.fecha_fin }}{% else %}<span class="badge badge-success">Vigente</span>{% endif %}</td>
+                <td class="text-end">
+                    {% if not v.fecha_fin %}
+                    {# La fila se identifica con su LLAVE COMPLETA (ADR D16). #}
+                    <form class="d-inline-flex gap-1" method="post" action="{{ url_for('admin.vinculaciones_cerrar') }}">
+                        <input type="hidden" name="fk_asistente" value="{{ v.fk_asistente }}">
+                        <input type="hidden" name="fk_tipo_vinculacion" value="{{ v.fk_tipo_vinculacion }}">
+                        <input type="hidden" name="fecha_ini" value="{{ v.fecha_ini }}">
+                        <input type="date" class="form-control form-control-sm" name="fecha_fin" title="Vacío = hoy">
+                        <button class="btn btn-sm btn-outline-warning text-nowrap" type="submit">Cerrar</button>
+                    </form>
+                    {% else %}<span class="text-muted small">Cerrada</span>{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}<p class="text-muted text-center py-3 mb-0">Sin vinculaciones.</p>{% endif %}
+    </div>
+</div>
+
+{# ---------------- Programas (llave compuesta: matricular / cambiar estado) ---------------- #}
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="fas fa-graduation-cap me-2"></i>Programas</span>
+        <a class="btn btn-sm btn-primary" href="{{ url_for('admin.programas_asistente_nuevo', id_asistente=asistente.id_asistente) }}"><i class="fas fa-plus me-1"></i>Matricular</a>
+    </div>
+    <div class="card-body p-0">
+        {% if programas %}
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr><th>Programa</th><th>Periodo</th><th>Estado</th><th class="text-end">Cambiar estado</th></tr></thead>
+            <tbody>
+            {% for p in programas %}
+            <tr>
+                <td class="fw-semibold">{{ p.fk_programa }}</td>
+                <td>{{ p.fk_periodo }}</td>
+                <td><span class="badge badge-secondary">{{ p.estado }}</span></td>
+                <td class="text-end">
+                    <form class="d-inline-flex gap-1" method="post" action="{{ url_for('admin.programas_asistente_cambiar_estado') }}">
+                        <input type="hidden" name="fk_asistente" value="{{ p.fk_asistente }}">
+                        <input type="hidden" name="fk_programa" value="{{ p.fk_programa }}">
+                        <input type="hidden" name="fk_periodo" value="{{ p.fk_periodo }}">
+                        <select class="form-select form-select-sm" name="estado">
+                            {% for e in estados_programa %}<option value="{{ e }}" {% if e == p.estado %}selected{% endif %}>{{ e }}</option>{% endfor %}
+                        </select>
+                        <button class="btn btn-sm btn-outline-primary" type="submit"><i class="fas fa-check"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}<p class="text-muted text-center py-3 mb-0">Sin programas.</p>{% endif %}
+    </div>
+</div>
+
+{# ---------------- Consentimientos (solo registrar: Ley 1581) ---------------- #}
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="fas fa-file-signature me-2"></i>Consentimientos de datos</span>
+        <a class="btn btn-sm btn-primary" href="{{ url_for('admin.consentimientos_nuevo', id_asistente=asistente.id_asistente) }}"><i class="fas fa-plus me-1"></i>Registrar</a>
+    </div>
+    <div class="card-body p-0">
+        {% if consentimientos %}
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr><th>Versión</th><th>Canal</th><th>Aceptado</th><th>IP</th></tr></thead>
+            <tbody>
+            {% for c in consentimientos %}
+            <tr><td class="fw-semibold">{{ c.version_politica }}</td><td>{{ c.canal }}</td><td class="small">{{ c.aceptado_en[:19]|replace('T', ' ') }}</td><td class="small text-muted">{{ c.ip or '—' }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}<p class="text-muted text-center py-3 mb-0">Sin consentimientos registrados.</p>{% endif %}
+        <p class="form-text px-3 pb-2 mb-0">Un consentimiento es evidencia legal: no se edita ni se borra (Ley 1581 de 2012).</p>
+    </div>
+</div>
+{% endblock %}
