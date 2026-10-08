@@ -178,3 +178,43 @@ no para resolver aquí por anticipado.
 > creciente" que había quedado esbozada en una versión anterior del §4.7
 > de [3_plan.md](3_plan.md); ese documento ya se corrigió para que
 > ambos queden alineados.
+
+## D14 — Retrofit: programa y alias iniciales en una sola transacción (SP)
+
+**Contexto.** En octubre de 2026 se adoptó la
+[guía operativa para la IA](../../guia_ia.md), cuya Regla 1 exige que
+una operación que crea un **maestro junto con sus detalles** se haga con
+un único procedimiento almacenado. En la v2 el par maestro-detalle es
+`programa_academico` → `alias_programa`. Hasta ahora, para crear un
+programa con sus alias había que hacer 1 + N peticiones separadas: si el
+segundo alias fallaba, el programa y el primer alias ya estaban
+guardados (estado a medias).
+
+**Opciones evaluadas:**
+(a) dejarlo como está (no hay una petición que una maestro y detalle);
+(b) agregar `alias` opcional al POST del programa y resolverlo con un SP
+explícito `sp_guardar_programa_academico(..., p_alias jsonb)`;
+(c) un SP genérico con SQL dinámico que sirva para cualquier
+maestro-detalle.
+
+**Decisión: (b).** (a) no cumple la Regla 1. (c) se descarta porque el
+SQL dinámico deja de estar "a la vista" (Artículo 2) y es mucho más
+difícil de explicar línea a línea (Artículo 6): **un SP explícito por
+cada par maestro-detalle**. El estilo copia el de
+`sp_responder_encuesta`, que ya trae la BD (parámetro `jsonb` con el
+arreglo de detalles).
+
+**Relación con D12.** D12 **sigue vigente**: `AliasPrograma` continúa
+sin `PUT`/`PATCH`, y `POST /api/AliasPrograma` sigue siendo la forma de
+agregar un alias a un programa que ya existe (ahí no hay maestro y
+detalle en la misma petición, así que la Regla 1 no aplica). Lo único
+que cambia es que, ADEMÁS, los alias pueden nacer junto con su programa.
+
+**Consecuencias.** (+) Atomicidad real (ACID · A): o se guardan el
+programa y todos sus alias, o nada. (+) El POST sin `alias` no cambia,
+así que ningún cliente existente se rompe (Artículo 7). (−) La BD gana un
+objeto que no venía en el script provisto (Artículo 5): se agrega como
+**migración aparte** (`db/postgres/migraciones/`), sin tocar
+`script_bdcatedras.sql`, y queda documentado aquí. (−) Una BD ya creada
+(volumen con datos) necesita aplicar la migración a mano una vez (ver
+[7_quickstart.md](7_quickstart.md)).

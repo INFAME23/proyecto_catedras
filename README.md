@@ -71,12 +71,15 @@ dotnet run --project pruebas
 docker-compose.yml              # un comando: postgres + api + front
 db/postgres/
   script_bdcatedras.sql         # la BD completa, PROVISTA (se monta, no se genera)
+  migraciones/                  # objetos PROPIOS del proyecto (p. ej. SP maestro-detalle,
+                                #  docs/spec_kit/guia_ia.md); se montan después del script
 api_catedras/                   # la API .NET (Controllers, Modelos, Peticiones,
                                 #  Servicios, Repositorios, Excepciones, pruebas)
 front_catedras/                 # el front Flask
 docs/
   GUIA_ESTUDIANTE.md            # guía de arranque (v1)
   spec_kit/1_constitution.md    # reglas permanentes de todas las versiones
+  spec_kit/guia_ia.md           # reglas técnicas transversales (SP, <select> de FK, BCrypt)
   spec_kit/Versiones/
     0_mapa_versiones.md         # qué tablas entran en cada versión
     version1/  2_spec .. 8_tasks

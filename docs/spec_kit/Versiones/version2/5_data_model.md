@@ -177,6 +177,44 @@ creado nuevo durante una prueba.
 (`M0286`, "Ingenieria de Datos y Software") con `fk_facultad: 'F_ING'`
 — el único caso de ejemplo con una facultad real asignada.
 
+#### 2.3.1 Maestro-detalle con `alias_programa` (retrofit, Guía IA · Regla 1)
+
+`programa_academico` es el **maestro** y `alias_programa` el
+**detalle**. Cuando un programa se crea junto con sus alias iniciales,
+ambos se guardan con un solo procedimiento almacenado (ADR D14):
+
+```sql
+-- db/postgres/migraciones/001_sp_guardar_programa_academico.sql
+CREATE OR REPLACE PROCEDURE catedras.sp_guardar_programa_academico(
+    IN p_codigo      varchar(5),
+    IN p_nombre      varchar(150),
+    IN p_fk_facultad varchar(10) DEFAULT NULL,
+    IN p_nivel       varchar(25) DEFAULT 'PREGRADO',
+    IN p_activo      boolean     DEFAULT true,
+    IN p_alias       jsonb       DEFAULT NULL  -- [{"texto_normalizado":"...","origen":"..."}]
+)
+```
+
+| Paso | Qué hace | Si falla |
+|---|---|---|
+| 1 | `INSERT` del programa | código duplicado / facultad inexistente → excepción |
+| 2 | `INSERT ... SELECT` de cada elemento de `p_alias`, con `fk_programa = p_codigo` y `origen` por defecto `FORMULARIO` | texto repetido (`uq_alias_texto`) → excepción y **se revierte también el paso 1** |
+
+`p_alias` en `NULL` o `[]` = programa sin alias (equivale al `INSERT`
+de antes). El repositorio lo invoca con
+`CALL catedras.sp_guardar_programa_academico(@Codigo, @Nombre, @FkFacultad, @Nivel, @Activo, CAST(@Alias AS jsonb))`.
+
+Petición de cada alias inicial (`Peticiones/AliasInicial.cs`):
+
+```csharp
+public class AliasInicial
+{
+    public string? TextoNormalizado { get; set; }   // obligatorio, 1-200
+    public string? Origen { get; set; }             // opcional, 1-30 (por defecto FORMULARIO)
+    // SIN FkPrograma: lo fija el servicio con el código del maestro
+}
+```
+
 ### 2.4 `alias_programa`
 
 > Comentario del propio esquema (`COMMENT ON TABLE`): texto libre con
@@ -291,7 +329,11 @@ no solo `PK`/`UNIQUE`/`CHECK` de una sola tabla.
   `asistente`, etc.) se construye en v2, aunque algunas ya tengan datos
   de ejemplo cargados — ese dato es relevante para entender el
   comportamiento de `DELETE`, no una invitación a adelantar su API.
-- La BD **no se modifica**: cero columnas, índices o datos nuevos. Los
+- La BD **no se modifica en tablas ni datos**: cero columnas, índices o
+  filas nuevas. La única adición es el procedimiento
+  `sp_guardar_programa_academico` (retrofit, §2.3.1), que llega como
+  migración aparte en `db/postgres/migraciones/` sin tocar
+  `script_bdcatedras.sql`. Los
   5714 registros de `sesion` y los 15349 de `programa_asistente` que se
   mencionan aquí **ya existían** desde el script de la v1 (Artículo 5,
   "completa desde el día 1") — v2 no los siembra, solo los descubre al

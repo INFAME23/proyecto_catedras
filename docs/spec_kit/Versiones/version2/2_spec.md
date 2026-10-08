@@ -186,6 +186,16 @@ desde el front.
   opcional (por defecto `true`). `codigo` con formato inválido → 422;
   `nivel` fuera de la lista → 422; duplicado → 500; `fk_facultad`
   inexistente → 500.
+  **Retrofit (Guía IA, Regla 1 — maestro-detalle):** el body acepta
+  además `alias`, una lista **opcional** de alias iniciales
+  (`[{"texto_normalizado": "...", "origen": "..."}]`; `origen` opcional,
+  por defecto `FORMULARIO`; sin `fk_programa`, que es siempre el código
+  del programa que se crea). Programa y alias se guardan en **una sola
+  transacción** con el SP `sp_guardar_programa_academico`: si un alias
+  falla (texto repetido → 500), **no queda nada guardado**, ni siquiera
+  el programa. Un alias con forma inválida → 422 (campo
+  `alias[i].texto_normalizado`). Sin `alias` o con `[]`, el POST se
+  comporta exactamente como antes.
 - **RF77 — Reemplazar** (`PUT .../{codigo}` con
   **ProgramaAcademicoReemplazo**): `nombre`, `nivel` y `activo`
   obligatorios; `fk_facultad` siempre presente (o `null`). Inexistente →
@@ -322,7 +332,12 @@ desde el front.
   a PUT/DELETE). Para `Facultad` y `Dependencia`, el formulario incluye
   un `<select>` con las filas existentes como posible padre (y la
   opción "ninguno"). `AliasPrograma` solo tiene listar/crear/eliminar
-  (RF80-83: no hay verbo de actualización).
+  (RF80-83: no hay verbo de actualización). **Retrofit:** el formulario
+  de *nuevo* programa trae un `<textarea>` opcional "Alias iniciales"
+  (uno por línea) que viaja en el mismo POST (RF76); al *editar* no
+  aparece — para agregar alias a un programa existente se usa la
+  pantalla de `AliasPrograma`. Toda FK de los formularios es un
+  `<select>` poblado desde la API (Guía IA, Regla 2 — ya se cumplía).
 
 ## 5. Requisitos no funcionales
 
@@ -383,3 +398,10 @@ Rigen los mismos RNF1-RNF6 de la v1 ([2_spec.md](../version1/2_spec.md)
 10. El panel de administración (`/admin`) muestra las 5 tarjetas
     nuevas, con CRUD funcional de punta a punta contra Docker/PostgreSQL
     reales, igual que las 10 de la v1.
+11. **Maestro-detalle (retrofit, Guía IA Regla 1):** un
+    `POST /api/ProgramaAcademico` con 2 alias en `alias` → 200, y
+    `GET /api/AliasPrograma` muestra esos 2 alias con `fk_programa`
+    igual al código creado; el mismo POST con un alias que ya existe
+    (p. ej. `"ingenieria de datos"`) → 500 **y** el programa NO queda
+    creado (`GET /api/ProgramaAcademico/{codigo}` → 404); un POST sin
+    `alias` sigue funcionando igual que antes del retrofit.
