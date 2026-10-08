@@ -18,8 +18,11 @@ public interface IRepositorioProgramaAcademico
     /// <summary>El programa con ese código, o null si no existe.</summary>
     Task<ProgramaAcademico?> ObtenerPorIdAsync(string codigo);
 
-    /// <summary>Inserta. Duplicado o facultad inexistente -> NpgsqlException (500).</summary>
-    Task CrearAsync(ProgramaAcademico programa);
+    /// <summary>Inserta el programa y sus alias iniciales (0 o más) en UNA sola
+    /// transacción, invocando el SP 'sp_guardar_programa_academico' (Guía IA,
+    /// Regla 1). Código duplicado, facultad inexistente o un alias repetido
+    /// -> NpgsqlException (500) y NO queda nada guardado.</summary>
+    Task CrearAsync(ProgramaAcademico programa, IReadOnlyList<AliasPrograma> aliasIniciales);
 
     /// <summary>Actualiza las columnas de 'datos'. Devuelve filas afectadas (0 = no existe).</summary>
     Task<int> ActualizarAsync(string codigo, Dictionary<string, object?> datos);

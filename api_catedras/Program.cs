@@ -110,6 +110,8 @@ builder.Services.Configure<ApiBehaviorOptions>(opciones =>
 //   · "$.es_virtual"  (error de tipo, del deserializador) -> "es_virtual"
 //   · "IdSede"        (error de anotación, nombre de propiedad C#) -> "id_sede"
 //   · "$" o vacío     (error a nivel del cuerpo entero) -> "cuerpo"
+//   · "Alias[0].TextoNormalizado" (campo DENTRO de una lista, retrofit V2)
+//                     -> "alias[0].texto_normalizado"
 static string LimpiarNombreCampo(string clave)
 {
     if (string.IsNullOrEmpty(clave) || clave == "$") return "cuerpo";
@@ -117,14 +119,17 @@ static string LimpiarNombreCampo(string clave)
     // Quita el prefijo de ruta JSON ("$.").
     if (clave.StartsWith("$.")) clave = clave[2..];
 
-    // Convierte PascalCase -> snake_case: antes de cada mayúscula (que no
-    // sea la primera ni venga ya de un '_') se mete un guion bajo, y todo
-    // pasa a minúsculas. "IdSede" -> "id_sede"; "es_virtual" no cambia.
+    // Convierte PascalCase -> snake_case: antes de cada mayúscula se mete
+    // un guion bajo, y todo pasa a minúsculas. "IdSede" -> "id_sede";
+    // "es_virtual" no cambia. El guion bajo SOLO va si el carácter anterior
+    // es letra o dígito (char.IsLetterOrDigit): así no se mete uno después
+    // de '_', '.' o ']' — "Alias[0].TextoNormalizado" queda
+    // "alias[0].texto_normalizado" y no "alias[0]._texto_normalizado".
     var resultado = new System.Text.StringBuilder();
     for (int i = 0; i < clave.Length; i++)
     {
         char caracter = clave[i];
-        if (char.IsUpper(caracter) && i > 0 && clave[i - 1] != '_')
+        if (char.IsUpper(caracter) && i > 0 && char.IsLetterOrDigit(clave[i - 1]))
             resultado.Append('_');
         resultado.Append(char.ToLowerInvariant(caracter));
     }
