@@ -6,6 +6,10 @@
 //  revisa la petición -> 422) y la existencia de la facultad es una FK
 //  (la revisa el motor -> 500). Aquí quedan solo las reglas comunes:
 //  límite > 0, valores por defecto, PATCH no vacío y "no existe" -> 404.
+//
+//  Retrofit V2: 'CrearAsync' recibe además los alias iniciales del body y
+//  los entrega al repositorio JUNTO con el programa (maestro-detalle en
+//  una sola transacción, Guía IA · Regla 1).
 // ==========================================================================
 
 namespace ApiCatedras.Servicios;
@@ -22,6 +26,9 @@ public class ServicioProgramaAcademico : IServicioProgramaAcademico
 
     // DEFAULT de la columna 'nivel' en la BD.
     private const string NivelPorDefecto = "PREGRADO";
+
+    // DEFAULT de la columna 'origen' de 'alias_programa' (retrofit V2).
+    private const string OrigenPorDefecto = "FORMULARIO";
 
     private readonly IRepositorioProgramaAcademico _repositorio;
 
@@ -63,7 +70,25 @@ public class ServicioProgramaAcademico : IServicioProgramaAcademico
             Activo = peticion.Activo ?? true,             // DEFAULT true
         };
 
-        await _repositorio.CrearAsync(programa);
+        // Retrofit V2 (Guía IA, Regla 1): los alias iniciales que llegaron
+        // en el mismo body se convierten en filas de 'alias_programa'.
+        // Regla de negocio que vive AQUÍ: un alias inicial pertenece SIEMPRE
+        // al programa que se está creando, así que 'FkPrograma' es el código
+        // del maestro (el cliente no puede elegir otro). 'Origen' toma el
+        // DEFAULT de la columna si no llegó.
+        // '?? []' = si 'Alias' es null, se usa una lista vacía (sin alias).
+        var aliasIniciales = (peticion.Alias ?? [])
+            .Select(a => new AliasPrograma
+            {
+                TextoNormalizado = a.TextoNormalizado!,
+                FkPrograma = programa.Codigo,
+                Origen = a.Origen ?? OrigenPorDefecto,
+            })
+            .ToList();
+
+        // Lo que la BD ya garantiza (texto de alias único, facultad que
+        // exista) NO se revalida aquí: si falla, el SP revierte TODO.
+        await _repositorio.CrearAsync(programa, aliasIniciales);
     }
 
     public async Task<int> ReemplazarAsync(string codigo, ProgramaAcademicoReemplazo peticion)

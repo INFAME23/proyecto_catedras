@@ -733,7 +733,8 @@ Afirmar("DELETE elimina 1 fila", await servicioDependencia.EliminarAsync("PASTOR
 //  (el formato del código y la lista de niveles son de FORMA: los prueba la
 //   petición contra Docker, no esta prueba de capas)
 // ============================================================================
-var servicioPrograma = new ServicioProgramaAcademico(new RepositorioProgramaAcademicoFalso());
+var repoProgramaFalso = new RepositorioProgramaAcademicoFalso();
+var servicioPrograma = new ServicioProgramaAcademico(repoProgramaFalso);
 
 Console.WriteLine("\n== v2 · Prueba de capas: ServicioProgramaAcademico + repositorio falso en memoria ==\n");
 
@@ -747,6 +748,30 @@ await servicioPrograma.CrearAsync(new ProgramaAcademicoCrear { Codigo = "Z9999",
 var progCreado = await servicioPrograma.ObtenerAsync("Z9999");
 Afirmar("Crear() aplica los DEFAULT (nivel PREGRADO, activo true, sin facultad)",
     progCreado.Nivel == "PREGRADO" && progCreado.Activo && progCreado.FkFacultad is null);
+Afirmar("Crear() sin 'alias' entrega 0 alias al repositorio (retrofit V2)",
+    repoProgramaFalso.UltimosAlias.Count == 0);
+
+// Retrofit V2 (Guía IA, Regla 1): maestro + detalles en la misma llamada.
+await servicioPrograma.CrearAsync(new ProgramaAcademicoCrear
+{
+    Codigo = "Z9998",
+    Nombre = "Programa con alias",
+    Alias =
+    [
+        new AliasInicial { TextoNormalizado = "prog con alias" },
+        new AliasInicial { TextoNormalizado = "pca", Origen = "CARGA" },
+    ],
+});
+var aliasEntregados = repoProgramaFalso.UltimosAlias;
+Afirmar("Crear() con 2 alias los entrega JUNTO con el programa, en una sola llamada",
+    aliasEntregados.Count == 2);
+Afirmar("cada alias inicial apunta al programa que se crea (fk_programa = 'Z9998')",
+    aliasEntregados.All(a => a.FkPrograma == "Z9998"));
+Afirmar("'origen' toma el DEFAULT 'FORMULARIO' si no llega, y respeta el enviado",
+    aliasEntregados[0].Origen == "FORMULARIO" && aliasEntregados[1].Origen == "CARGA");
+Afirmar("la petición de alias inicial NO tiene 'fk_programa' (lo pone el servicio)",
+    typeof(AliasInicial).GetProperty("FkPrograma") is null);
+await servicioPrograma.EliminarAsync("Z9998");
 
 int filasPutProg = await servicioPrograma.ReemplazarAsync("Z9999", new ProgramaAcademicoReemplazo
 { Nombre = "Maestría de prueba", FkFacultad = "F_ING", Nivel = "MAESTRIA", Activo = false });
@@ -1483,11 +1508,16 @@ class RepositorioProgramaAcademicoFalso : IRepositorioProgramaAcademico
     public Task<ProgramaAcademico?> ObtenerPorIdAsync(string codigo) =>
         Task.FromResult(_tabla.TryGetValue(codigo, out var programa) ? programa : null);
 
-    public Task CrearAsync(ProgramaAcademico programa)
+    // Retrofit V2: guarda también los alias que le entregó el servicio, para
+    // que la prueba de capas compruebe CÓMO los armó (fk y origen).
+    public List<AliasPrograma> UltimosAlias { get; private set; } = new();
+
+    public Task CrearAsync(ProgramaAcademico programa, IReadOnlyList<AliasPrograma> aliasIniciales)
     {
         if (_tabla.ContainsKey(programa.Codigo))
             throw new InvalidOperationException("codigo duplicado (simulado).");
         _tabla[programa.Codigo] = programa;
+        UltimosAlias = aliasIniciales.ToList();
         return Task.CompletedTask;
     }
 
