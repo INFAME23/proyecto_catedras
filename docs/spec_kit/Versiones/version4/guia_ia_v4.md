@@ -11,9 +11,9 @@
 > Si esta guía contradice al spec kit, gana el spec kit y se corrige esta
 > guía.
 >
-> **Estado de la v4 (2026-10-08):** código completo; SQL y front
-> verificados contra la BD real. Falta la Fase 37: correr todo en Docker y
-> poner el tag `v4`.
+> **Estado de la v4 (2026-10-08):** código completo y verificado en Docker
+> (prueba de capas: 256 pasadas, 0 fallidas). Solo falta el commit con el
+> tag `v4` (Fase 37).
 
 ---
 

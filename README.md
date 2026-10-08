@@ -141,6 +141,7 @@ D19-D21), `5_data_model.md` (las 2 tablas, sus FK y los datos de ejemplo
 versión con un asistente de IA: orden de lectura, prompts por fase y
 trampas conocidas).
 
-**Estado:** código de la v4 completo; el SQL y el front se verificaron
-contra la BD real. Falta correr en Docker la prueba de capas y el smoke
-test (`7_quickstart.md`) y poner el tag `v4` (Fase 37 de `8_tasks.md`).
+**Estado:** v4 completa y verificada en Docker (2026-10-08): smoke test
+de `7_quickstart.md` y pantallas del front comprobados, y la prueba de capas con
+**256 pasadas, 0 fallidas**. Solo queda el commit con el tag `v4`
+(Fase 37 de `8_tasks.md`).

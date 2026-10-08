@@ -49,9 +49,9 @@ la Fase 12 de su `8_tasks.md` como hecha, y hacer el commit con el tag
 
 Código completo (API, prueba de capas y front, incluido el calendario del
 ponente); su spec kit se revisó contra la BD real y quedó como oficial.
-Falta correr sus criterios en Docker y poner el tag `v4` (Fase 37 de
-`version4/8_tasks.md`). Guía para hacerlo con IA:
-[version4/guia_ia_v4.md](version4/guia_ia_v4.md).
+Sus criterios se corrieron en Docker el 2026-10-08 (prueba de capas: 256
+pasadas, 0 fallidas). Solo falta el commit con el tag `v4` (Fase 37 de
+`version4/8_tasks.md`). Guía: [version4/guia_ia_v4.md](version4/guia_ia_v4.md).
 
 ## 3. Salvedad: la FK circular con `usuario`
 

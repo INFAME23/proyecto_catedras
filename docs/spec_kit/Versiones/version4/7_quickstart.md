@@ -133,4 +133,6 @@ Con la API corriendo (§1-2 de aquí):
 | `GET /api/Sesion?fkCatedra=3975` "salta" de la 22 a la 24 | Correcto: el dato de ejemplo no trae la reunión 23 |
 | Error "Cannot write DateTimeOffset with Offset=-05:00:00" en el log de la API | Alguien cambió el modelo a `DateTimeOffset`. Volver a `DateTime` en UTC (ADR D21) |
 | `POST /api/Ponencia` con el mismo asistente y rol responde 500 | Correcto: es la misma fila (PK duplicada) — si la intención es un rol distinto, cambiar `rol` en el body, no repetir el mismo |
+| En `/sesiones/{id}`, asignar un ponente duplicado "no hace nada" | Sí hace algo: el aviso rojo con el error de la API sale **arriba** de la página y la redirección baja a `#ponentes`. Sube al inicio para verlo |
+| `/sesiones/1` da 404 o `/catedras/5498` ya trae sesiones | Quedaron datos de una prueba anterior (p. ej. se borró la sesión 1 en el paso 6). Hacer el reset del paso 7 antes de probar el front |
 | Todo roto | `docker compose down -v && docker compose up -d --build` (API); para el front, confirmar que `API_BASE_URL` siga en `http://localhost:8142/api` |
