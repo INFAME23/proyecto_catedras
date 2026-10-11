@@ -39,10 +39,10 @@ Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §2.
   Si alguna opción falla (`orden` repetido) → **500** y **nada** queda
   creado. `(fkEncuesta, orden)` repetido entre preguntas → **500**.
 - **`OpcionPregunta`** — 6 verbos, molde completo (a diferencia de
-  `AliasPrograma`/`ConsentimientoDatos` — D32): `GET/POST
+  `AliasPrograma`/`ConsentimientoDatos` — D33): `GET/POST
   /api/OpcionPregunta`, `GET/PUT/PATCH/DELETE
   /api/OpcionPregunta/{idOpcion}`.
-- **`RespuestaEncuesta` — 3 verbos, uno de ellos de negocio (D30):**
+- **`RespuestaEncuesta` — 3 verbos, uno de ellos de negocio (D31):**
   `GET /api/RespuestaEncuesta?fkEncuesta=`, `GET/{idRespuesta}`,
   `POST /api/RespuestaEncuesta` con body
   ```json
@@ -58,10 +58,10 @@ Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §2.
   (`numero`/`texto`/`opcion` — exactamente uno por cada elemento,
   según el tipo de la pregunta correspondiente, D9: la API no lo
   revalida). Devuelve `200 {estado, mensaje, idRespuesta}`. **Sin**
-  `PUT`, `PATCH` ni `DELETE` (D31) — esas rutas responden 404 de
+  `PUT`, `PATCH` ni `DELETE` (D32) — esas rutas responden 404 de
   ASP.NET. `respuestas` vacía, el registro sin encuesta asignada, una
   pregunta obligatoria faltante, o el registro ya respondido → **500**
-  (D24 de v5: excepciones de negocio de la BD, mismo bucket que
+  (D25 de v5: excepciones de negocio de la BD, mismo bucket que
   cualquier otro error de PostgreSQL).
 - **`RespuestaItem` — 2 verbos, solo lectura:**
   `GET /api/RespuestaItem?fkRespuesta=`, `GET/{idItem}`. Sin `POST`

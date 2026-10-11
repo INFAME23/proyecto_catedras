@@ -8,7 +8,7 @@
 >
 > **Nota de alcance (v7):** sin cambios de infraestructura y, por
 > segunda vez en el proyecto (junto con v4), **sin ningún montaje
-> nuevo** en `docker-entrypoint-initdb.d/` (ADR D33). Es la última
+> nuevo** en `docker-entrypoint-initdb.d/` (ADR D34). Es la última
 > versión del mapa — al cerrarla, este documento (y los 6 anteriores de
 > esta carpeta) describen el contrato final y completo de las 37
 > tablas de `bdcatedras`.
@@ -43,7 +43,7 @@ Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §2.
   "mensaje": null}`) → `200`; un segundo `ACEPTADO` para el mismo
   `fkRegistro` en cualquier otro lote → **500**
   (`ux_detmig_aceptado`). **Sin** `POST`, `PUT` ni `DELETE`.
-- **`Bitacora` — 2 verbos, ningún verbo de escritura (ADR D35):**
+- **`Bitacora` — 2 verbos, ningún verbo de escritura (ADR D36):**
   `GET /api/Bitacora?nombreTabla=&fkUsuario=`, `GET/{idBitacora}`.
   `POST`/`PUT`/`PATCH`/`DELETE` sobre `/api/Bitacora` → **404** de
   ASP.NET (el `Controller` no declara ningún método que los acepte).

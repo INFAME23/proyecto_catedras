@@ -6,7 +6,7 @@
 
 Sin cambios: C#/ASP.NET Core (.NET 10) + Dapper, sin ORM, sin
 paquetes nuevos. **Un SP nuevo** (`sp_guardar_pregunta`, a diferencia
-de lo que el plan original asumía — ver ADR D29).
+de lo que el plan original asumía — ver ADR D30).
 
 ## 2. Estructura de carpetas
 
@@ -55,7 +55,7 @@ v5 con `EnlaceRegistro`/`ClaveAcceso`).
 ### 4.1 `sp_guardar_pregunta`: maestro + opciones iniciales, en una transacción (Guía IA, Regla 1)
 
 A diferencia de `respuesta_encuesta`/`respuesta_item` (que ya tenían su
-SP desde v1 — ADR D29), **esta** pareja maestro-detalle SÍ necesita un
+SP desde v1 — ADR D30), **esta** pareja maestro-detalle SÍ necesita un
 SP nuevo, porque ninguna versión anterior lo escribió:
 
 ```sql
@@ -103,7 +103,7 @@ criterio todo-o-nada que `sp_guardar_programa_academico` (v2) y
 (v3): aquí no hay miles de filas independientes, hay una pregunta con
 sus propias opciones, que o se crean juntas o no se crean.
 
-### 4.2 `RespuestaEncuesta.ResponderAsync`: una función que ya hace todo (ADR D30)
+### 4.2 `RespuestaEncuesta.ResponderAsync`: una función que ya hace todo (ADR D31)
 
 ```csharp
 // RepositorioRespuestaEncuestaPostgres.cs
@@ -142,7 +142,7 @@ chk_pregunta_rango` de la BD es la última muralla.
 — igual que siempre, un id inexistente lo rechaza el motor (500), la
 API no revalida. El trigger `fn_trg_respuesta_item_tipo` (RN-24/RN-25)
 tampoco se revalida en C#: es un caso limpio de D9 (a diferencia de
-`chk_registro_clave` en v5, ADR D25, este `CHECK`/trigger SÍ refleja
+`chk_registro_clave` en v5, ADR D26, este `CHECK`/trigger SÍ refleja
 fielmente toda la regla, sin ningún hueco que la API necesite cerrar).
 
 ## 5. Frontend: responder encuesta y administrar preguntas

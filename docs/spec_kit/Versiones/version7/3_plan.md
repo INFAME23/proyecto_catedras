@@ -5,7 +5,7 @@
 ## 1. Stack
 
 Sin cambios: C#/ASP.NET Core (.NET 10) + Dapper, sin ORM, **sin
-paquetes nuevos y sin ningún SP/migración nueva** (ADR D33) — segunda
+paquetes nuevos y sin ningún SP/migración nueva** (ADR D34) — segunda
 versión del proyecto, junto con v4, sin ningún `CREATE PROCEDURE`
 propio.
 
@@ -50,7 +50,7 @@ también modifica una fila de OTRA tabla de otra versión
 
 ## 4. Decisiones de diseño clave
 
-### 4.1 Por qué `LoteMigracion`/`DetalleMigracion` no necesitan ningún SP nuevo (ADR D33)
+### 4.1 Por qué `LoteMigracion`/`DetalleMigracion` no necesitan ningún SP nuevo (ADR D34)
 
 Ver desarrollo completo en [4_research.md](4_research.md). Resumen:
 `sp_generar_lote_migracion` (y su envoltorio `fn_generar_lote_api`) ya

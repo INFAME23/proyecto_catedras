@@ -1,7 +1,8 @@
 # Tareas — Versión 5: usuarios, login y registro de asistencia
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md). Plan, no
-> registro de trabajo hecho: ninguna casilla está marcada todavía.
+> ✅ **Revisada contra la BD real (2026-10-08), sin construir** — ver nota
+> de [2_spec.md](2_spec.md). Plan, no registro de trabajo hecho: ninguna
+> casilla está marcada todavía.
 >
 > Continúa la numeración de fases de
 > [version4/8_tasks.md](../version4/8_tasks.md) (termina en Fase 37).
@@ -14,12 +15,12 @@
 ---
 
 ## Fase 38 — Preparación: paquete NuGet y utilidades comunes
-> RNF12-RNF13 de [2_spec.md](2_spec.md). Va primero porque las Fases
+> RNF13-RNF14 de [2_spec.md](2_spec.md). Va primero porque las Fases
 > 39 y 41-42 dependen de que `BCrypt.Net-Next` ya esté referenciado.
 
-- [ ] `ApiCatedras.csproj` — agregar
+- [x] `ApiCatedras.csproj` — agregar
       `<PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />`.
-- [ ] Confirmar que `dotnet restore` resuelve el paquete sin tocar
+- [x] Confirmar que `dotnet restore` resuelve el paquete sin tocar
       ningún otro `PackageReference` existente (Artículo 2: no se
       agrega nada más "de paso").
 
@@ -28,12 +29,17 @@ nuevas; un `using BCrypt.Net;` de prueba en un archivo temporal
 resuelve `BCrypt.HashPassword`/`Verify` (se borra el archivo temporal
 antes de seguir).
 
+**Verificado (2026-10-11, en la máquina del autor):** `dotnet restore` y
+`dotnet build` en `api_catedras` terminan con `Build succeeded`. **No se
+hizo** la prueba del `using BCrypt.Net;` temporal: el paquete se usará de
+verdad en la Fase 39, donde un fallo de resolución saltaría de inmediato.
+
 ## Fase 39 — La aplicación (capas de `Usuario`)
-> RF132-RF139 de [2_spec.md](2_spec.md), ADR D22, D26, §2.1 de
+> RF132-RF139 de [2_spec.md](2_spec.md), ADR D23, D27, §2.1 de
 > [5_data_model.md](5_data_model.md). Depende de la Fase 38 y de
 > `Asistente` (v3, ya construida).
 
-- [ ] `Modelos/Usuario.cs` — `ClaveHash` con `[JsonIgnore]` (D22);
+- [ ] `Modelos/Usuario.cs` — `ClaveHash` con `[JsonIgnore]` (D23);
       `IdUsuario`/`CreadoEn` sin `required`.
 - [ ] `Peticiones/Usuario{Crear,Reemplazo,Actualizar}.cs` — `Usuario`
       con `[RegularExpression("^[a-z0-9._-]{4,40}$")]`; `Clave` con
@@ -53,9 +59,9 @@ antes de seguir).
 - [ ] `Servicios/IServicioUsuario.cs` + `ServicioUsuario.cs` —
       `CrearAsync`/`ReemplazarAsync`/`ActualizarAsync` llaman
       `BCrypt.Net.BCrypt.HashPassword` (único lugar del proyecto que lo
-      hace, D22); `LoginAsync` llama `BCrypt.Net.BCrypt.Verify` y
+      hace, D23); `LoginAsync` llama `BCrypt.Net.BCrypt.Verify` y
       devuelve `null` si usuario inexistente, inactivo o clave
-      incorrecta (sin distinguir cuál — D26), o
+      incorrecta (sin distinguir cuál — D27), o
       `(Usuario, List<string> Roles)` si es válido.
 - [ ] `Controllers/UsuarioController.cs` — 6 endpoints + `[HttpPost
       ("login")]`: si `ServicioUsuario.LoginAsync` devuelve `null` →
@@ -97,7 +103,7 @@ login (confirmar volviendo a loguearse con la clave original).
 `fk_rol`.
 
 ## Fase 41 — La aplicación (capas de `EnlaceRegistro`)
-> RF143-RF148 de [2_spec.md](2_spec.md), ADR D21, D23, D24, §2.3 de
+> RF143-RF148 de [2_spec.md](2_spec.md), ADR D22, D24, D25, §2.3 de
 > [5_data_model.md](5_data_model.md). Depende de `Sesion` (v4) y,
 > opcionalmente, de la Fase 39 (`fk_usuario_crea`).
 
@@ -136,7 +142,7 @@ primero queda revocado (`RN-14`); `PATCH .../revocar` → 200; repetir →
 400; `fk_sesion` inexistente → 500.
 
 ## Fase 42 — La aplicación (capas de `ClaveAcceso` y `RegistroAsistencia`)
-> RF149-RF158 de [2_spec.md](2_spec.md), ADR D23, D24, D25, §2.4-2.5
+> RF149-RF158 de [2_spec.md](2_spec.md), ADR D24, D25, D26, §2.4-2.5
 > de [5_data_model.md](5_data_model.md). Depende de la Fase 41
 > (`fk_enlace`) y de `Asistente` (v3). Se construyen juntas porque el
 > flujo de `ClaveAcceso`/validar es, en la práctica, quien crea la
@@ -150,13 +156,11 @@ primero queda revocado (`RN-14`); `PATCH .../revocar` → 200; repetir →
       el cliente).
 - [ ] `Peticiones/ClaveAccesoSolicitar.cs` / `ClaveAccesoValidar.cs` —
       **únicas** peticiones de esta entidad.
-- [ ] `Peticiones/RegistroAsistenciaCrear.cs` — `Origen` con
-      `[RegularExpression("^(MANUAL|IMPORTADO)$")]` **como primera
-      muralla** (422); el servicio valida lo mismo igual (D25, por si
-      llega un valor que la lista cerrada de la anotación no cubre
-      bien, p. ej. mayúsculas/minúsculas distintas) — doble
-      verificación deliberada en este único caso, documentada en el
-      ADR para que no se lea como redundancia accidental.
+- [ ] `Peticiones/RegistroAsistenciaCrear.cs` — `Origen` obligatorio
+      (`[Required]`), **sin** `[RegularExpression]`: la lista cerrada
+      `{MANUAL, IMPORTADO}` la valida **solo el servicio** (D26) para que
+      un `origen: "QR"` responda **400** como piden RF156 y el criterio 6.
+      Con la anotación respondería 422 y el servicio nunca se enteraría.
 - [ ] `Repositorios/IRepositorioClaveAcceso.cs` +
       `RepositorioClaveAccesoPostgres.cs` — `ObtenerTodosAsync`,
       `ObtenerPorIdAsync`, `SolicitarAsync`, `ValidarAsync` (código
@@ -169,7 +173,7 @@ primero queda revocado (`RN-14`); `PATCH .../revocar` → 200; repetir →
 - [ ] `Servicios/IServicioClaveAcceso.cs` + `ServicioClaveAcceso.cs`.
 - [ ] `Servicios/IServicioRegistroAsistencia.cs` +
       `ServicioRegistroAsistencia.cs` — `CrearAsync` valida `origen`
-      (D25) ANTES de llamar al repositorio.
+      (D26) ANTES de llamar al repositorio.
 - [ ] `Controllers/ClaveAccesoController.cs` — `GET` lista,
       `GET/{id}`, `[HttpPost("solicitar")]`, `[HttpPost("validar")]`.
 - [ ] `Controllers/RegistroAsistenciaController.cs` — `GET` lista,
@@ -180,7 +184,7 @@ primero queda revocado (`RN-14`); `PATCH .../revocar` → 200; repetir →
 `Sesion` y un `EnlaceRegistro` cuya ventana cubra el momento de la
 prueba — Fases 32/41): `POST /api/ClaveAcceso/solicitar` → 200 con
 `clave` en texto plano; `POST /api/ClaveAcceso/validar` con esa clave
-→ 200 con `idRegistro`; repetir → 500 (ya usada); `POST
+→ 200 con `id_registro`; repetir → 500 (ya usada); `POST
 /api/RegistroAsistencia` con `origen: "QR"` → 400; con `"MANUAL"` →
 200.
 
@@ -197,7 +201,7 @@ prueba — Fases 32/41): `POST /api/ClaveAcceso/solicitar` → 200 con
       - Un caso de prueba de login con usuario inexistente, otro con
         clave incorrecta y otro con `activo: false` — los 3 deben
         devolver el mismo resultado (`null` desde el servicio, 401
-        desde el controlador), confirmando D26.
+        desde el controlador), confirmando D27.
       - `RepositorioEnlaceRegistroFalso`/`RepositorioClaveAccesoFalso`
         simulan lo que las funciones SQL devolverían (un `id`, una
         `clave` fija para la prueba), sin necesidad de levantar
@@ -224,6 +228,11 @@ prueba — Fases 32/41): `POST /api/ClaveAcceso/solicitar` → 200 con
   5. `POST /api/RegistroAsistencia` con `origen` inválido → 400; con
      `MANUAL` → 200.
   6. `DELETE /api/Asistente/{id con registro_asistencia}` → 500.
+  7. Límite conocido (RF153): con una clave pedida y SIN usar, 4 `validar`
+     con clave incorrecta → 500 cada uno, y `GET /api/ClaveAcceso/{id}` →
+     `intentos: 0`; la clave correcta todavía se acepta después. Si
+     `intentos` sí subiera, revertir el punto 4 de «Ajustes al borrador»
+     en [4_research.md](4_research.md).
 - [ ] `docker compose down -v && docker compose up -d --build` —
       revertir los efectos de arriba.
 
@@ -236,20 +245,27 @@ de aceptación 2-7 de [2_spec.md](2_spec.md).
 > Depende de las Fases 39-42 (API completa).
 
 - [ ] `routes/auth.py` + `templates/login.html` — reemplaza el
-      selector de rol de prueba (v1-v4); guarda usuario y roles en la
-      sesión de Flask.
+      placeholder «en construcción» (v1-v4); guarda usuario y roles en
+      la sesión de Flask; agrega `/logout`.
 - [ ] `auth_helpers.py` (v2) — deja de devolver siempre "sin sesión";
-      lee la sesión real.
-- [ ] `routes/autorregistro.py` + `templates/` — pantalla pública
-      (`/registro/<token>`) para solicitar y validar una clave, sin
-      pasar por `/admin`.
+      lee la sesión real y agrega `rol_requerido('ADMIN')`.
+- [ ] `routes/admin.py` — `before_request` en `admin_bp` que exige sesión
+      con rol `ADMIN` (sin sesión → `/login`; sin rol → 403).
+- [ ] `templates/partials/navbar.html` — muestra el usuario y «Cerrar
+      sesión»; el enlace «Administración» solo con rol `ADMIN`.
+- [ ] `routes/registro.py` + `templates/registro_solicitar.html` y
+      `templates/registro_validar.html` — completa el placeholder (ya
+      registrado en `app.py`): `/registro`, `/registro/<token>` y
+      `/registro/<token>/validar`, sin pasar por `/admin`.
 - [ ] `routes/admin.py` — 5 bloques nuevos; `EnlaceRegistro` con
       "emitir"/"revocar"; `ClaveAcceso` de solo lectura.
 
 **Verificación planeada**: login real funciona de punta a punta contra
-Docker/PostgreSQL reales; la pantalla pública de autorregistro permite
-a un asistente de ejemplo pedir y validar su clave sin ninguna sesión
-de administrador abierta.
+Docker/PostgreSQL reales (fijando antes la clave de `admin.catedras`,
+paso 2 de [7_quickstart.md](7_quickstart.md)); `/admin` sin sesión
+redirige a `/login`; la pantalla pública de autorregistro permite a un
+asistente de ejemplo pedir y validar su clave sin ninguna sesión de
+administrador abierta.
 
 ## Fase 46 — Cierre de la v5
 > Última fase. Solo entonces se escribe la spec de la v6 (Artículo 1).
@@ -260,5 +276,6 @@ de administrador abierta.
 - [ ] `dotnet run --project pruebas` → anotar el total final de
       verificaciones pasadas (Fase 43).
 - [ ] Revisar este spec kit completo (los 7 documentos) contra lo que
-      realmente quedó construido — quitar el banner de "BORRADOR".
+      realmente quedó construido — cambiar el banner «sin construir» por
+      «construida».
 - [ ] Commit y tag: `git tag v5`.

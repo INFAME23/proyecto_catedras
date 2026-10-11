@@ -20,7 +20,7 @@
 > `sp_cerrar_encuesta` interno—. El SP nuevo que esta versión SÍ
 > necesita (Guía IA, Regla 1) es para **`pregunta` + `opcion_pregunta`**,
 > una pareja maestro-detalle que el plan original no había identificado.
-> Ver ADR **D29**.
+> Ver ADR **D30**.
 >
 > | Documento de esta versión | Contenido |
 > |---|---|
@@ -55,7 +55,7 @@ registro_asistencia (v5) ──< respuesta_encuesta >── encuesta (v1)
 ```
 
 Una relación maestro-detalle **nueva**, resuelta con un SP (Guía IA,
-Regla 1 — ver ADR D29 y [3_plan.md](3_plan.md) §4.1):
+Regla 1 — ver ADR D30 y [3_plan.md](3_plan.md) §4.1):
 
 1. **`pregunta` + sus `opcion_pregunta` iniciales.** Crear una pregunta
    junto con sus opciones de respuesta (si es de tipo `OPCION_UNICA`),
@@ -67,7 +67,7 @@ La otra relación maestro-detalle de esta versión, `respuesta_encuesta`
 ya existe desde v1, ya inserta el maestro y todos los detalles en una
 sola transacción, y además ya llama internamente a `sp_cerrar_encuesta`
 — así que "responder" y "cerrar" son, para la API, **una sola
-operación** (ver ADR D30).
+operación** (ver ADR D31).
 
 ## 2. Alcance
 
@@ -80,7 +80,7 @@ operación** (ver ADR D30).
   corrige editando su etiqueta u orden, no solo borrando y recreando.
 - `RespuestaEncuesta`: **un solo verbo de escritura**, "responder"
   (`POST`), que llama a `fn_responder_encuesta_api` (ya existente).
-  Lectura completa (`GET`); sin `PUT`/`PATCH`/`DELETE` (ADR D31: es un
+  Lectura completa (`GET`); sin `PUT`/`PATCH`/`DELETE` (ADR D32: es un
   hecho auditable, como `ConsentimientoDatos` en v3 y
   `RegistroAsistencia` en v5).
 - `RespuestaItem`: solo lectura — nace exclusivamente dentro de
@@ -159,7 +159,7 @@ Numeración de RF continúa desde v5 (terminó en RF158).
 
 ### RespuestaEncuesta
 
-> RF172-RF175. **Un solo verbo de escritura** (ADR D30): "responder"
+> RF172-RF175. **Un solo verbo de escritura** (ADR D31): "responder"
 > llama a `fn_responder_encuesta_api`, que inserta el maestro y TODOS
 > los `respuesta_item` del detalle, y al final llama ella misma a
 > `sp_cerrar_encuesta` — todo en la misma transacción que el `CALL`
@@ -178,7 +178,7 @@ Numeración de RF continúa desde v5 (terminó en RF158).
   últimos según el tipo de la pregunta — obligatoria): llama
   `SELECT * FROM fn_responder_encuesta_api(@FkRegistro, CAST(@Respuestas
   AS jsonb))` y devuelve `idRespuesta`. `respuestas` vacía → 500
-  (`R29`, el propio SP lo rechaza — D24 de v5, mismo criterio: una
+  (`R29`, el propio SP lo rechaza — D25 de v5, mismo criterio: una
   excepción de negocio de la BD cae en 500, no se revalida antes en
   C#, porque validar "la lista no está vacía" en el servicio
   duplicaría, sin necesidad real, una regla que la BD YA aplica de
@@ -188,7 +188,7 @@ Numeración de RF continúa desde v5 (terminó en RF158).
   EXCEPTION` ocurre dentro del mismo `CALL`). El registro ya tenía una
   respuesta → 500 (`uq_respuesta_registro`). La sesión de ese registro
   no tiene `fk_encuesta` asignado → 500 (el propio SP lo valida).
-- **RF175 — Sin `PUT`, `PATCH` ni `DELETE` (ADR D31):** una respuesta
+- **RF175 — Sin `PUT`, `PATCH` ni `DELETE` (ADR D32):** una respuesta
   de encuesta es un hecho auditable, igual que `ConsentimientoDatos`
   (v3) y `RegistroAsistencia` (v5) — se corrige respondiendo de nuevo
   **no es posible** (`uq_respuesta_registro` lo impide): un registro
@@ -208,10 +208,10 @@ Numeración de RF continúa desde v5 (terminó en RF158).
 
 ## 4. Requisitos no funcionales
 
-Rigen los mismos RNF1-RNF13 de v1-v5, sin cambios. Se añade:
+Rigen los mismos RNF1-RNF14 de v1-v5, sin cambios. Se añade:
 
-- **RNF14 — "Responder" y "cerrar" son una sola operación, no dos
-  (D30):** ninguna spec de esta versión expone un verbo "cerrar"
+- **RNF15 — "Responder" y "cerrar" son una sola operación, no dos
+  (D31):** ninguna spec de esta versión expone un verbo "cerrar"
   independiente para `RespuestaEncuesta` — hacerlo sería inventar una
   ruta para una operación que la BD ya resuelve atómicamente dentro de
   `sp_responder_encuesta`.

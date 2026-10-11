@@ -116,5 +116,5 @@ Con la API corriendo (§1-2 de aquí):
 | `POST /api/Pregunta` con `opciones` responde 500 "procedure ... does not exist" | Falta aplicar `004_sp_guardar_pregunta.sql` sobre un volumen que ya existía — ver §1, Opción B |
 | `POST /api/RespuestaEncuesta` responde 500 "La sesion de ese registro no tiene encuesta asignada" | El `fk_registro` usado corresponde a una sesión sin `fk_encuesta` — usar un registro de una sesión que sí la tenga (p. ej. `id_sesion: 5712`) |
 | `POST /api/RespuestaEncuesta` responde 500 aunque "se respondieron todas las preguntas que se le ocurrieron al probador" | Revisar que estén las preguntas marcadas `obligatoria: true` de ESA encuesta, no solo "varias" — `GET /api/Pregunta?fkEncuesta={id}` antes de responder |
-| "¿Dónde está el verbo para cerrar la encuesta?" | No existe — "responder" ya cierra internamente (D30); si el `POST` tuvo éxito, `completa` ya es `true` |
+| "¿Dónde está el verbo para cerrar la encuesta?" | No existe — "responder" ya cierra internamente (D31); si el `POST` tuvo éxito, `completa` ya es `true` |
 | Todo roto | `docker compose down -v && docker compose up -d --build` (API); para el front, confirmar que `API_BASE_URL` siga sin cambios |

@@ -85,7 +85,7 @@ public class OpcionPregunta
 | `fk_registro` | `bigint` | NO | — | FK → `registro_asistencia` (v5), `CASCADE`; `uq_respuesta_registro` — **1 respuesta por registro, máximo** |
 | `fk_encuesta` | `bigint` | NO | — | FK → `encuesta` (v1), `RESTRICT`; lo fija el SP desde `sesion.fk_encuesta`, nunca lo manda el cliente |
 | `respondida_en` | `timestamptz` | NO | `now()` | |
-| `completa` | `boolean` | NO | `false` | el SP la deja en `true` siempre que el `CALL` tenga éxito (D30) — un `false` persistido no ocurre en el flujo normal |
+| `completa` | `boolean` | NO | `false` | el SP la deja en `true` siempre que el `CALL` tenga éxito (D31) — un `false` persistido no ocurre en el flujo normal |
 
 **FK entrantes:** `respuesta_item` (`CASCADE`).
 
@@ -148,7 +148,7 @@ public class RespuestaItem
   `chk_respuesta_item_un_valor`, y las reglas de negocio de
   `RN-24`/`RN-25`/`RN-26`/`R29` dentro de
   `sp_responder_encuesta`/`sp_cerrar_encuesta`/
-  `fn_trg_respuesta_item_tipo` — todas caen en el mismo 500 (D24 de
+  `fn_trg_respuesta_item_tipo` — todas caen en el mismo 500 (D25 de
   v5, sin cambios).
 
 ## 4. Reglas de esta versión
@@ -158,7 +158,7 @@ public class RespuestaItem
   (`004_sp_guardar_pregunta.sql`) — la primera desde v3.
 - `respuesta_encuesta`/`respuesta_item` usan funciones que YA EXISTÍAN
   desde v1 (`fn_responder_encuesta_api`) — v6 no agrega ninguna
-  migración para ellas (ver ADR D29).
+  migración para ellas (ver ADR D30).
 - `docker compose down -v && docker compose up -d --build` resetea las
   37 tablas de siempre, con 4 `pregunta`, 0 `opcion_pregunta`, 62
   `respuesta_encuesta` y 248 `respuesta_item` de ejemplo de vuelta a

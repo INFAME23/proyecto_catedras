@@ -6,7 +6,7 @@
 > construido en v7, sobre lo que dejaron v1-v6.
 >
 > **Nota de alcance (v7):** mismo backend que v1-v6, **sin ninguna
-> migración nueva** (ADR D33). Hoy la API expone las **37** tablas de
+> migración nueva** (ADR D34). Hoy la API expone las **37** tablas de
 > `bdcatedras` por completo: los 33 recursos de v1-v6 más
 > `LoteMigracion`, `DetalleMigracion`, `Bitacora` y `Parametro`. Es la
 > última versión del mapa.
@@ -48,7 +48,7 @@ docker compose ps
    `fkSesion` de una cátedra recién creada (sin ningún
    `registro_asistencia`, p. ej. una de las cátedras vacías usadas en
    el quickstart de v4) → `500` (la función lanza su propio `RAISE
-   EXCEPTION`; D24 de v5).
+   EXCEPTION`; D25 de v5).
 4. **`PATCH` de estado de lote (criterio 3):** `PATCH
    /api/LoteMigracion/{idLote}` con `{"fkEstadoProceso": "EN_CURSO"}`
    → `200`; `GET /api/LoteMigracion/{idLote}` confirma el cambio.
@@ -119,7 +119,7 @@ Con la API corriendo (§1-2 de aquí):
 |---|---|
 | `POST /api/LoteMigracion` responde 500 "no hay registros migrables" (o similar) | La `fkSesion` usada no tiene ningún `registro_asistencia` real, o todos son de asistentes externos — usar `5712` u otra sesión con datos de ejemplo |
 | `PATCH /api/DetalleMigracion/{id}` con `resultado: "ACEPTADO"` responde 500 inesperadamente | El `fkRegistro` de esa fila ya quedó `ACEPTADO` en otro lote antes — es el comportamiento esperado de `ux_detmig_aceptado`, no un error |
-| `POST`/`PATCH`/`DELETE` sobre `/api/Bitacora` responde 404 | Correcto — no es un bug: esta entidad no tiene ningún verbo de escritura a propósito (D35) |
+| `POST`/`PATCH`/`DELETE` sobre `/api/Bitacora` responde 404 | Correcto — no es un bug: esta entidad no tiene ningún verbo de escritura a propósito (D36) |
 | `GET /api/Bitacora` tarda o devuelve demasiadas filas | Usar `?limite=` bajo — la tabla ya trae 168+ filas de ejemplo y crece con cada `registro_asistencia` |
-| `fk_usuario` siempre sale `null` en `Bitacora`/`LoteMigracion` | Esperado — ningún endpoint de la API propaga el usuario autenticado hacia la BD (ver nota en [5_data_model.md](5_data_model.md) §2.3); no hay autorización por rol en este proyecto (D27 de v5) |
+| `fk_usuario` siempre sale `null` en `Bitacora`/`LoteMigracion` | Esperado — ningún endpoint de la API propaga el usuario autenticado hacia la BD (ver nota en [5_data_model.md](5_data_model.md) §2.3); no hay autorización por rol en este proyecto (D28 de v5) |
 | Todo roto | `docker compose down -v && docker compose up -d --build` (API); para el front, confirmar que `API_BASE_URL` siga sin cambios |
