@@ -55,12 +55,18 @@ public class Usuario
     [JsonPropertyName("usuario")]
     public required string NombreUsuario { get; set; }
     [JsonIgnore]
-    public required string ClaveHash { get; set; }
+    public string ClaveHash { get; set; } = "";   // SIN 'required' (ver nota abajo)
     public bool Activo { get; set; } = true;
     public DateTime? UltimoAcceso { get; set; }
     public DateTime CreadoEn { get; set; }
 }
 ```
+
+> **`ClaveHash` no lleva `required`:** `System.Text.Json` (.NET 8+) lanza
+> `InvalidOperationException` ("is marked required but does not specify a
+> setter") al serializar una propiedad `required` marcada `[JsonIgnore]`.
+> Se detectó en la prueba de capas (Fase 43). El servicio siempre la
+> asigna, así que `required` no aportaba nada.
 
 ### 2.2 `rol_por_usuario`
 

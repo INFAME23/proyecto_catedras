@@ -508,6 +508,7 @@ comentarios de `docker-compose.yml`.
 | Cuatro `validar` malos y `intentos` sigue en 0 | Limite conocido (RF153) | Correcto; no "arreglar" |
 | `login` → 401 con la clave "correcta" | Cuenta `activo: false`, o la clave de `admin.catedras` aún no se fijó | `PATCH /api/Usuario/1`; el 401 es igual para todas las causas (D27) |
 | Respuesta de `Usuario` trae `clave_hash` | Falta `[JsonIgnore]` en el Modelo | Añadirlo (D23) |
+| `InvalidOperationException: JsonPropertyInfo 'ClaveHash' … is marked required but does not specify a setter` | `ClaveHash` es `required` **y** `[JsonIgnore]` | Quitar `required` (`= ""`); System.Text.Json no admite esa combinación |
 | Dos `POST /api/EnlaceRegistro` y el primero queda revocado | `RN-14` | Correcto |
 | `PUT /api/EnlaceRegistro/1`, `DELETE …`, `GET /api/RolPorUsuario/1` → 404 | Rutas que no existen (D22, D24, D16) | Correcto |
 | `DELETE /api/Asistente/1` → 500 | `RESTRICT` desde `registro_asistencia` | Correcto (criterio 7) |
