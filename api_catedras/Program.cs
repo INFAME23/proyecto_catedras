@@ -366,6 +366,22 @@ builder.Services.AddScoped<IRepositorioEnlaceRegistro>(
     _ => new RepositorioEnlaceRegistroPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioEnlaceRegistro, ServicioEnlaceRegistro>();
 
+// IRepositorioClaveAcceso -> RepositorioClaveAccesoPostgres, IServicioClaveAcceso
+// -> ServicioClaveAcceso. Tampoco es un CRUD (ADR D24): "solicitar" y "validar"
+// llaman a fn_solicitar_clave_api / fn_validar_clave_api. Las excepciones de
+// negocio de la BD llegan como NpgsqlException y se responden con 500 (D25).
+builder.Services.AddScoped<IRepositorioClaveAcceso>(
+    _ => new RepositorioClaveAccesoPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioClaveAcceso, ServicioClaveAcceso>();
+
+// IRepositorioRegistroAsistencia -> RepositorioRegistroAsistenciaPostgres,
+// IServicioRegistroAsistencia -> ServicioRegistroAsistencia (valida que el
+// 'origen' del alta manual sea MANUAL o IMPORTADO, ADR D26). Sin UPDATE ni
+// DELETE: un registro de asistencia es un hecho auditable.
+builder.Services.AddScoped<IRepositorioRegistroAsistencia>(
+    _ => new RepositorioRegistroAsistenciaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRegistroAsistencia, ServicioRegistroAsistencia>();
+
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
