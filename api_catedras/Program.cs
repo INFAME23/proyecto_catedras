@@ -1,5 +1,5 @@
 // ==========================================================================
-//  Program.cs  ·  Proyecto Cátedras · Versión 4
+//  Program.cs  ·  Proyecto Cátedras · Versión 5
 // --------------------------------------------------------------------------
 //  Punto de entrada de la API. Aquí ocurren CUATRO cosas y nada más:
 //    1. Se registran los controladores y se personaliza el 422.
@@ -335,6 +335,27 @@ builder.Services.AddScoped<IRepositorioPonencia>(
     _ => new RepositorioPonenciaPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioPonencia, ServicioPonencia>();
 
+// ---------------------------- Versión 5 ---------------------------------
+// Usuarios y control de acceso. Hasta aquí era una pareja repositorio +
+// servicio por entidad; en la v5 aparece una DEPENDENCIA ENTRE SERVICIOS DE
+// DATOS: ServicioUsuario recibe DOS repositorios (usuario y rol_por_usuario)
+// porque el login devuelve los roles vigentes (ADR D27). El ensamblador solo
+// tiene que registrar ambos; DI los inyecta por constructor.
+// BCrypt NO se menciona aquí: vive únicamente dentro de ServicioUsuario
+// (ADR D23, RNF13).
+
+// IRepositorioUsuario -> RepositorioUsuarioPostgres, IServicioUsuario ->
+// ServicioUsuario (hashea la clave con BCrypt y resuelve el login).
+builder.Services.AddScoped<IRepositorioUsuario>(
+    _ => new RepositorioUsuarioPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioUsuario, ServicioUsuario>();
+
+// IRepositorioRolPorUsuario -> RepositorioRolPorUsuarioPostgres (llave
+// compuesta CON vigencia, ADR D16). Su servicio y su controlador llegan en
+// la Fase 40; por ahora lo consume ServicioUsuario.
+builder.Services.AddScoped<IRepositorioRolPorUsuario>(
+    _ => new RepositorioRolPorUsuarioPostgres(cadenaConexion));
+
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
@@ -348,8 +369,8 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Json(new
 {
     mensaje = "API Cátedras en línea.",
-    version = "v4",
-    contratos = "docs/spec_kit/Versiones/version4/6_contracts.md",
+    version = "v5",
+    contratos = "docs/spec_kit/Versiones/version5/6_contracts.md",
 }));
 
 // Conecta las rutas de los controladores ([Route("api/Sede")]...).
