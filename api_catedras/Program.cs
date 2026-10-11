@@ -358,6 +358,14 @@ builder.Services.AddScoped<IRepositorioRolPorUsuario>(
     _ => new RepositorioRolPorUsuarioPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioRolPorUsuario, ServicioRolPorUsuario>();
 
+// IRepositorioEnlaceRegistro -> RepositorioEnlaceRegistroPostgres,
+// IServicioEnlaceRegistro -> ServicioEnlaceRegistro. NO es un CRUD (ADR
+// D24): emitir llama a la función fn_emitir_enlace_api de la BD y revocar
+// es un UPDATE puntual. La ventana (tstzrange) se lee como dos columnas.
+builder.Services.AddScoped<IRepositorioEnlaceRegistro>(
+    _ => new RepositorioEnlaceRegistroPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioEnlaceRegistro, ServicioEnlaceRegistro>();
+
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
