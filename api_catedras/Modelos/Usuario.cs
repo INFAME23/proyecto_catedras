@@ -31,6 +31,14 @@
 //
 //  Fechas: DateTime en UTC (ADR D21 de la v4), nunca DateTimeOffset.
 //
+//  ⚠ 'ClaveHash' NO lleva 'required'. System.Text.Json (.NET 8+) lanza
+//  InvalidOperationException al serializar un tipo que tiene una propiedad
+//  'required' marcada [JsonIgnore] ("is marked required but does not specify
+//  a setter"): una propiedad obligatoria que el serializador ignora es una
+//  contradicción para él. Lo encontró la prueba de capas (Fase 43); en la API
+//  real habría dado 500 en CADA respuesta que incluyera un Usuario. El servicio
+//  siempre la asigna, así que 'required' no aportaba nada.
+//
 //  Tres propiedades las pone la BD o el servicio y por eso no llevan
 //  'required': IdUsuario (IDENTITY), CreadoEn (DEFAULT now()) y
 //  UltimoAcceso (se llena al hacer login).
@@ -57,7 +65,7 @@ public class Usuario
 
     /// <summary>Hash BCrypt de la clave. NUNCA se serializa (RF138, ADR D23).</summary>
     [JsonIgnore]
-    public required string ClaveHash { get; set; }
+    public string ClaveHash { get; set; } = "";
 
     /// <summary>¿La cuenta puede iniciar sesión? Por defecto true.</summary>
     [JsonPropertyName("activo")]
