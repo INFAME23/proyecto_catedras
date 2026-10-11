@@ -30,17 +30,23 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
-  <!--
-    Paquetes NuGet. El Artículo 2 permite EXACTAMENTE estos tres en la v1:
+    <!--
+    Paquetes NuGet. El Artículo 2 permite EXACTAMENTE estos tres desde la v1:
       Npgsql                  = cliente oficial de PostgreSQL para .NET
       Dapper                  = micro-ejecutor: corre el SQL que escribimos
                                 a mano y mapea fila a objeto (NO genera SQL)
       Swashbuckle.AspNetCore  = documentación Swagger en /swagger
+
+    Versión 5: único paquete nuevo del proyecto (RNF14 de la spec v5).
+      BCrypt.Net-Next         = cifrado de contraseñas (Guía IA, Regla 3).
+                                Solo lo llama ServicioUsuario (RNF13): ahí
+                                se hace el hash y la verificación.
   -->
   <ItemGroup>
     <PackageReference Include="Npgsql" Version="9.0.3" />
     <PackageReference Include="Dapper" Version="2.1.66" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
   </ItemGroup>
 
   <!--
