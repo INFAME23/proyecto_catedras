@@ -105,7 +105,7 @@ public class Usuario
     [JsonPropertyName("usuario")]
     public required string NombreUsuario { get; set; }
     [JsonIgnore]                                    // RF138: nunca sale en una respuesta HTTP
-    public required string ClaveHash { get; set; }
+    public string ClaveHash { get; set; } = "";    // SIN 'required': con [JsonIgnore] System.Text.Json lanza excepción al serializar
     public bool Activo { get; set; } = true;
     public DateTime? UltimoAcceso { get; set; }
     public DateTime CreadoEn { get; set; }

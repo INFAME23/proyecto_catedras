@@ -290,3 +290,10 @@ qué esta spec difiere del borrador original:
 11. **`usuario` y Dapper.** La columna `usuario` mapea a la propiedad
     `NombreUsuario`; Dapper no lo adivina, así que el SQL del repositorio
     usa `usuario AS nombre_usuario`.
+12. **`ClaveHash` sin `required` (hallazgo de la Fase 43).** El borrador
+    declaraba `public required string ClaveHash` con `[JsonIgnore]`;
+    `System.Text.Json` (.NET 8+) lo rechaza al serializar
+    (`InvalidOperationException … is marked required but does not specify a
+    setter`), lo que habría dado 500 en toda respuesta con un `Usuario`. Se
+    cambió a `public string ClaveHash { get; set; } = ""`. No cambia ninguna
+    decisión (D23 sigue igual: el hash nunca se serializa).
