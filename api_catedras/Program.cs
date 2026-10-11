@@ -351,10 +351,12 @@ builder.Services.AddScoped<IRepositorioUsuario>(
 builder.Services.AddScoped<IServicioUsuario, ServicioUsuario>();
 
 // IRepositorioRolPorUsuario -> RepositorioRolPorUsuarioPostgres (llave
-// compuesta CON vigencia, ADR D16). Su servicio y su controlador llegan en
-// la Fase 40; por ahora lo consume ServicioUsuario.
+// compuesta CON vigencia, ADR D16: se abre con POST y se cierra con PATCH),
+// IServicioRolPorUsuario -> ServicioRolPorUsuario. Este mismo repositorio
+// también lo consume ServicioUsuario para los roles vigentes del login.
 builder.Services.AddScoped<IRepositorioRolPorUsuario>(
     _ => new RepositorioRolPorUsuarioPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRolPorUsuario, ServicioRolPorUsuario>();
 
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
