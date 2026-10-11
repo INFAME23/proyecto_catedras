@@ -2,7 +2,7 @@
 
 > ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
 
-## D29 — Dónde cae realmente la Regla 1 en esta versión (corrección del plan original)
+## D30 — Dónde cae realmente la Regla 1 en esta versión (corrección del plan original)
 
 **Contexto.** El plan original de este proyecto asumía que V6
 necesitaba diseñar un SP nuevo para la pareja maestro-detalle
@@ -11,7 +11,7 @@ necesitaba diseñar un SP nuevo para la pareja maestro-detalle
 cualquier cosa nueva) resultó que `sp_responder_encuesta` —con su
 `fn_responder_encuesta_api`— **ya existe desde v1** y ya resuelve ese
 maestro-detalle por completo, incluyendo el cierre automático
-(`sp_cerrar_encuesta`, ver ADR D30). En cambio, `pregunta` +
+(`sp_cerrar_encuesta`, ver ADR D31). En cambio, `pregunta` +
 `opcion_pregunta` — una pareja maestro-detalle igual de real (crear una
 pregunta de opción única sin sus opciones no tiene ningún uso
 práctico) — **no tenía ningún SP**, en ninguna versión.
@@ -25,7 +25,7 @@ realmente falta.
 **Decisión: (b).** Seguir (a) habría producido dos errores: reescribir
 en C#/SQL una regla de seguridad y de negocio que la BD ya resuelve
 mejor (revalidando intentos, ventanas, cierre automático — el mismo
-riesgo que D9/D20/D23 ya vienen evitando desde v2), y al mismo tiempo
+riesgo que D9/D20/D24 ya vienen evitando desde v2), y al mismo tiempo
 dejar sin resolver una necesidad real de maestro-detalle que sí existe
 (`Pregunta`+sus opciones). La Guía IA, Regla 1 no dice "cada versión
 agrega un SP a la tabla que el plan haya nombrado" — dice "toda
@@ -41,7 +41,7 @@ diseño (`Pregunta`). (−) Ninguna real: la única "pérdida" es el tiempo
 que habría tomado diseñar un SP innecesario, evitado por investigar
 antes de construir.
 
-## D30 — "Responder" y "cerrar" son una sola operación, no dos
+## D31 — "Responder" y "cerrar" son una sola operación, no dos
 
 **Contexto.** El esquema tiene dos procedimientos separados,
 `sp_responder_encuesta` y `sp_cerrar_encuesta` — a primera vista,
@@ -79,7 +79,7 @@ propio `script_bdcatedras.sql` tampoco lo prevé (RN-26 exige TODAS las
 preguntas obligatorias en el mismo `CALL`, no permite una respuesta a
 medias).
 
-## D31 — `RespuestaEncuesta` es de solo lectura tras "responder"
+## D32 — `RespuestaEncuesta` es de solo lectura tras "responder"
 
 **Contexto.** ¿Debería poder editarse una respuesta ya dada (p. ej.
 si el asistente se equivocó al elegir una opción)?
@@ -106,7 +106,7 @@ equivocada) no tiene corrección posible por API — se documenta como
 limitación conocida, consistente con que tampoco `RegistroAsistencia`
 ni `ConsentimientoDatos` la tienen.
 
-## D32 — `OpcionPregunta` SÍ tiene `PUT`/`PATCH` (a diferencia de `AliasPrograma`/`ConsentimientoDatos`)
+## D33 — `OpcionPregunta` SÍ tiene `PUT`/`PATCH` (a diferencia de `AliasPrograma`/`ConsentimientoDatos`)
 
 **Contexto.** ¿`OpcionPregunta` debería seguir el molde de solo-anexo
 de `AliasPrograma` (v2) o el de 5 verbos completos?

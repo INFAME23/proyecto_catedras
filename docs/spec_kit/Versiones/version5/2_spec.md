@@ -1,10 +1,13 @@
 # Especificación — Versión 5 del proyecto: usuarios, login y registro de asistencia
 
-> ⚠️ **BORRADOR.** Escrito mientras V2-V4 todavía no tienen su tag. El
-> Artículo 1 de la constitución dice que la spec siguiente se escribe
-> **después** de cerrar la versión en curso con su tag. Este documento
-> se revisa una vez más contra lo que realmente quedó en V4 antes de
-> considerarse spec oficial — puede cambiar.
+> ✅ **Revisada contra la BD real y contra la v4 cerrada (2026-10-08);
+> todavía sin construir.** La v4 ya tiene su tag, así que (Artículo 1)
+> esta spec es la oficial. Frente al borrador original se ajustó: la
+> numeración (ADR D22-D29 y RNF12-RNF14, porque D21 y RNF11 ya eran de la
+> v4), las fechas (`DateTime` UTC, ADR D21 de v4), el límite conocido de
+> los intentos de clave (RF153), el conteo de ejemplo (168 registros) y
+> el front (reutiliza `routes/registro.py`, protege `/admin`). Detalle:
+> sección «Ajustes al borrador» de [4_research.md](4_research.md).
 >
 > Rige la constitución del proyecto:
 > [../1_constitution.md](../1_constitution.md) y la
@@ -18,7 +21,7 @@
 > de un solo uso (`enlace_registro`, `clave_acceso`,
 > `registro_asistencia`). Es la versión con más decisiones de diseño
 > nuevas del proyecto — ver [4_research.md](4_research.md), con **8
-> ADR nuevos** (D21-D28).
+> ADR nuevos** (D22-D29).
 >
 > | Documento de esta versión | Contenido |
 > |---|---|
@@ -41,13 +44,14 @@ distintos, con dos mecanismos que **no se mezclan**:
 
 1. **Login de personal** (`usuario` + `rol_por_usuario`): un
    administrador o coordinador entra con usuario/clave (BCrypt) y tiene
-   uno o más roles vigentes. Reemplaza el selector de rol de prueba que
-   el front usa desde v1.
+   uno o más roles vigentes. Reemplaza los placeholders del front
+   (`/login` muestra «en construcción» y `auth_helpers.py` responde
+   siempre «sin sesión»).
 2. **Auto-registro de un asistente** (`enlace_registro` +
    `clave_acceso` + `registro_asistencia`): un asistente que llega a
    una sesión escanea un QR o abre un enlace, pide una clave de un solo
    uso (que le llegaría por correo — en este proyecto didáctico, la API
-   la devuelve directamente, ver RNF11) y la usa para quedar registrado
+   la devuelve directamente, ver RNF12) y la usa para quedar registrado
    en esa sesión.
 
 ```
@@ -84,19 +88,21 @@ no reimplementarlas (Artículo 5).
   `/{id}`, sin `PUT`, con "cerrar" en vez de `DELETE`.
 - `EnlaceRegistro`: **no** es CRUD — son 2 verbos de negocio,
   "emitir" y "revocar", que llaman a `fn_emitir_enlace_api` (ver ADR
-  D23).
+  D24).
 - `ClaveAcceso`: **no** es CRUD — son 2 verbos de negocio,
   "solicitar" y "validar", que llaman a `fn_solicitar_clave_api` y
-  `fn_validar_clave_api` respectivamente (ADR D23). Lectura (`GET`)
+  `fn_validar_clave_api` respectivamente (ADR D24). Lectura (`GET`)
   solo para auditoría, sin exponer nunca el hash ni la clave en claro
   después de la respuesta de "solicitar".
 - `RegistroAsistencia`: lectura completa + una vía de creación
   **manual** (`POST` directo, para un administrador que registra
   asistencia sin QR/enlace — p. ej. una lista en papel). La vía normal
   (QR/enlace) nace exclusivamente de `ClaveAcceso`/validar.
-- Frontend: login real (reemplaza el selector de rol de prueba),
-  pantalla pública de "pedir mi clave" / "validar mi clave" para el
-  asistente, y paneles de administración para las 5 tablas.
+- Frontend: login real (reemplaza los placeholders de v1-v4), pantalla
+  pública de "pedir mi clave" / "validar mi clave" para el asistente
+  (en `routes/registro.py`, ya registrado), protección mínima de `/admin`
+  (exige sesión con rol `ADMIN`; es del FRONT, no de la API — D28) y
+  paneles de administración para las 5 tablas.
 
 **No incluye (es de otra versión):**
 - `pregunta`, `opcion_pregunta`, `respuesta_encuesta`, `respuesta_item`
@@ -117,7 +123,7 @@ no reimplementarlas (Artículo 5).
   que no se lea como un descuido).
 - Enviar el correo real con la clave de un solo uso: no hay paquete de
   correo en el proyecto (ni lo pide ninguna spec); la clave en claro
-  se devuelve en la respuesta HTTP de "solicitar" (RNF11).
+  se devuelve en la respuesta HTTP de "solicitar" (RNF12).
 
 ## 3. Entidades y requisitos funcionales
 
@@ -139,7 +145,7 @@ Numeración de RF continúa desde v4 (terminó en RF131).
   `clave_hash` desde el cliente) obligatorios; `activo` opcional, por
   defecto `true`. El **servicio** hashea `clave` con
   `BCrypt.Net.BCrypt.HashPassword` antes de que el repositorio la
-  guarde (ADR D22) — ni el repositorio ni el `Controller` ven la clave
+  guarde (ADR D23) — ni el repositorio ni el `Controller` ven la clave
   en texto plano más que de paso. `usuario` o `fk_asistente`
   duplicados → 500.
 - **RF135 — Reemplazar** (`PUT .../{idUsuario}` con
@@ -162,12 +168,12 @@ Numeración de RF continúa desde v4 (terminó en RF131).
   versiones).
 - **RF138 — `clave_hash` nunca se serializa:** ninguna respuesta de
   ningún verbo de `Usuario` (ni `GET`, ni la confirmación de `POST`)
-  incluye ese campo — ver ADR D22.
+  incluye ese campo — ver ADR D23.
 - **RF139 — Login** (`POST /api/Usuario/login` con **UsuarioLogin**:
   `usuario`, `clave`): busca por el campo `usuario`, compara `clave`
   contra el hash con `BCrypt.Net.BCrypt.Verify`. Si no existe, está
   `activo: false`, o la clave no coincide → **401** (primer uso de
-  este código en el proyecto — ver ADR D26). Si coincide: actualiza
+  este código en el proyecto — ver ADR D27). Si coincide: actualiza
   `ultimo_acceso = now()` y responde `200` con los datos del usuario
   (sin `clave_hash`) y sus roles **vigentes** (`rol_por_usuario` con
   `fecha_fin IS NULL`).
@@ -191,7 +197,7 @@ Numeración de RF continúa desde v4 (terminó en RF131).
 
 ### EnlaceRegistro
 
-> RF143-RF148. **No** es CRUD (ADR **D23**): la API no decide el
+> RF143-RF148. **No** es CRUD (ADR **D24**): la API no decide el
 > `token`, la `ventana` ni el `canal` — los calcula
 > `sp_emitir_enlace`/`fn_emitir_enlace_api`, que ya existen en la BD
 > desde v1. El `canal` lo determina la `modalidad` de la `sesion`
@@ -207,34 +213,34 @@ Numeración de RF continúa desde v4 (terminó en RF131).
 - **RF144 — Obtener por id** (`GET /api/EnlaceRegistro/{idEnlace}`):
   200; inexistente → 404.
 - **RF145 — Emitir** (`POST /api/EnlaceRegistro` con
-  **EnlaceRegistroEmitir**): `fk_sesion` obligatorio; `minutosAntes`,
-  `minutosDespues`, `fkUsuario` (quién lo emite, opcional — ver
-  salvedad de FK circular ya cerrada, §4 de
+  **EnlaceRegistroEmitir**): `fk_sesion` obligatorio; `minutos_antes`,
+  `minutos_despues`, `fk_usuario` (quién lo emite, opcional — ver
+  salvedad de FK circular ya cerrada, §3 de
   [0_mapa_versiones.md](../0_mapa_versiones.md)) opcionales. Llama
-  `SELECT * FROM fn_emitir_enlace_api(...)` (ADR D23) y devuelve
+  `SELECT * FROM fn_emitir_enlace_api(...)` (ADR D24) y devuelve
   `id_enlace`; un `GET` posterior trae `token`, `url_publica`,
   `ruta_imagen_qr`, `canal` y `ventana` ya calculados por la BD. Una
   `fk_sesion` inexistente → 500 (la función hace su propio `RAISE
-  EXCEPTION`, ver ADR **D24** sobre cómo se mapean estas excepciones).
+  EXCEPTION`, ver ADR **D25** sobre cómo se mapean estas excepciones).
 - **RF146 — Revocar** (`PATCH /api/EnlaceRegistro/{idEnlace}/revocar`):
   pone `revocado_en = now()`; ya revocado → 400 (validado en el
   servicio: un enlace revocado dos veces no tiene efecto adicional,
   mismo criterio que "cerrar dos veces" en D16, aunque aquí SÍ exista
-  un `id` — ver ADR **D21** sobre por qué de todos modos no hay
+  un `id` — ver ADR **D22** sobre por qué de todos modos no hay
   `DELETE`); inexistente → 404.
 - **RF147 — Sin `POST` plano de columnas sueltas, sin `PUT`/`PATCH`
   genérico, sin `DELETE`:** solo "emitir" y "revocar" — 2 verbos de
-  negocio, no 6 de CRUD (ADR D23).
+  negocio, no 6 de CRUD (ADR D24).
 - **RF148 — El cliente nunca manda `canal`, `token`, `ventana` ni
   `url_publica`:** ninguno de los dos existe en **EnlaceRegistroEmitir**
   — son siempre calculados por la BD.
 
 ### ClaveAcceso
 
-> RF149-RF153. Tampoco es CRUD (ADR D23): 2 verbos de negocio,
+> RF149-RF153. Tampoco es CRUD (ADR D24): 2 verbos de negocio,
 > "solicitar" y "validar", que llaman a funciones ya existentes desde
 > v1. La clave en texto plano **solo existe una vez**, en la respuesta
-> de "solicitar" (RNF11) — la BD únicamente guarda su `sha256` con el
+> de "solicitar" (RNF12) — la BD únicamente guarda su `sha256` con el
 > correo de destino como sal (`RN-34`, ya resuelto por la BD, no por la
 > API).
 
@@ -246,17 +252,17 @@ Numeración de RF continúa desde v4 (terminó en RF131).
   `{id_clave, clave, enviado_a}` — el único momento en que `clave`
   (texto plano) aparece. `identificador` no resuelto a ningún
   asistente (`RN-01`), o enlace inexistente/revocado/fuera de su
-  ventana (`RN-15`) → **500** (D24: son excepciones de negocio de la
+  ventana (`RN-15`) → **500** (D25: son excepciones de negocio de la
   BD, no un "no encontrado" de la API).
 - **RF150 — Validar la clave y registrar asistencia**
   (`POST /api/ClaveAcceso/validar` con **ClaveAccesoValidar**:
-  `idClave`, `clave` (texto plano que el usuario escribió), `ip` y
-  `userAgent` opcionales): llama
+  `id_clave`, `clave` (texto plano que el usuario escribió), `ip` y
+  `user_agent` opcionales): llama
   `SELECT * FROM fn_validar_clave_api(...)` y devuelve `id_registro`
-  (el `registro_asistencia` recién creado). Clave incorrecta (`RN-?`,
-  cuenta intentos y anula tras 3), ya usada (`RN-20`), expirada
+  (el `registro_asistencia` recién creado). Clave incorrecta (la BD la
+  rechaza; sobre el contador de intentos ver RF153), ya usada (`RN-20`), expirada
   (`RN-18`), sesión sin cupo (`RN-38`), o el asistente sin vinculación
-  vigente (`RN-07`/`RN-22`) → **500** (D24, igual criterio que RF149).
+  vigente (`RN-07`/`RN-22`) → **500** (D25, igual criterio que RF149).
 - **RF151 — Listar y obtener, solo para auditoría**
   (`GET /api/ClaveAcceso?fkAsistente=`, `GET/{id}`): nunca incluyen
   `clave_hash` (es `bytea`, ni siquiera tendría sentido mostrarlo) ni,
@@ -264,13 +270,20 @@ Numeración de RF continúa desde v4 (terminó en RF131).
   tener después de RF149).
 - **RF152 — Sin `POST` plano, `PUT`, `PATCH` genérico, `DELETE`:**
   "solicitar" y "validar" son los únicos 2 verbos de escritura (ADR
-  D23) — crear o editar una `ClaveAcceso` fuera de ese flujo no tiene
+  D24) — crear o editar una `ClaveAcceso` fuera de ese flujo no tiene
   sentido de negocio.
-- **RF153 — Intentos y expiración los vigila la BD, no la API:** la
-  API no cuenta reintentos ni decide cuándo anular una clave — eso ya
-  ocurre dentro de `sp_validar_clave_y_registrar` (D9, extendido a una
-  regla de negocio de seguridad, mismo espíritu que D20 de v4 con
-  `numero_reunion`).
+- **RF153 — Intentos y expiración los vigila la BD, no la API — y los
+  intentos NO se acumulan:** la API no cuenta reintentos ni decide cuándo
+  anular una clave; eso está dentro de `sp_validar_clave_y_registrar` (D9,
+  extendido a una regla de negocio de seguridad, mismo espíritu que D20 de
+  v4 con `numero_reunion`). **Limitación conocida del script de la BD:**
+  ese procedimiento hace `UPDATE ... intentos + 1` y enseguida
+  `RAISE EXCEPTION`; la excepción deshace la sentencia completa, así que el
+  `UPDATE` también se revierte: `intentos` se queda en 0 y la clave **no**
+  se anula tras 3 fallos (sigue vigente sus 10 minutos). No se corrige
+  porque el Artículo 5 prohíbe tocar el script y la API no reimplementa la
+  regla (D24). Se comprueba en la Fase 44 y queda documentado en
+  [4_research.md](4_research.md) («Ajustes al borrador»).
 
 ### RegistroAsistencia
 
@@ -287,7 +300,7 @@ Numeración de RF continúa desde v4 (terminó en RF131).
   **RegistroAsistenciaCrear**): `fk_sesion`, `fk_asistente`, `origen`
   obligatorios. `origen` **debe** ser `MANUAL` o `IMPORTADO` — un
   `origen: "QR"` o `"ENLACE"` aquí → **400** (`ArgumentException`,
-  validado en el servicio — ver ADR **D25**: es la única regla de esta
+  validado en el servicio — ver ADR **D26**: es la única regla de esta
   versión donde la API revalida algo que el `CHECK
   chk_registro_clave` de la BD técnicamente permitiría igual).
   `fk_clave`/`fk_enlace` **no** existen en esta petición (siempre
@@ -306,24 +319,24 @@ Numeración de RF continúa desde v4 (terminó en RF131).
   y `tipo_vinculacion`:** borrar cualquiera de esas cuatro filas
   mientras tenga algún `registro_asistencia` que las referencie (como
   instantánea) → 500 — ya anticipado parcialmente en v3/v4, ahora con
-  un caso concreto y poblado (167 filas de ejemplo).
+  un caso concreto y poblado (168 filas de ejemplo).
 
 ## 4. Requisitos no funcionales
 
-Rigen los mismos RNF1-RNF10 de v1-v4, sin cambios. Se añaden:
+Rigen los mismos RNF1-RNF11 de v1-v4, sin cambios. Se añaden:
 
-- **RNF11 — La clave de un solo uso se devuelve en texto plano, UNA
+- **RNF12 — La clave de un solo uso se devuelve en texto plano, UNA
   vez (RF149):** no hay servicio de correo en este proyecto didáctico;
   la API responde `clave` directamente en el `POST /solicitar` para
   que el front la muestre (simulando el envío) o la use de inmediato en
   una prueba. Fuera de esa respuesta, la clave en claro no se vuelve a
   mostrar ni se guarda en ningún lugar (la BD solo guarda su `sha256`).
-- **RNF12 — BCrypt solo en el servicio (Guía IA, Regla 3):**
+- **RNF13 — BCrypt solo en el servicio (Guía IA, Regla 3):**
   `BCrypt.Net.BCrypt.HashPassword`/`Verify` se llaman únicamente desde
   `ServicioUsuario`; ni `UsuarioController` ni
   `RepositorioUsuarioPostgres` conocen la clave en texto plano más que
   de paso (parámetro de entrada, nunca persistido ni logueado).
-- **RNF13 — Primer paquete NuGet nuevo del proyecto desde v1:**
+- **RNF14 — Primer paquete NuGet nuevo del proyecto desde v1:**
   `BCrypt.Net-Next` se agrega a `ApiCatedras.csproj` — permitido
   explícitamente por la Guía IA (Regla 3), que es la única spec hasta
   ahora que invoca la excepción del Artículo 2 ("3 paquetes, salvo que
@@ -362,7 +375,7 @@ Rigen los mismos RNF1-RNF10 de v1-v4, sin cambios. Se añaden:
    por `ClaveAcceso`) → 400, sin tocar la BD. El mismo body con
    `origen: "MANUAL"` → 200.
 7. `DELETE /api/Asistente/{id}` sobre un asistente con
-   `registro_asistencia` ya sembrado (167 filas de ejemplo en total) →
+   `registro_asistencia` ya sembrado (168 filas de ejemplo en total) →
    500, sin que la cascada de v3 hacia sus 4 detalles llegue a
    ejecutarse.
 8. **Prueba de capas ampliada:** `dotnet run --project pruebas` cubre
@@ -370,9 +383,10 @@ Rigen los mismos RNF1-RNF10 de v1-v4, sin cambios. Se añaden:
    `BCrypt.Verify` con repositorios FALSOS (sin tocar la BD real para
    probar el hash) y el bloqueo de `origen: QR/ENLACE` en
    `RegistroAsistencia`.
-9. El front reemplaza el selector de rol de prueba por un login real
-   contra `POST /api/Usuario/login`; una pantalla pública permite a un
-   asistente pedir su clave y validarla sin pasar por `/admin`.
+9. El front reemplaza sus placeholders por un login real contra
+   `POST /api/Usuario/login`; `/admin` sin sesión redirige a `/login` y
+   exige el rol `ADMIN`; una pantalla pública (`/registro/<token>`) permite
+   a un asistente pedir su clave y validarla sin pasar por `/admin`.
 10. El panel de administración (`/admin`) muestra las 5 tarjetas
     nuevas; `EnlaceRegistro` y `ClaveAcceso` ofrecen solo sus verbos de
     negocio ("emitir"/"revocar", "solicitar"/"validar"), no un

@@ -179,13 +179,13 @@ public class Parametro
 - **BD (última muralla, 500):** cualquier FK inexistente (D9);
   `ux_detmig_aceptado`; `uq_detalle_lote_reg`; las excepciones de
   negocio de `sp_generar_lote_migracion`/`fn_exportar_asis` (RN-08,
-  RN-28 — D24 de v5, sin cambios).
+  RN-28 — D25 de v5, sin cambios).
 
 ## 4. Reglas de esta versión
 
 - La BD y los datos de las 4 tablas no cambian respecto al script
   provisto (Artículo 5); **v7 no agrega ninguna migración** — segunda
-  versión del proyecto sin SP nuevo, junto con v4 (ver ADR D33).
+  versión del proyecto sin SP nuevo, junto con v4 (ver ADR D34).
 - `docker compose down -v && docker compose up -d --build` resetea las
   37 tablas de siempre, con 5 `lote_migracion`, 823 `detalle_migracion`,
   168 `bitacora` y 9 `parametro` de ejemplo de vuelta a su estado

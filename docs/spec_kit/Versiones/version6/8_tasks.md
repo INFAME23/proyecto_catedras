@@ -12,7 +12,7 @@
 ---
 
 ## Fase 47 — Migración SQL: `sp_guardar_pregunta`
-> Guía IA, Regla 1. Ver §4.1 de [3_plan.md](3_plan.md), ADR D29. Va
+> Guía IA, Regla 1. Ver §4.1 de [3_plan.md](3_plan.md), ADR D30. Va
 > primero porque la Fase 48 depende de que el SP ya exista en la BD.
 
 - [ ] `db/postgres/migraciones/004_sp_guardar_pregunta.sql` —
@@ -28,7 +28,7 @@ orden de `initdb` confirma que corre después de
 `script_bdcatedras.sql` y de `z001_`-`z003_`.
 
 ## Fase 48 — La aplicación (capas de `Pregunta` y `OpcionPregunta`)
-> RF159-RF171 de [2_spec.md](2_spec.md), ADR D29, D32, §2.1-2.2 de
+> RF159-RF171 de [2_spec.md](2_spec.md), ADR D30, D33, §2.1-2.2 de
 > [5_data_model.md](5_data_model.md). Depende de la Fase 47 y de
 > `Encuesta`/`TipoPregunta` (v1, ya construidas).
 
@@ -40,7 +40,7 @@ orden de `initdb` confirma que corre después de
 - [ ] `Peticiones/OpcionInicial.cs` — sin `fk_pregunta` (§4.1 de
       [3_plan.md](3_plan.md), mismo criterio que `AliasInicial` de v2).
 - [ ] `Peticiones/OpcionPregunta{Crear,Reemplazo,Actualizar}.cs` —
-      molde completo de 3 peticiones (D32: a diferencia de
+      molde completo de 3 peticiones (D33: a diferencia de
       `AliasProgramaCrear`, esta entidad SÍ tiene `Reemplazo`/
       `Actualizar`).
 - [ ] `Repositorios/IRepositorioPregunta.cs` +
@@ -67,7 +67,7 @@ orden de `initdb` confirma que corre después de
 `(fkEncuesta, orden)` de pregunta duplicado → 500.
 
 ## Fase 49 — La aplicación (capas de `RespuestaEncuesta` y `RespuestaItem`)
-> RF172-RF178 de [2_spec.md](2_spec.md), ADR D30, D31, §2.3-2.4 de
+> RF172-RF178 de [2_spec.md](2_spec.md), ADR D31, D32, §2.3-2.4 de
 > [5_data_model.md](5_data_model.md). Depende de la Fase 48
 > (`fk_pregunta`/`fk_opcion`) y de `RegistroAsistencia` (v5, ya
 > construida). **No** depende de ninguna migración nueva — las
@@ -89,7 +89,7 @@ orden de `initdb` confirma que corre después de
       `ObtenerPorIdAsync`, `ResponderAsync` (`SELECT * FROM
       fn_responder_encuesta_api(...)`, código exacto en §4.2 de
       [3_plan.md](3_plan.md)). **Sin** `CerrarAsync` en la interfaz
-      (D30).
+      (D31).
 - [ ] `Repositorios/IRepositorioRespuestaItem.cs` +
       `RepositorioRespuestaItemPostgres.cs` — solo
       `ObtenerTodosAsync`/`ObtenerPorIdAsync` (sin `CrearAsync`: nace
@@ -122,7 +122,7 @@ repetir sobre el mismo `fkRegistro` → 500 (`uq_respuesta_registro`).
       - Un caso de prueba confirma, por inspección del tipo de
         `IRepositorioRespuestaEncuesta`, que **no existe** ningún
         método `CerrarAsync` en la interfaz (verificación de diseño,
-        no solo de comportamiento — asegura que D30 no se revierta
+        no solo de comportamiento — asegura que D31 no se revierta
         por accidente en una refactorización futura).
       - `RepositorioRespuestaEncuestaFalso` incluye un caso con una
         pregunta obligatoria faltante, confirmando el 500 simulado

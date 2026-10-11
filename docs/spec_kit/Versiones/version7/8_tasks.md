@@ -6,7 +6,7 @@
 > Continúa la numeración de fases de
 > [version6/8_tasks.md](../version6/8_tasks.md) (termina en Fase 53).
 >
-> **Nota de alcance (v7):** ninguna migración SQL nueva (ADR D33) —
+> **Nota de alcance (v7):** ninguna migración SQL nueva (ADR D34) —
 > segunda versión del proyecto sin ninguna, junto con v4. Esta es la
 > última versión del mapa: al cerrarla, las 37 tablas de `bdcatedras`
 > quedan expuestas por completo.
@@ -14,7 +14,7 @@
 ---
 
 ## Fase 54 — Preparación: sin migración nueva, confirmar lo que ya existe
-> ADR D33 de [4_research.md](4_research.md). Va primero porque las
+> ADR D34 de [4_research.md](4_research.md). Va primero porque las
 > Fases 55-57 dependen de confirmar, contra la BD real, que no hace
 > falta escribir ningún `CREATE PROCEDURE`.
 
@@ -35,7 +35,7 @@ versión es un `INSERT`/`UPDATE` directo o un `SELECT * FROM
 fn_..._api(...)`.
 
 ## Fase 55 — La aplicación (capas de `LoteMigracion` y `DetalleMigracion`)
-> RF179-RF189 de [2_spec.md](2_spec.md), ADR D33, D34, §2.1-2.2 de
+> RF179-RF189 de [2_spec.md](2_spec.md), ADR D34, D35, §2.1-2.2 de
 > [5_data_model.md](5_data_model.md). Depende de la Fase 54 y de
 > `Sesion`/`EstadoProceso` (v1/v4) y `RegistroAsistencia` (v5), ya
 > construidas.
@@ -88,7 +88,7 @@ sin nada migrable → 500; `PATCH` de `fkEstadoProceso` inexistente →
 distintos → la segunda, 500 (`ux_detmig_aceptado`).
 
 ## Fase 56 — La aplicación (capa de `Bitacora`, solo lectura)
-> RF190-RF191 de [2_spec.md](2_spec.md), ADR D35, §2.3 de
+> RF190-RF191 de [2_spec.md](2_spec.md), ADR D36, §2.3 de
 > [5_data_model.md](5_data_model.md). Depende de `RegistroAsistencia`
 > (v5, ya construida) solo para que haya filas de ejemplo que leer —
 > ningún código de esta fase escribe en `bitacora`.
@@ -100,7 +100,7 @@ distintos → la segunda, 500 (`ux_detmig_aceptado`).
       `RepositorioBitacoraPostgres.cs` — **solo**
       `ObtenerTodosAsync(nombreTabla?, fkUsuario?)` y
       `ObtenerPorIdAsync`. Ningún método de escritura en la interfaz
-      (verificación de diseño, mismo criterio que D30/D32 de v6 con
+      (verificación de diseño, mismo criterio que D31/D33 de v6 con
       `IRepositorioRespuestaEncuesta`).
 - [ ] `Servicios/IServicioBitacora.cs` + `ServicioBitacora.cs` — solo
       lectura, delega los 2 filtros al repositorio.
@@ -166,8 +166,8 @@ referencial (confirma RF196: ninguna FK entrante bloquea nunca este
       - Un caso de prueba confirma, por inspección del tipo de
         `IRepositorioBitacora`, que **no existe** ningún método de
         escritura en la interfaz (verificación de diseño, mismo
-        criterio que D30 de v6 con `RespuestaEncuesta` — asegura que
-        D35 no se revierta por accidente en una refactorización
+        criterio que D31 de v6 con `RespuestaEncuesta` — asegura que
+        D36 no se revierta por accidente en una refactorización
         futura).
       - `RepositorioParametroFalso` incluye un caso de `clave`
         duplicada y confirma que `modificado_en` avanza en el

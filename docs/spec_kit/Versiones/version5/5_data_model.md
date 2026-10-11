@@ -1,6 +1,6 @@
 # Modelo de datos — Versión 5: usuarios, login y registro de asistencia
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Revisada contra la BD real (2026-10-08), sin construir** — ver nota de [2_spec.md](2_spec.md).
 
 ## 1. Cadena de FK de esta versión
 
@@ -46,7 +46,7 @@ asistente que ya tiene cuenta de usuario — extiende la lista de
 `enlace_registro.fk_usuario_crea` (esta versión), `lote_carga_asistente`
 (v3), `lote_migracion` (v7), `parametro` (v7) — todas `SET NULL`.
 
-**Modelo C#:**
+**Modelo C#** (todas las fechas con hora son `DateTime` UTC — ADR D21 de v4):
 ```csharp
 public class Usuario
 {
@@ -57,8 +57,8 @@ public class Usuario
     [JsonIgnore]
     public required string ClaveHash { get; set; }
     public bool Activo { get; set; } = true;
-    public DateTimeOffset? UltimoAcceso { get; set; }
-    public DateTimeOffset CreadoEn { get; set; }
+    public DateTime? UltimoAcceso { get; set; }
+    public DateTime CreadoEn { get; set; }
 }
 ```
 
@@ -121,12 +121,12 @@ public class EnlaceRegistro
     public string UrlPublica { get; set; } = "";     // lo calcula la BD
     public string? RutaImagenQr { get; set; }
     public string Canal { get; set; } = "";          // lo decide la BD (RN-13)
-    public required DateTimeOffset VentanaDesde { get; set; }   // 'tstzrange' se expone como 2 columnas planas
-    public required DateTimeOffset VentanaHasta { get; set; }   // (ver nota de mapeo en 6_contracts.md)
+    public required DateTime VentanaDesde { get; set; }   // 'tstzrange' se expone como 2 columnas planas
+    public required DateTime VentanaHasta { get; set; }   // (ver nota de mapeo en 6_contracts.md)
     public int? UsosMaximos { get; set; }
-    public DateTimeOffset? RevocadoEn { get; set; }
+    public DateTime? RevocadoEn { get; set; }
     public long? FkUsuarioCrea { get; set; }
-    public DateTimeOffset CreadoEn { get; set; }
+    public DateTime CreadoEn { get; set; }
 }
 ```
 > **Nota de mapeo `tstzrange` → C#:** Dapper no tiene un tipo nativo
@@ -170,13 +170,18 @@ public class ClaveAcceso
     public byte[] ClaveHash { get; set; } = [];
     public required string EnviadoA { get; set; }
     public bool EsCorreoInstitucional { get; set; }
-    public DateTimeOffset GeneradoEn { get; set; }
-    public DateTimeOffset ExpiraEn { get; set; }
-    public DateTimeOffset? UsadoEn { get; set; }
+    public DateTime GeneradoEn { get; set; }
+    public DateTime ExpiraEn { get; set; }
+    public DateTime? UsadoEn { get; set; }
     public short Intentos { get; set; }
     public string? IpSolicitud { get; set; }
 }
 ```
+> **Nota de mapeo `inet` → C#:** Npgsql entrega `inet` como `IPAddress`, que
+> Dapper no convierte a `string`. El repositorio lo lee con
+> `host(ip_solicitud) AS ip_solicitud` (y `host(ip) AS ip` en
+> `registro_asistencia`) y, al escribir, el servicio convierte el `string`
+> de la petición con `IPAddress.TryParse` (400 si no es válida).
 
 ### 2.5 `registro_asistencia`
 
@@ -196,7 +201,7 @@ public class ClaveAcceso
 
 **Restricciones:** `uq_registro_sesion_asis`; `chk_registro_origen`;
 `chk_registro_clave` (`origen IN ('MANUAL','IMPORTADO') OR fk_clave IS
-NOT NULL` — ver ADR D25 sobre por qué esto NO basta por sí solo).
+NOT NULL` — ver ADR D26 sobre por qué esto NO basta por sí solo).
 **Triggers:** `trg_registro_validar` (`RN-07`, `RN-15`, `RN-22`,
 `RN-38` — ventana del enlace, instantáneas de vinculación/programa,
 cupo de la sesión); `trg_bitacora_registro` (llena `bitacora`, v7 —
@@ -214,7 +219,7 @@ public class RegistroAsistencia
     public required long FkAsistente { get; set; }
     public long? FkEnlace { get; set; }
     public long? FkClave { get; set; }
-    public DateTimeOffset RegistradoEn { get; set; }
+    public DateTime RegistradoEn { get; set; }
     public string? FkProgramaSnapshot { get; set; }         // sin 'required': lo pone el trigger, puede quedar NULL
     public string FkVinculacionSnapshot { get; set; } = ""; // sin 'required': lo pone el trigger, nunca llega del cliente
     public string Origen { get; set; } = "QR";
@@ -226,21 +231,22 @@ public class RegistroAsistencia
 ## 3. Las dos murallas de validación (sin cambios de criterio, con una tercera que aparece por primera vez)
 
 - **Petición (forma, 422):** `[RegularExpression]` en `Usuario.usuario`;
-  `[MinLength(8)]` en `Clave`; `[RegularExpression]` en `Origen`
-  (`RegistroAsistenciaCrear`).
+  `[MinLength(8)]` en `Clave`; `[Required]` en `Origen`
+  (`RegistroAsistenciaCrear`), **sin** lista cerrada en la anotación: el
+  valor se valida en el servicio para que sea 400 (D26).
 - **Servicio (reglas de negocio que cruzan campos, 400):**
   `origen` fuera de `{MANUAL, IMPORTADO}` en `RegistroAsistenciaCrear`
-  (D25); `RolPorUsuario` ya cerrado (D16, igual que v3).
+  (D26); `RolPorUsuario` ya cerrado (D16, igual que v3).
 - **BD (última muralla, 500):** cualquier FK inexistente (D9); todos
   los `CHECK`/`UNIQUE` de las 5 tablas; **y, nuevo en v5, las
   excepciones de negocio que la propia BD lanza con `RAISE EXCEPTION`
   dentro de `sp_solicitar_clave`/`sp_validar_clave_y_registrar`** —
-  tratadas igual que cualquier otro error de PostgreSQL (D24), no como
+  tratadas igual que cualquier otro error de PostgreSQL (D25), no como
   una cuarta muralla con su propio mapeo.
 - **Nueva — autenticación, no muralla de datos (401):** `POST
   /api/Usuario/login` es el único endpoint de todo el proyecto donde
   un fallo no es "dato mal formado", "regla de negocio" ni "error de
-  la BD": es "no demostraste ser quien dices ser" (D26).
+  la BD": es "no demostraste ser quien dices ser" (D27).
 
 ## 4. Reglas de esta versión
 
@@ -257,4 +263,4 @@ public class RegistroAsistencia
 - `docker compose down -v && docker compose up -d --build` resetea las
   37 tablas de siempre, con 1 `usuario`, 3 `rol_por_usuario`, 9
   `enlace_registro`, 167 `clave_acceso` y 168 `registro_asistencia` de
-  ejemplo de vuelta a su estado original.
+  ejemplo (todos los enlaces vencieron en agosto de 2026) de vuelta a su estado original.

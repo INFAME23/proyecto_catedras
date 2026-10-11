@@ -21,7 +21,7 @@
 > **también ya existe**: `sp_generar_lote_migracion`/
 > `fn_generar_lote_api`, apoyado en `fn_exportar_asis`. **V7 no agrega
 > ningún SP ni migración nueva** — es, junto con v4, la segunda versión
-> del proyecto sin ningún `CREATE PROCEDURE` propio. Ver ADR **D33**.
+> del proyecto sin ningún `CREATE PROCEDURE` propio. Ver ADR **D34**.
 >
 > | Documento de esta versión | Contenido |
 > |---|---|
@@ -56,7 +56,7 @@ bitacora >── usuario (v5, opcional) — SOLO LECTURA, la llenan los triggers
 parametro — tabla plana, SIN relación con ninguna otra tabla
 ```
 
-**V7 no agrega ningún SP ni migración nueva** (ADR D33): la única
+**V7 no agrega ningún SP ni migración nueva** (ADR D34): la única
 operación "maestro-detalle" de esta versión —generar un lote de
 migración junto con todas sus filas de detalle— ya la resuelve
 `sp_generar_lote_migracion`, que existe desde v1 y que, además de
@@ -95,7 +95,7 @@ Numeración de RF continúa desde v6 (terminó en RF178).
 
 > RF179-RF185. `fk_usuario` ya no tiene la salvedad de FK circular (v5
 > cerró esa posibilidad): es opcional porque no hay autorización en la
-> API (D27 de v5), no por una limitación técnica.
+> API (D28 de v5), no por una limitación técnica.
 
 - **RF179 — Listar** (`GET /api/LoteMigracion?fkSesion=`): sin el
   filtro, todas hasta el límite.
@@ -106,7 +106,7 @@ Numeración de RF continúa desde v6 (terminó en RF178).
   opcional): llama `SELECT * FROM fn_generar_lote_api(...)` y devuelve
   `idLote`. La sesión sin ningún registro migrable (`RN-08`/`RN-28`:
   sin `id_asis`, sin programa, o `es_externo`) → **500** (la función
-  lanza su propio `RAISE EXCEPTION`, D24 de v5, sin cambios).
+  lanza su propio `RAISE EXCEPTION`, D25 de v5, sin cambios).
 - **RF182 — Actualizar estado** (`PATCH /api/LoteMigracion/{idLote}`
   con **LoteMigracionActualizar**: `fkEstadoProceso` y/o
   `observaciones`, ambos opcionales): `UPDATE` directo, **sin** SP
@@ -215,7 +215,7 @@ Numeración de RF continúa desde v6 (terminó en RF178).
 
 ## 4. Requisitos no funcionales
 
-Rigen los mismos RNF1-RNF14 de v1-v6, sin cambios. No se añade ninguno
+Rigen los mismos RNF1-RNF15 de v1-v6, sin cambios. No se añade ninguno
 nuevo: v7 no introduce ningún patrón de validación, seguridad ni
 infraestructura distinto de lo que ya existía.
 

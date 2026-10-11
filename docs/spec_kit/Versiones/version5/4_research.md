@@ -1,10 +1,10 @@
 # Decisiones de diseño — Versión 5: usuarios, login y registro de asistencia
 
-> ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md). La versión con
-> más decisiones nuevas del proyecto — 8 ADR (D21-D28), frente a 1-4
+> ✅ **Revisada contra la BD real (2026-10-08), sin construir** — ver nota de [2_spec.md](2_spec.md). La versión con
+> más decisiones nuevas del proyecto — 8 ADR (D22-D29), frente a 1-4
 > por versión anterior.
 
-## D21 — `EnlaceRegistro` no tiene `DELETE`, aunque sí tiene `id` (distinto de D16 y D19)
+## D22 — `EnlaceRegistro` no tiene `DELETE`, aunque sí tiene `id` (distinto de D16 y D19)
 
 **Contexto.** A diferencia de `VinculacionAsistente` (D16, v3) y
 `Ponencia` (D19, v4), `EnlaceRegistro` **sí** tiene una columna `id`
@@ -41,7 +41,7 @@ la decisión más parecida en forma. (−) Un enlace emitido por error
 para pedir claves nuevas) y es más seguro que permitir borrar
 evidencia.
 
-## D22 — BCrypt solo en el servicio, Modelo con `[JsonIgnore]` (Guía IA, Regla 3)
+## D23 — BCrypt solo en el servicio, Modelo con `[JsonIgnore]` (Guía IA, Regla 3)
 
 Ver desarrollo completo en §4.1-4.2 de [3_plan.md](3_plan.md). Resumen:
 la Guía IA exige que el hash de una clave de usuario viva y se verifique
@@ -58,7 +58,7 @@ anotación en vez de simplemente usar otro DTO — juzgado poco probable
 (ningún cliente de esta API debería necesitar nunca el hash de una
 clave).
 
-## D23 — `EnlaceRegistro` y `ClaveAcceso` no son CRUD: son verbos de negocio sobre funciones que ya existen
+## D24 — `EnlaceRegistro` y `ClaveAcceso` no son CRUD: son verbos de negocio sobre funciones que ya existen
 
 **Contexto.** A diferencia de toda tabla anterior del proyecto, estas
 dos no se crean con un `INSERT` que la API componga: el **cómo** ya
@@ -95,7 +95,7 @@ entidades rompen, más que ninguna otra del proyecto, el molde de 5/6
 verbos — aceptado porque la alternativa (forzar el molde) escondería,
 no simplificaría, lo que realmente pasa.
 
-## D24 — Las excepciones de negocio de la BD caen en el mismo 500 que cualquier otro error de PostgreSQL
+## D25 — Las excepciones de negocio de la BD caen en el mismo 500 que cualquier otro error de PostgreSQL
 
 Ver desarrollo completo en §4.4 de [3_plan.md](3_plan.md). Resumen de
 las opciones: (a) agregar un mapeo nuevo de `SqlState` → código HTTP
@@ -118,7 +118,7 @@ técnicamente un 500 aunque describa, en español, un "no encontrado" —
 se documenta aquí y en RF149-150 de [2_spec.md](2_spec.md)
 explícitamente para que nadie lo lea como un bug al implementar.
 
-## D25 — El único caso donde la API revalida algo que el `CHECK` de la BD ya permitiría
+## D26 — El único caso donde la API revalida algo que el `CHECK` de la BD ya permitiría
 
 Ver desarrollo completo en §4.5 de [3_plan.md](3_plan.md). Resumen:
 `chk_registro_clave` acepta `origen IN ('MANUAL','IMPORTADO')` SIN
@@ -132,7 +132,7 @@ pasar produciría una mentira de auditoría silenciosa — distinto de los
 casos D9 (FK/CHECK que SÍ reflejan fielmente la regla completa, y por
 eso no hace falta repetirlos en C#).
 
-## D26 — El login responde `401`, el primer código nuevo del proyecto desde v1
+## D27 — El login responde `401`, el primer código nuevo del proyecto desde v1
 
 **Contexto.** Hasta v4, el proyecto solo usa `200`/`204`/`400`/`404`/
 `422`/`500`. Un intento de login con clave incorrecta o usuario
@@ -162,7 +162,7 @@ nueva solo para 401), y el mensaje es genérico ("usuario o clave
 incorrectos") sin distinguir las 3 causas posibles, precisamente para
 no filtrar si un `usuario` existe o no.
 
-## D27 — Por qué no hay autorización por rol dentro de la API
+## D28 — Por qué no hay autorización por rol dentro de la API
 
 **Contexto.** v5 agrega roles (`rol_por_usuario`) y el login los
 devuelve, pero ninguna spec pide que la API bloquee un endpoint según
@@ -194,7 +194,7 @@ llamar cualquier endpoint sin credenciales — documentado aquí y en
 vulnerabilidad pasada por alto, sino como un límite explícito del
 proyecto.
 
-## D28 — Dos mecanismos de autenticación distintos, no uno
+## D29 — Dos mecanismos de autenticación distintos, no uno
 
 **Contexto.** `usuario`+`clave_hash` (BCrypt) y
 `enlace_registro`+`clave_acceso` (OTP por correo, sha256) podrían
@@ -232,3 +232,61 @@ proyecto tiene, desde v5, dos formas de "probar quién soy" en paralelo
 — aceptado porque son, de hecho, dos problemas distintos con dos
 dueños distintos (`usuario` vs `asistente`), no una sola idea resuelta
 dos veces.
+
+## Ajustes al borrador (2026-10-08, al revisar la spec contra la BD real y la v4 cerrada)
+
+No son ADR nuevos (no cambian ninguna decisión D22-D29), pero explican por
+qué esta spec difiere del borrador original:
+
+1. **Numeración.** El borrador usaba D21-D28 y RNF11-RNF13, pero la v4 ya
+   tiene D19-D21 y RNF10-RNF11. Todo ADR desde D21 y todo RNF desde RNF11
+   subió una posición (v5: D22-D29, RNF12-RNF14; los borradores de v6 y v7
+   se desplazaron igual para que sus referencias cruzadas sigan siendo
+   correctas).
+2. **Fechas.** Los Modelos usan `DateTime` UTC, no `DateTimeOffset` (ADR D21
+   de v4): es lo que ya hacen todos los Modelos construidos.
+3. **`inet`.** `ip` e `ip_solicitud` son `inet`; Npgsql las entrega como
+   `IPAddress`, que Dapper no convierte a `string`. Se leen con `host(ip)`
+   y las peticiones validan la IP en el servicio (400 si no es válida).
+4. **Intentos de clave.** Leyendo `sp_validar_clave_y_registrar`: el
+   `UPDATE intentos + 1` va seguido de `RAISE EXCEPTION`, y la excepción
+   revierte la sentencia entera, así que el contador no se acumula y la
+   clave no se anula tras 3 fallos (RF153). **Consecuencia aceptada:**
+   dentro de sus 10 minutos de vida, una clave de 6 dígitos admite
+   intentos sin límite. No se corrige porque (a) el Artículo 5 prohíbe
+   tocar el script y (b) reimplementarlo en C# repetiría lo que D24
+   evita. Se confirma en la Fase 44; si esa prueba mostrara que
+   `intentos` sí sube, este punto y RF153 se revierten.
+5. **Conteos de ejemplo.** `registro_asistencia` tiene **168** filas (167
+   `clave_acceso`); el borrador decía 167 en dos sitios.
+6. **Cuenta de ejemplo.** `admin.catedras` (id 1, asistente 14809, roles
+   `ADMIN` y `CONSULTA` vigentes) trae un hash BCrypt de una clave que
+   nadie conoce. No se toca la BD: el quickstart fija una clave nueva con
+   `PATCH /api/Usuario/1` (RF136), paso que se repite tras cada
+   `down -v`.
+7. **Front.** El borrador hablaba de un «selector de rol de prueba» que en
+   el código nunca existió (son placeholders). El autorregistro se
+   construye sobre `routes/registro.py` (ya registrado y enlazado en el
+   navbar) en vez de crear `autorregistro.py`, y `/admin` queda protegido
+   por rol desde el front (D28 solo dice que la API no autoriza).
+8. **Datos de ejemplo del quickstart verificados contra el script:**
+   `1000090` (asistente 1, vinculación `ESTUDIANTE` vigente, programa
+   `M0221` activo), asistente 2 (igual) y asistente 100 (sin `usuario`);
+   modalidad `PRESENCIAL` → canal `QR`. Todos los enlaces de ejemplo
+   vencieron en agosto de 2026: las pruebas de "solicitar"/"validar"
+   necesitan una sesión nueva alrededor de la hora actual.
+9. **`origen` del registro manual: 400, no 422.** El borrador ponía un
+   `[RegularExpression]` en `RegistroAsistenciaCrear.Origen` *y* la
+   validación del servicio; con la anotación, `origen: "QR"` habría dado
+   422 y nunca habría llegado al servicio, contradiciendo RF156 y el
+   criterio 6 (400). Queda solo la validación del servicio (D26).
+10. **Nombres JSON en snake_case.** El borrador mostraba los bodies y las
+    respuestas en camelCase (`fkAsistente`, `idClave`, `userAgent`), pero
+    v1-v4 usan snake_case con `[JsonPropertyName]` (`fk_sesion`, `id_sesion`);
+    con camelCase, un `POST` habría dado 422 por «campo obligatorio». Se
+    alinearon `2_spec.md`, `6_contracts.md`, `7_quickstart.md` y la guía. No
+    cambian los parámetros de query (`?fkSesion=`), los de ruta (`{idEnlace}`)
+    ni `filasEliminadas`, que ya eran así en v1-v4.
+11. **`usuario` y Dapper.** La columna `usuario` mapea a la propiedad
+    `NombreUsuario`; Dapper no lo adivina, así que el SQL del repositorio
+    usa `usuario AS nombre_usuario`.

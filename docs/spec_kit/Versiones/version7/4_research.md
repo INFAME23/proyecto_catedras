@@ -2,9 +2,9 @@
 
 > ⚠️ **BORRADOR** — ver nota de [2_spec.md](2_spec.md).
 
-## D33 — Ninguna operación de v7 necesita un SP nuevo (segunda corrección del plan original)
+## D34 — Ninguna operación de v7 necesita un SP nuevo (segunda corrección del plan original)
 
-**Contexto.** Igual que V6 con `respuesta_encuesta` (ADR D29 de
+**Contexto.** Igual que V6 con `respuesta_encuesta` (ADR D30 de
 [version6/4_research.md](../version6/4_research.md)), el plan original
 de este proyecto asumía que V7 necesitaba diseñar un SP nuevo para
 `lote_migracion`/`detalle_migracion`. La investigación de
@@ -18,13 +18,13 @@ fielmente.
 
 **Opciones evaluadas:** (a) diseñar un SP nuevo igual que v2/v3/v6,
 asumiendo que cada versión con una relación maestro-detalle necesita
-uno propio; (b) investigar primero (igual criterio que D29) y
+uno propio; (b) investigar primero (igual criterio que D30) y
 confirmar que, de las 7 versiones del proyecto, exactamente 3 (v2, v3,
 v6) necesitaron un SP nuevo — las otras 4 (v1, v4, v5, v7) no, porque
 o no tienen maestro-detalle real (v1, v4) o porque la BD ya lo resolvía
 desde el principio (v5, v7).
 
-**Decisión: (b), con el mismo razonamiento que D29.** La Guía IA,
+**Decisión: (b), con el mismo razonamiento que D30.** La Guía IA,
 Regla 1 no es una cuota por versión ("cada versión agrega al menos un
 SP") — es una regla sobre la OPERACIÓN ("toda creación de un maestro
 con sus detalles en una sola petición pasa por un SP"), y aplicada con
@@ -38,13 +38,13 @@ parece que asuma trabajo que la BD ya hizo.
 **Consecuencias.** (+) V7 termina siendo, junto con v4, la versión con
 menos código nuevo del proyecto — apropiado para la última fila del
 mapa, cuyo trabajo real es exponer, no diseñar. (+) Deja un
-precedente explícito (aquí y en D29) de que "investigar antes de
+precedente explícito (aquí y en D30) de que "investigar antes de
 construir" no es un paso ceremonial del Artículo 5: cambió el
 resultado real de 2 versiones distintas. (−) Ninguna: el "costo" fue
 solo el tiempo de verificar, mínimo comparado con el de haber
 construido y luego descubierto la duplicación.
 
-## D34 — `LoteMigracion` sí tiene `PATCH` de estado (a diferencia de `LoteCargaAsistente` en v3)
+## D35 — `LoteMigracion` sí tiene `PATCH` de estado (a diferencia de `LoteCargaAsistente` en v3)
 
 **Contexto.** `LoteCargaAsistente` (v3) y `LoteMigracion` (v7) se
 parecen en forma — ambos son "el registro de una ejecución por
@@ -80,9 +80,9 @@ finales de no finales — `es_final`, `es_exitoso`). (+) Coherente con
 estado — en un proyecto real, esa actualización vendría de un *webhook*
 o un proceso programado que consulte a ASIS; aquí queda manual, a
 propósito, documentado como simplificación didáctica (mismo espíritu
-que RNF11 de v5 con el correo simulado).
+que RNF12 de v5 con el correo simulado).
 
-## D35 — `Bitacora` es la única entidad del proyecto sin ningún verbo de escritura
+## D36 — `Bitacora` es la única entidad del proyecto sin ningún verbo de escritura
 
 **Contexto.** Hasta v6, toda entidad de solo lectura (`NovedadCarga`,
 `RespuestaItem`) seguía teniendo, al menos, un `POST` implícito dentro
