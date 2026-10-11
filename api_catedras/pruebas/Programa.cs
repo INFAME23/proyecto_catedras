@@ -1,7 +1,7 @@
 // ==========================================================================
-//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versiones 1, 2, 3 y 4
+//  pruebas/Programa.cs  ·  Proyecto Cátedras · Versiones 1, 2, 3, 4 y 5
 //  (criterio 6 de la v1 · criterio 8 de la v2 · criterio 8 de la v3 ·
-//   criterio 7 de la v4)
+//   criterio 7 de la v4 · criterio 8 de la v5)
 // --------------------------------------------------------------------------
 //  "Prueba de capas": se construye ServicioSede pasándole un repositorio
 //  FALSO que guarda las sedes en un diccionario en memoria (implementa
@@ -1331,6 +1331,370 @@ Afirmar("PonenciaCrear es la ÚNICA petición: no existen PonenciaReemplazo ni P
     typeof(PonenciaCrear).Assembly.GetType("ApiCatedras.Peticiones.PonenciaReemplazo") is null
     && typeof(PonenciaCrear).Assembly.GetType("ApiCatedras.Peticiones.PonenciaActualizar") is null);
 
+// ############################################################################
+//  VERSIÓN 5 · Usuarios, roles, enlaces, claves y registro de asistencia
+//  (criterio de aceptación 8 de la v5)
+//  Cada bloque usa SOLO el servicio real + un repositorio FALSO en memoria.
+//  Nada de PostgreSQL: las funciones de la BD (fn_emitir_enlace_api,
+//  fn_solicitar_clave_api, fn_validar_clave_api) se simulan en los falsos.
+// ############################################################################
+
+// ============================================================================
+//  v5 · Prueba de capas: ServicioUsuario + repositorios falsos
+//  BCrypt REAL (no simulado): se verifica el hash que el servicio calculó.
+// ============================================================================
+var repoUsr5 = new RepositorioUsuarioFalso();
+var repoRolesUsr5 = new RepositorioRolPorUsuarioFalso();
+var servicioUsuario5 = new ServicioUsuario(repoUsr5, repoRolesUsr5);
+
+Console.WriteLine("\n== v5 · Prueba de capas: ServicioUsuario + repositorios falsos en memoria ==\n");
+
+var (datosUsr5, totalUsr5) = await servicioUsuario5.ListarAsync(null);
+Afirmar("Listar() devuelve los 2 usuarios semilla", totalUsr5 == 2 && datosUsr5.Count == 2);
+
+await AfirmarLanza<ArgumentException>(
+    "Listar(0) lanza ArgumentException", () => servicioUsuario5.ListarAsync(0));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(999) lanza NoEncontradoExcepcion", () => servicioUsuario5.ObtenerAsync(999));
+
+// --- Crear: el hash es BCrypt de verdad (RF134, D23) ---
+var nuevoUsr5 = await servicioUsuario5.CrearAsync(new UsuarioCrear
+{ FkAsistente = 3, Usuario = "ana.prueba", Clave = "Secreta123" });
+var guardadoUsr5 = (await repoUsr5.ObtenerPorIdAsync(nuevoUsr5.IdUsuario))!;
+Afirmar("Crear() devuelve id y creado_en de la 'BD'", nuevoUsr5.IdUsuario > 2 && nuevoUsr5.CreadoEn != default);
+Afirmar("Crear() NO guarda la clave en claro (el hash empieza por $2 y es distinto)",
+    guardadoUsr5.ClaveHash != "Secreta123" && guardadoUsr5.ClaveHash.StartsWith("$2"));
+Afirmar("BCrypt.Verify(clave, hashGuardado) es verdadero con la clave correcta",
+    BCrypt.Net.BCrypt.Verify("Secreta123", guardadoUsr5.ClaveHash));
+Afirmar("BCrypt.Verify con otra clave es falso",
+    !BCrypt.Net.BCrypt.Verify("OtraClave99", guardadoUsr5.ClaveHash));
+Afirmar("Crear() sin 'activo' deja la cuenta activa", guardadoUsr5.Activo);
+
+await AfirmarLanza<InvalidOperationException>(
+    "Crear() con un 'usuario' repetido falla (uq_usuario_login simulado; en la API real -> 500)",
+    () => servicioUsuario5.CrearAsync(new UsuarioCrear { FkAsistente = 4, Usuario = "ana.prueba", Clave = "Secreta123" }));
+
+// --- RNF13 / RF138: el hash nunca sale en el JSON ---
+string jsonUsr5 = System.Text.Json.JsonSerializer.Serialize(guardadoUsr5);
+Afirmar("Serializar un Usuario NO incluye 'clave_hash' ni el texto del hash (RF138)",
+    !jsonUsr5.Contains("clave_hash") && !jsonUsr5.Contains(guardadoUsr5.ClaveHash)
+    && jsonUsr5.Contains("\"usuario\":\"ana.prueba\""));
+
+// --- PUT: fija una clave nueva ---
+string hashAntesPut5 = guardadoUsr5.ClaveHash;
+int filasPutUsr5 = await servicioUsuario5.ReemplazarAsync(nuevoUsr5.IdUsuario, new UsuarioReemplazo
+{ FkAsistente = 3, Usuario = "ana.nueva", Clave = "ClaveNueva456", Activo = true });
+var trasPutUsr5 = (await repoUsr5.ObtenerPorIdAsync(nuevoUsr5.IdUsuario))!;
+Afirmar("PUT reemplaza el nombre y re-hashea la clave",
+    filasPutUsr5 == 1 && trasPutUsr5.NombreUsuario == "ana.nueva"
+    && trasPutUsr5.ClaveHash != hashAntesPut5
+    && BCrypt.Net.BCrypt.Verify("ClaveNueva456", trasPutUsr5.ClaveHash)
+    && !BCrypt.Net.BCrypt.Verify("Secreta123", trasPutUsr5.ClaveHash));
+
+// --- PATCH: sin 'clave' el hash se conserva (RF136) ---
+string hashAntesPatch5 = trasPutUsr5.ClaveHash;
+await servicioUsuario5.ActualizarAsync(nuevoUsr5.IdUsuario, new UsuarioActualizar { Activo = false });
+var trasPatchUsr5 = (await repoUsr5.ObtenerPorIdAsync(nuevoUsr5.IdUsuario))!;
+Afirmar("PATCH sin 'clave' cambia 'activo' y deja el hash INTACTO",
+    !trasPatchUsr5.Activo && trasPatchUsr5.ClaveHash == hashAntesPatch5);
+
+await servicioUsuario5.ActualizarAsync(nuevoUsr5.IdUsuario, new UsuarioActualizar { Clave = "TerceraClave789" });
+var trasPatchClaveUsr5 = (await repoUsr5.ObtenerPorIdAsync(nuevoUsr5.IdUsuario))!;
+Afirmar("PATCH con 'clave' re-hashea y la nueva clave verifica",
+    trasPatchClaveUsr5.ClaveHash != hashAntesPatch5
+    && BCrypt.Net.BCrypt.Verify("TerceraClave789", trasPatchClaveUsr5.ClaveHash));
+
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException",
+    () => servicioUsuario5.ActualizarAsync(nuevoUsr5.IdUsuario, new UsuarioActualizar()));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a un usuario inexistente lanza NoEncontradoExcepcion",
+    () => servicioUsuario5.ActualizarAsync(999, new UsuarioActualizar { Activo = true }));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PUT a un usuario inexistente lanza NoEncontradoExcepcion",
+    () => servicioUsuario5.ReemplazarAsync(999, new UsuarioReemplazo
+    { FkAsistente = 1, Usuario = "nadie.aqui", Clave = "Clave12345", Activo = true }));
+
+// --- LOGIN (RF139, D27) ---
+int accesosAntes5 = repoUsr5.LlamadasUltimoAcceso;
+var loginOk5 = await servicioUsuario5.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "Admin12345" });
+Afirmar("Login correcto devuelve el usuario", loginOk5 is not null && loginOk5.Value.Usuario.NombreUsuario == "admin");
+Afirmar("...con SOLO los roles vigentes (ADMIN sí; CONSULTA, ya cerrado, no)",
+    loginOk5 is not null && loginOk5.Value.Roles.SequenceEqual(new[] { "ADMIN" }));
+Afirmar("...y actualiza ultimo_acceso (1 llamada nueva y valor en el objeto)",
+    repoUsr5.LlamadasUltimoAcceso == accesosAntes5 + 1 && loginOk5!.Value.Usuario.UltimoAcceso is not null);
+
+var loginNoExiste5 = await servicioUsuario5.LoginAsync(new UsuarioLogin { Usuario = "no.existe", Clave = "Admin12345" });
+var loginClaveMala5 = await servicioUsuario5.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "ClaveIncorrecta" });
+var loginInactivo5 = await servicioUsuario5.LoginAsync(new UsuarioLogin { Usuario = "inactivo.prueba", Clave = "Clave12345" });
+Afirmar("Login con usuario inexistente devuelve null", loginNoExiste5 is null);
+Afirmar("Login con clave incorrecta devuelve null", loginClaveMala5 is null);
+Afirmar("Login con usuario INACTIVO (aunque la clave sea correcta) devuelve null", loginInactivo5 is null);
+Afirmar("Las 3 causas dan el MISMO resultado (D27) y ninguna actualizó ultimo_acceso",
+    loginNoExiste5 is null && loginClaveMala5 is null && loginInactivo5 is null
+    && repoUsr5.LlamadasUltimoAcceso == accesosAntes5 + 1);
+
+// --- Controlador: null -> 401 con el mismo mensaje; éxito -> 200 ---
+var controladorUsr5 = new ApiCatedras.Controllers.UsuarioController(servicioUsuario5);
+var respMala5 = await controladorUsr5.Login(new UsuarioLogin { Usuario = "admin", Clave = "ClaveIncorrecta" });
+var respInactivo5 = await controladorUsr5.Login(new UsuarioLogin { Usuario = "inactivo.prueba", Clave = "Clave12345" });
+var respNoExiste5 = await controladorUsr5.Login(new UsuarioLogin { Usuario = "no.existe", Clave = "Admin12345" });
+Afirmar("El controlador responde 401 (UnauthorizedObjectResult) en las 3 causas",
+    respMala5 is Microsoft.AspNetCore.Mvc.UnauthorizedObjectResult
+    && respInactivo5 is Microsoft.AspNetCore.Mvc.UnauthorizedObjectResult
+    && respNoExiste5 is Microsoft.AspNetCore.Mvc.UnauthorizedObjectResult);
+string cuerpo401a5 = System.Text.Json.JsonSerializer.Serialize(((Microsoft.AspNetCore.Mvc.UnauthorizedObjectResult)respMala5).Value);
+string cuerpo401b5 = System.Text.Json.JsonSerializer.Serialize(((Microsoft.AspNetCore.Mvc.UnauthorizedObjectResult)respNoExiste5).Value);
+Afirmar("...y el cuerpo es IDÉNTICO (no revela cuál fue la causa) y dice 'Usuario o clave incorrectos'",
+    cuerpo401a5 == cuerpo401b5 && cuerpo401a5.Contains("Usuario o clave incorrectos"));
+var respOk5 = await controladorUsr5.Login(new UsuarioLogin { Usuario = "admin", Clave = "Admin12345" });
+Afirmar("El controlador responde 200 (OkObjectResult) con credenciales correctas",
+    respOk5 is Microsoft.AspNetCore.Mvc.OkObjectResult);
+string cuerpo200_5 = System.Text.Json.JsonSerializer.Serialize(((Microsoft.AspNetCore.Mvc.OkObjectResult)respOk5).Value);
+Afirmar("...y la respuesta 200 NO trae el hash",
+    !cuerpo200_5.Contains("clave_hash") && !cuerpo200_5.Contains("$2") && cuerpo200_5.Contains("ADMIN"));
+
+// --- DELETE ---
+Afirmar("DELETE elimina 1 fila", await servicioUsuario5.EliminarAsync(nuevoUsr5.IdUsuario) == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "segundo DELETE lanza NoEncontradoExcepcion", () => servicioUsuario5.EliminarAsync(nuevoUsr5.IdUsuario));
+
+// ============================================================================
+//  v5 · Prueba de capas: ServicioRolPorUsuario + repositorio falso
+//  Tabla de LLAVE COMPUESTA (ADR D16): sin id, se abre y se cierra.
+// ============================================================================
+var repoRol5 = new RepositorioRolPorUsuarioFalso();
+var servicioRol5 = new ServicioRolPorUsuario(repoRol5);
+
+Console.WriteLine("\n== v5 · Prueba de capas: ServicioRolPorUsuario + repositorio falso en memoria ==\n");
+
+var rolNuevo5 = await servicioRol5.CrearAsync(new RolPorUsuarioCrear { FkUsuario = 2, FkRol = "CONSULTA" });
+Afirmar("Crear() abre con fecha_ini = hoy y sin fecha_fin",
+    rolNuevo5.FechaIni == DateOnly.FromDateTime(DateTime.Today) && rolNuevo5.FechaFin is null);
+
+var (datosRolU1_5, _) = await servicioRol5.ListarAsync(1, null);
+Afirmar("Listar(fkUsuario=1) trae solo las 2 filas semilla de ese usuario", datosRolU1_5.Count == 2);
+var (datosRolTodos5, _) = await servicioRol5.ListarAsync(null, null);
+Afirmar("Listar() sin filtro trae también el rol recién abierto", datosRolTodos5.Count == 3);
+await AfirmarLanza<ArgumentException>(
+    "Listar(limite 0) lanza ArgumentException", () => servicioRol5.ListarAsync(null, 0));
+
+await AfirmarLanza<InvalidOperationException>(
+    "Crear() con la MISMA llave exacta falla (PK duplicada simulada; en la API real -> 500)",
+    () => servicioRol5.CrearAsync(new RolPorUsuarioCrear { FkUsuario = 2, FkRol = "CONSULTA", FechaIni = rolNuevo5.FechaIni }));
+
+var cierreRol5 = new RolPorUsuarioCerrar
+{ FkUsuario = 2, FkRol = "CONSULTA", FechaIni = rolNuevo5.FechaIni, FechaFin = rolNuevo5.FechaIni.AddDays(30) };
+
+await AfirmarLanza<ArgumentException>(
+    "Cerrar con fecha_fin anterior a fecha_ini lanza ArgumentException",
+    () => servicioRol5.CerrarAsync(new RolPorUsuarioCerrar
+    { FkUsuario = 2, FkRol = "CONSULTA", FechaIni = rolNuevo5.FechaIni, FechaFin = rolNuevo5.FechaIni.AddDays(-1) }));
+
+var rolCerrado5 = await servicioRol5.CerrarAsync(cierreRol5);
+Afirmar("Cerrar() pone fecha_fin", rolCerrado5.FechaFin == rolNuevo5.FechaIni.AddDays(30));
+
+int cierresAntesRol5 = repoRol5.LlamadasCerrar;
+await AfirmarLanza<ArgumentException>(
+    "Cerrar dos veces lanza ArgumentException (400)", () => servicioRol5.CerrarAsync(cierreRol5));
+Afirmar("...y la segunda vez NO se llamó al UPDATE del repositorio", repoRol5.LlamadasCerrar == cierresAntesRol5);
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Cerrar una llave inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioRol5.CerrarAsync(new RolPorUsuarioCerrar
+    { FkUsuario = 2, FkRol = "ADMIN", FechaIni = new DateOnly(2020, 1, 1) }));
+
+Afirmar("IRepositorioRolPorUsuario no declara ObtenerPorId/Actualizar/Eliminar (ADR D16)",
+    new[] { "ObtenerPorIdAsync", "ActualizarAsync", "EliminarAsync" }
+        .All(m => typeof(IRepositorioRolPorUsuario).GetMethod(m) is null));
+Afirmar("El modelo RolPorUsuario no tiene propiedad 'Id' (llave compuesta)",
+    typeof(RolPorUsuario).GetProperty("Id") is null && typeof(RolPorUsuario).GetProperty("IdRolPorUsuario") is null);
+
+// ============================================================================
+//  v5 · Prueba de capas: ServicioEnlaceRegistro + repositorio falso
+//  NO es un CRUD (ADR D24): se EMITE (función de la BD, simulada) y se REVOCA.
+// ============================================================================
+var repoEnl5 = new RepositorioEnlaceRegistroFalso();
+var servicioEnl5 = new ServicioEnlaceRegistro(repoEnl5);
+
+Console.WriteLine("\n== v5 · Prueba de capas: ServicioEnlaceRegistro + repositorio falso en memoria ==\n");
+
+var (datosEnlS10_5, _) = await servicioEnl5.ListarAsync(10, null);
+Afirmar("Listar(fkSesion=10) trae el enlace semilla vigente", datosEnlS10_5.Count == 1 && datosEnlS10_5[0].RevocadoEn is null);
+
+long idEnlNuevo5 = await servicioEnl5.EmitirAsync(new EnlaceRegistroEmitir { FkSesion = 10, MinutosAntes = 15 });
+var enlNuevo5 = await servicioEnl5.ObtenerAsync(idEnlNuevo5);
+Afirmar("Emitir() devuelve el id que decidió la 'BD' y el enlace nace vigente",
+    idEnlNuevo5 > 1 && enlNuevo5.RevocadoEn is null && enlNuevo5.Token != Guid.Empty);
+Afirmar("...con canal, url y ventana calculados por la BD (no por el cliente)",
+    enlNuevo5.Canal == "QR" && enlNuevo5.UrlPublica.Contains(enlNuevo5.Token.ToString())
+    && enlNuevo5.VentanaHasta > enlNuevo5.VentanaDesde);
+Afirmar("...y el servicio PASÓ los minutos opcionales tal cual (15 antes, sin 'después')",
+    repoEnl5.UltimosMinutosAntes == 15 && repoEnl5.UltimosMinutosDespues is null);
+
+var enlAnterior5 = await servicioEnl5.ObtenerAsync(1);
+Afirmar("RN-14: emitir un segundo enlace para la misma sesión REVOCÓ el primero", enlAnterior5.RevocadoEn is not null);
+
+await AfirmarLanza<InvalidOperationException>(
+    "Emitir para una sesión inexistente falla (RAISE de la función simulado; en la API real -> 500, D25)",
+    () => servicioEnl5.EmitirAsync(new EnlaceRegistroEmitir { FkSesion = 999 }));
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(999) lanza NoEncontradoExcepcion", () => servicioEnl5.ObtenerAsync(999));
+await AfirmarLanza<ArgumentException>(
+    "Listar(limite 0) lanza ArgumentException", () => servicioEnl5.ListarAsync(null, 0));
+
+Afirmar("Revocar() sobre un enlace vigente afecta 1 fila", await servicioEnl5.RevocarAsync(idEnlNuevo5) == 1);
+int revocacionesAntes5 = repoEnl5.LlamadasRevocar;
+await AfirmarLanza<ArgumentException>(
+    "Revocar dos veces lanza ArgumentException (400)", () => servicioEnl5.RevocarAsync(idEnlNuevo5));
+Afirmar("...y la segunda vez NO se llamó al UPDATE del repositorio", repoEnl5.LlamadasRevocar == revocacionesAntes5);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Revocar un enlace inexistente lanza NoEncontradoExcepcion (404)", () => servicioEnl5.RevocarAsync(999));
+
+Afirmar("IRepositorioEnlaceRegistro no declara Crear/Reemplazar/Actualizar/Eliminar (RF147)",
+    new[] { "CrearAsync", "ReemplazarAsync", "ActualizarAsync", "EliminarAsync" }
+        .All(m => typeof(IRepositorioEnlaceRegistro).GetMethod(m) is null));
+Afirmar("EnlaceRegistroEmitir NO tiene canal, token, ventana ni url_publica (RF148)",
+    new[] { "Canal", "Token", "Ventana", "VentanaDesde", "UrlPublica" }
+        .All(p => typeof(EnlaceRegistroEmitir).GetProperty(p) is null));
+
+// ============================================================================
+//  v5 · Prueba de capas: ServicioClaveAcceso + repositorio falso
+//  NO es un CRUD (ADR D24): SOLICITAR y VALIDAR (funciones de la BD simuladas).
+// ============================================================================
+var repoCla5 = new RepositorioClaveAccesoFalso();
+var servicioCla5 = new ServicioClaveAcceso(repoCla5);
+string tokenOk5 = RepositorioClaveAccesoFalso.TokenVigente.ToString();
+
+Console.WriteLine("\n== v5 · Prueba de capas: ServicioClaveAcceso + repositorio falso en memoria ==\n");
+
+// Validaciones de FORMA del servicio: 400 ANTES de tocar el repositorio.
+int solicitudesAntes5 = repoCla5.LlamadasSolicitar;
+await AfirmarLanza<ArgumentException>(
+    "Solicitar con un 'token' que no es uuid lanza ArgumentException (400)",
+    () => servicioCla5.SolicitarAsync(new ClaveAccesoSolicitar { Identificador = "1000090", Token = "no-es-un-uuid" }));
+await AfirmarLanza<ArgumentException>(
+    "Solicitar con una 'ip' inválida lanza ArgumentException (400)",
+    () => servicioCla5.SolicitarAsync(new ClaveAccesoSolicitar { Identificador = "1000090", Token = tokenOk5, Ip = "999.1.1.1" }));
+Afirmar("...y en ninguno de los dos casos se llamó al repositorio", repoCla5.LlamadasSolicitar == solicitudesAntes5);
+
+var solicitud5 = await servicioCla5.SolicitarAsync(new ClaveAccesoSolicitar
+{ Identificador = "1000090", Token = tokenOk5, Ip = "10.0.0.5" });
+Afirmar("Solicitar() devuelve id_clave, la clave en texto plano y el correo de destino (RNF12)",
+    solicitud5.IdClave > 0 && solicitud5.Clave == RepositorioClaveAccesoFalso.ClaveFija
+    && solicitud5.EnviadoA.Contains('@'));
+Afirmar("...y la IP llegó al repositorio ya validada", repoCla5.UltimaIp == "10.0.0.5");
+
+await AfirmarLanza<InvalidOperationException>(
+    "Solicitar con un token de enlace desconocido falla (RAISE simulado; en la API real -> 500, D25)",
+    () => servicioCla5.SolicitarAsync(new ClaveAccesoSolicitar { Identificador = "1000090", Token = Guid.NewGuid().ToString() }));
+
+// Validar
+await AfirmarLanza<ArgumentException>(
+    "Validar con una 'ip' inválida lanza ArgumentException (400)",
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "abc" }));
+
+await AfirmarLanza<InvalidOperationException>(
+    "Validar con la clave INCORRECTA falla (simulado; en la API real -> 500, D25)",
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = "000000" }));
+
+long idRegistroVal5 = await servicioCla5.ValidarAsync(new ClaveAccesoValidar
+{ IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "10.0.0.5", UserAgent = "prueba/1.0" });
+Afirmar("Validar() con la clave correcta devuelve el id_registro creado", idRegistroVal5 > 0);
+
+await AfirmarLanza<InvalidOperationException>(
+    "Validar OTRA VEZ la misma clave falla (ya usada, RN-20; en la API real -> 500)",
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave }));
+
+// Lecturas de auditoría
+var claveLeida5 = await servicioCla5.ObtenerAsync(solicitud5.IdClave);
+Afirmar("Obtener() muestra usado_en tras validar", claveLeida5.UsadoEn is not null);
+string jsonCla5 = System.Text.Json.JsonSerializer.Serialize(claveLeida5);
+Afirmar("Serializar una ClaveAcceso NO incluye 'clave_hash' ni la clave en claro (RF151, RNF12)",
+    !jsonCla5.Contains("clave_hash") && !jsonCla5.Contains("\"clave\""));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(999) lanza NoEncontradoExcepcion", () => servicioCla5.ObtenerAsync(999));
+var (datosClaA5, _) = await servicioCla5.ListarAsync(1000090, null);
+Afirmar("Listar(fkAsistente) filtra por asistente", datosClaA5.Count == 1 && datosClaA5[0].FkAsistente == 1000090);
+await AfirmarLanza<ArgumentException>(
+    "Listar(limite 0) lanza ArgumentException", () => servicioCla5.ListarAsync(null, 0));
+
+Afirmar("IRepositorioClaveAcceso no declara Crear/Reemplazar/Actualizar/Eliminar (RF152)",
+    new[] { "CrearAsync", "ReemplazarAsync", "ActualizarAsync", "EliminarAsync" }
+        .All(m => typeof(IRepositorioClaveAcceso).GetMethod(m) is null));
+Afirmar("La propiedad ClaveHash del modelo lleva [JsonIgnore]",
+    typeof(ClaveAcceso).GetProperty("ClaveHash")!
+        .GetCustomAttributes(typeof(System.Text.Json.Serialization.JsonIgnoreAttribute), false).Length == 1);
+
+// ============================================================================
+//  v5 · Prueba de capas: ServicioRegistroAsistencia + repositorio falso
+//  Hecho auditable: solo se lee y se da de alta a mano. 'origen' lo valida el
+//  SERVICIO (ADR D26) -> 400, nunca 422.
+// ============================================================================
+var repoReg5 = new RepositorioRegistroAsistenciaFalso();
+var servicioReg5 = new ServicioRegistroAsistencia(repoReg5);
+
+Console.WriteLine("\n== v5 · Prueba de capas: ServicioRegistroAsistencia + repositorio falso en memoria ==\n");
+
+var (datosRegS10_5, _) = await servicioReg5.ListarAsync(10, null, null);
+Afirmar("Listar(fkSesion=10) trae la semilla", datosRegS10_5.Count == 1);
+
+var regManual5 = await servicioReg5.CrearAsync(new RegistroAsistenciaCrear { FkSesion = 10, FkAsistente = 2, Origen = "MANUAL" });
+Afirmar("Crear() MANUAL devuelve la fila con las 2 instantáneas que puso el 'trigger'",
+    regManual5.IdRegistro > 1 && regManual5.FkVinculacionSnapshot == "ESTUDIANTE"
+    && regManual5.FkEnlace is null && regManual5.FkClave is null);
+
+var regImportado5 = await servicioReg5.CrearAsync(new RegistroAsistenciaCrear { FkSesion = 11, FkAsistente = 2, Origen = "IMPORTADO" });
+Afirmar("Crear() IMPORTADO también es válido", regImportado5.Origen == "IMPORTADO");
+
+// D26: el origen se valida ANTES de llegar al repositorio.
+int creacionesAntesReg5 = repoReg5.LlamadasCrear;
+await AfirmarLanza<ArgumentException>(
+    "Crear con origen \"ENLACE\" lanza ArgumentException (400, D26)",
+    () => servicioReg5.CrearAsync(new RegistroAsistenciaCrear { FkSesion = 12, FkAsistente = 2, Origen = "ENLACE" }));
+await AfirmarLanza<ArgumentException>(
+    "Crear con origen \"QR\" lanza ArgumentException (400, D26)",
+    () => servicioReg5.CrearAsync(new RegistroAsistenciaCrear { FkSesion = 12, FkAsistente = 2, Origen = "QR" }));
+await AfirmarLanza<ArgumentException>(
+    "Crear con origen en minúsculas (\"manual\") lanza ArgumentException (400)",
+    () => servicioReg5.CrearAsync(new RegistroAsistenciaCrear { FkSesion = 12, FkAsistente = 2, Origen = "manual" }));
+Afirmar("...y el repositorio falso NO fue invocado en ninguno de los 3 casos", repoReg5.LlamadasCrear == creacionesAntesReg5);
+
+var controladorReg5 = new ApiCatedras.Controllers.RegistroAsistenciaController(servicioReg5);
+var respRegMal5 = await controladorReg5.Crear(new RegistroAsistenciaCrear { FkSesion = 12, FkAsistente = 2, Origen = "QR" });
+Afirmar("El controlador traduce ese origen inválido a HTTP 400",
+    respRegMal5 is Microsoft.AspNetCore.Mvc.ObjectResult o400 && o400.StatusCode == 400);
+
+await AfirmarLanza<InvalidOperationException>(
+    "Registrar dos veces al mismo asistente en la misma sesión falla (uq_registro_sesion_asis simulado; en la API real -> 500)",
+    () => servicioReg5.CrearAsync(new RegistroAsistenciaCrear { FkSesion = 10, FkAsistente = 2, Origen = "MANUAL" }));
+
+var (datosRegA2_5, _) = await servicioReg5.ListarAsync(null, 2, null);
+Afirmar("Listar(fkAsistente=2) trae los 2 registros de ese asistente", datosRegA2_5.Count == 2);
+var (datosRegAmbos5, _) = await servicioReg5.ListarAsync(10, 2, null);
+Afirmar("Listar(fkSesion=10, fkAsistente=2) combina los dos filtros", datosRegAmbos5.Count == 1);
+await AfirmarLanza<ArgumentException>(
+    "Listar(limite 0) lanza ArgumentException", () => servicioReg5.ListarAsync(null, null, 0));
+
+var regLeido5 = await servicioReg5.ObtenerAsync(regManual5.IdRegistro);
+Afirmar("Obtener() encuentra el registro creado", regLeido5.FkAsistente == 2 && regLeido5.FkSesion == 10);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Obtener(999) lanza NoEncontradoExcepcion", () => servicioReg5.ObtenerAsync(999));
+
+Afirmar("IRepositorioRegistroAsistencia no declara Reemplazar/Actualizar/Eliminar (RF157)",
+    new[] { "ReemplazarAsync", "ActualizarAsync", "EliminarAsync" }
+        .All(m => typeof(IRepositorioRegistroAsistencia).GetMethod(m) is null));
+Afirmar("RegistroAsistenciaCrear NO tiene fk_clave, fk_enlace ni las instantáneas (RF156)",
+    new[] { "FkClave", "FkEnlace", "FkProgramaSnapshot", "FkVinculacionSnapshot" }
+        .All(p => typeof(RegistroAsistenciaCrear).GetProperty(p) is null));
+Afirmar("'Origen' lleva [Required] pero NO [RegularExpression] (D26: si no, daría 422 en vez de 400)",
+    typeof(RegistroAsistenciaCrear).GetProperty("Origen")!
+        .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), false).Length == 1
+    && typeof(RegistroAsistenciaCrear).GetProperty("Origen")!
+        .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RegularExpressionAttribute), false).Length == 0);
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -2560,4 +2924,316 @@ class RepositorioPonenciaFalso : IRepositorioPonencia
     public Task<int> EliminarAsync(long fkSesion, long fkAsistente, string rol) =>
         // 'RemoveAll' devuelve cuántas quitó: 1 si existía, 0 si no.
         Task.FromResult(_tabla.RemoveAll(p => MismaLlave(p, fkSesion, fkAsistente, rol)));
+}
+
+// ==========================================================================
+//  v5 · Repositorio FALSO de 'Usuario'. Guarda 'ClaveHash' tal cual lo
+//  calculó ServicioUsuario (BCrypt real): así la prueba puede verificarlo.
+//  Semilla: 'admin' (activo, clave Admin12345) e 'inactivo.prueba' (inactivo,
+//  clave Clave12345). Cuenta las llamadas a ActualizarUltimoAccesoAsync.
+// ==========================================================================
+class RepositorioUsuarioFalso : IRepositorioUsuario
+{
+    private readonly Dictionary<long, Usuario> _tabla = new();
+    private long _siguienteId = 3;
+
+    public int LlamadasUltimoAcceso { get; private set; }
+
+    public RepositorioUsuarioFalso()
+    {
+        _tabla[1] = new Usuario
+        {
+            IdUsuario = 1, FkAsistente = 1, NombreUsuario = "admin",
+            ClaveHash = BCrypt.Net.BCrypt.HashPassword("Admin12345"),
+            Activo = true, CreadoEn = DateTime.UtcNow,
+        };
+        _tabla[2] = new Usuario
+        {
+            IdUsuario = 2, FkAsistente = 2, NombreUsuario = "inactivo.prueba",
+            ClaveHash = BCrypt.Net.BCrypt.HashPassword("Clave12345"),
+            Activo = false, CreadoEn = DateTime.UtcNow,
+        };
+    }
+
+    public Task<List<Usuario>> ObtenerTodosAsync(int limite) =>
+        Task.FromResult(_tabla.Values.OrderBy(u => u.IdUsuario).Take(limite).ToList());
+
+    public Task<Usuario?> ObtenerPorIdAsync(long idUsuario) =>
+        Task.FromResult(_tabla.TryGetValue(idUsuario, out var u) ? u : null);
+
+    public Task<Usuario?> ObtenerPorLoginAsync(string usuario) =>
+        Task.FromResult(_tabla.Values.FirstOrDefault(u => u.NombreUsuario == usuario));
+
+    public Task<(long IdUsuario, DateTime CreadoEn)> CrearAsync(Usuario usuario)
+    {
+        if (_tabla.Values.Any(u => u.NombreUsuario == usuario.NombreUsuario))
+            throw new InvalidOperationException("uq_usuario_login (simulado).");
+        if (_tabla.Values.Any(u => u.FkAsistente == usuario.FkAsistente))
+            throw new InvalidOperationException("uq_usuario_persona (simulado).");
+
+        usuario.IdUsuario = _siguienteId++;
+        usuario.CreadoEn = DateTime.UtcNow;
+        _tabla[usuario.IdUsuario] = usuario;
+        return Task.FromResult((usuario.IdUsuario, usuario.CreadoEn));
+    }
+
+    public Task<int> ActualizarAsync(long idUsuario, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idUsuario, out var u))
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("fk_asistente", out var f)) u.FkAsistente = (long)f!;
+        if (datos.TryGetValue("usuario", out var n)) u.NombreUsuario = (string)n!;
+        if (datos.TryGetValue("clave_hash", out var h)) u.ClaveHash = (string)h!;
+        if (datos.TryGetValue("activo", out var a)) u.Activo = (bool)a!;
+        return Task.FromResult(1);
+    }
+
+    public Task ActualizarUltimoAccesoAsync(long idUsuario)
+    {
+        LlamadasUltimoAcceso++;
+        if (_tabla.TryGetValue(idUsuario, out var u))
+            u.UltimoAcceso = DateTime.UtcNow;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> EliminarAsync(long idUsuario) =>
+        Task.FromResult(_tabla.Remove(idUsuario) ? 1 : 0);
+}
+
+// ==========================================================================
+//  v5 · Repositorio FALSO de 'RolPorUsuario' (llave compuesta, ADR D16).
+//  Semilla: usuario 1 con ADMIN vigente y CONSULTA ya cerrado. Cuenta las
+//  llamadas a CerrarAsync.
+// ==========================================================================
+class RepositorioRolPorUsuarioFalso : IRepositorioRolPorUsuario
+{
+    private readonly List<RolPorUsuario> _tabla = new()
+    {
+        new RolPorUsuario { FkUsuario = 1, FkRol = "ADMIN", FechaIni = new DateOnly(2026, 1, 1) },
+        new RolPorUsuario { FkUsuario = 1, FkRol = "CONSULTA", FechaIni = new DateOnly(2025, 1, 1), FechaFin = new DateOnly(2025, 12, 31) },
+    };
+
+    public int LlamadasCerrar { get; private set; }
+
+    // Devuelve COPIAS: el servicio no puede cambiar la "tabla" sin pasar por CerrarAsync.
+    public Task<List<RolPorUsuario>> ObtenerTodosAsync(long? fkUsuario, int limite) =>
+        Task.FromResult(_tabla
+            .Where(r => fkUsuario is null || r.FkUsuario == fkUsuario)
+            .Take(limite)
+            .Select(r => new RolPorUsuario
+            { FkUsuario = r.FkUsuario, FkRol = r.FkRol, FechaIni = r.FechaIni, FechaFin = r.FechaFin })
+            .ToList());
+
+    public Task<List<string>> ObtenerVigentesAsync(long fkUsuario) =>
+        Task.FromResult(_tabla
+            .Where(r => r.FkUsuario == fkUsuario && r.FechaFin is null)
+            .Select(r => r.FkRol)
+            .OrderBy(x => x)
+            .ToList());
+
+    public Task CrearAsync(RolPorUsuario rol)
+    {
+        if (_tabla.Any(r => r.FkUsuario == rol.FkUsuario && r.FkRol == rol.FkRol && r.FechaIni == rol.FechaIni))
+            throw new InvalidOperationException("llave duplicada (simulado).");
+        _tabla.Add(rol);
+        return Task.CompletedTask;
+    }
+
+    public Task<int> CerrarAsync(long fkUsuario, string fkRol, DateOnly fechaIni, DateOnly fechaFin)
+    {
+        LlamadasCerrar++;
+        var fila = _tabla.FirstOrDefault(r => r.FkUsuario == fkUsuario
+            && r.FkRol == fkRol && r.FechaIni == fechaIni && r.FechaFin is null);
+        if (fila is null) return Task.FromResult(0);
+        fila.FechaFin = fechaFin;
+        return Task.FromResult(1);
+    }
+}
+
+// ==========================================================================
+//  v5 · Repositorio FALSO de 'EnlaceRegistro'. Simula fn_emitir_enlace_api:
+//   · sesión 999 inexistente -> excepción (el RAISE de la BD);
+//   · RN-14: revoca el enlace vigente anterior de la MISMA sesión;
+//   · la BD decide token, url, canal y ventana.
+//  Guarda los últimos minutos recibidos y cuenta las llamadas a RevocarAsync.
+// ==========================================================================
+class RepositorioEnlaceRegistroFalso : IRepositorioEnlaceRegistro
+{
+    private readonly List<EnlaceRegistro> _tabla = new();
+    private long _siguienteId = 2;
+
+    public int LlamadasRevocar { get; private set; }
+    public int? UltimosMinutosAntes { get; private set; }
+    public int? UltimosMinutosDespues { get; private set; }
+
+    public RepositorioEnlaceRegistroFalso()
+    {
+        var token = Guid.NewGuid();
+        var inicio = new DateTime(2026, 9, 1, 13, 0, 0, DateTimeKind.Utc);
+        _tabla.Add(new EnlaceRegistro
+        {
+            IdEnlace = 1, FkSesion = 10, Token = token, UrlPublica = "https://catedras.example/r/" + token,
+            Canal = "QR", VentanaDesde = inicio.AddMinutes(-30), VentanaHasta = inicio.AddHours(2).AddMinutes(30),
+            CreadoEn = DateTime.UtcNow,
+        });
+    }
+
+    public Task<List<EnlaceRegistro>> ObtenerTodosAsync(long? fkSesion, int limite) =>
+        Task.FromResult(_tabla
+            .Where(e => fkSesion is null || e.FkSesion == fkSesion)
+            .OrderBy(e => e.IdEnlace).Take(limite).ToList());
+
+    public Task<EnlaceRegistro?> ObtenerPorIdAsync(long idEnlace) =>
+        Task.FromResult(_tabla.FirstOrDefault(e => e.IdEnlace == idEnlace));
+
+    public Task<long> EmitirAsync(long fkSesion, int? minutosAntes, int? minutosDespues, long? fkUsuario)
+    {
+        UltimosMinutosAntes = minutosAntes;
+        UltimosMinutosDespues = minutosDespues;
+
+        if (fkSesion == 999)
+            throw new InvalidOperationException("No existe la sesion 999 (simulado).");
+
+        // RN-14: se revoca el vigente anterior de esa sesión.
+        foreach (var vigente in _tabla.Where(e => e.FkSesion == fkSesion && e.RevocadoEn is null))
+            vigente.RevocadoEn = DateTime.UtcNow;
+
+        var token = Guid.NewGuid();
+        var inicio = new DateTime(2026, 9, 1, 13, 0, 0, DateTimeKind.Utc);
+        var enlace = new EnlaceRegistro
+        {
+            IdEnlace = _siguienteId++, FkSesion = fkSesion, Token = token,
+            UrlPublica = "https://catedras.example/r/" + token,
+            Canal = "QR",
+            VentanaDesde = inicio.AddMinutes(-(minutosAntes ?? 30)),
+            VentanaHasta = inicio.AddHours(2).AddMinutes(minutosDespues ?? 30),
+            FkUsuarioCrea = fkUsuario, CreadoEn = DateTime.UtcNow,
+        };
+        _tabla.Add(enlace);
+        return Task.FromResult(enlace.IdEnlace);
+    }
+
+    public Task<int> RevocarAsync(long idEnlace)
+    {
+        LlamadasRevocar++;
+        var fila = _tabla.FirstOrDefault(e => e.IdEnlace == idEnlace && e.RevocadoEn is null);
+        if (fila is null) return Task.FromResult(0);
+        fila.RevocadoEn = DateTime.UtcNow;
+        return Task.FromResult(1);
+    }
+}
+
+// ==========================================================================
+//  v5 · Repositorio FALSO de 'ClaveAcceso'. Simula las dos funciones de la BD:
+//   · fn_solicitar_clave_api: token desconocido -> excepción; si no, crea una
+//     clave y devuelve (id, "483920", correo);
+//   · fn_validar_clave_api: clave incorrecta o ya usada -> excepción (D25); si
+//     no, la marca usada y devuelve un id_registro.
+//  Cuenta las solicitudes y guarda la última IP recibida.
+// ==========================================================================
+class RepositorioClaveAccesoFalso : IRepositorioClaveAcceso
+{
+    public static readonly Guid TokenVigente = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    public const string ClaveFija = "483920";
+
+    private readonly List<ClaveAcceso> _tabla = new();
+    private long _siguienteId = 501;
+    private long _siguienteRegistro = 900;
+
+    public int LlamadasSolicitar { get; private set; }
+    public string? UltimaIp { get; private set; }
+
+    public Task<List<ClaveAcceso>> ObtenerTodosAsync(long? fkAsistente, int limite) =>
+        Task.FromResult(_tabla
+            .Where(c => fkAsistente is null || c.FkAsistente == fkAsistente)
+            .OrderBy(c => c.IdClave).Take(limite).ToList());
+
+    public Task<ClaveAcceso?> ObtenerPorIdAsync(long idClave) =>
+        Task.FromResult(_tabla.FirstOrDefault(c => c.IdClave == idClave));
+
+    public Task<(long IdClave, string Clave, string EnviadoA)> SolicitarAsync(
+        string identificador, Guid token, string? ip)
+    {
+        LlamadasSolicitar++;
+        UltimaIp = ip;
+
+        if (token != TokenVigente)
+            throw new InvalidOperationException("Enlace inexistente, revocado o fuera de ventana (simulado).");
+
+        var ahora = DateTime.UtcNow;
+        long fkAsistente = long.Parse(identificador);
+        var clave = new ClaveAcceso
+        {
+            IdClave = _siguienteId++, FkAsistente = fkAsistente, FkEnlace = 1,
+            EnviadoA = $"asis.{identificador}@usbmed.edu.co", EsCorreoInstitucional = true,
+            GeneradoEn = ahora, ExpiraEn = ahora.AddMinutes(10), IpSolicitud = ip,
+        };
+        _tabla.Add(clave);
+        return Task.FromResult((clave.IdClave, ClaveFija, clave.EnviadoA));
+    }
+
+    public Task<long> ValidarAsync(long idClave, string clave, string? ip, string? userAgent)
+    {
+        var fila = _tabla.FirstOrDefault(c => c.IdClave == idClave)
+            ?? throw new InvalidOperationException("La clave no existe (simulado).");
+
+        if (fila.UsadoEn is not null)
+            throw new InvalidOperationException("La clave ya fue usada (simulado, RN-20).");
+        if (clave != ClaveFija)
+            throw new InvalidOperationException("Clave incorrecta (simulado).");
+
+        fila.UsadoEn = DateTime.UtcNow;
+        return Task.FromResult(_siguienteRegistro++);
+    }
+}
+
+// ==========================================================================
+//  v5 · Repositorio FALSO de 'RegistroAsistencia'. Simula en CrearAsync lo
+//  que hacen el trigger y las restricciones de la BD:
+//   · la instantánea de vinculación ("ESTUDIANTE");
+//   · uq_registro_sesion_asis: un asistente no se registra dos veces en la
+//     misma sesión -> excepción.
+//  Cuenta las llamadas a CrearAsync (para probar que D26 corta ANTES).
+// ==========================================================================
+class RepositorioRegistroAsistenciaFalso : IRepositorioRegistroAsistencia
+{
+    private readonly List<RegistroAsistencia> _tabla = new()
+    {
+        new RegistroAsistencia
+        {
+            IdRegistro = 1, FkSesion = 10, FkAsistente = 1, FkEnlace = 1, FkClave = 500,
+            RegistradoEn = DateTime.UtcNow, FkVinculacionSnapshot = "ESTUDIANTE", Origen = "QR",
+        },
+    };
+    private long _siguienteId = 2;
+
+    public int LlamadasCrear { get; private set; }
+
+    public Task<List<RegistroAsistencia>> ObtenerTodosAsync(long? fkSesion, long? fkAsistente, int limite) =>
+        Task.FromResult(_tabla
+            .Where(r => (fkSesion is null || r.FkSesion == fkSesion)
+                     && (fkAsistente is null || r.FkAsistente == fkAsistente))
+            .OrderBy(r => r.IdRegistro).Take(limite).ToList());
+
+    public Task<RegistroAsistencia?> ObtenerPorIdAsync(long idRegistro) =>
+        Task.FromResult(_tabla.FirstOrDefault(r => r.IdRegistro == idRegistro));
+
+    public Task<RegistroAsistencia> CrearAsync(long fkSesion, long fkAsistente, string origen)
+    {
+        LlamadasCrear++;
+
+        if (_tabla.Any(r => r.FkSesion == fkSesion && r.FkAsistente == fkAsistente))
+            throw new InvalidOperationException("uq_registro_sesion_asis (simulado).");
+
+        var registro = new RegistroAsistencia
+        {
+            IdRegistro = _siguienteId++, FkSesion = fkSesion, FkAsistente = fkAsistente,
+            RegistradoEn = DateTime.UtcNow,
+            FkVinculacionSnapshot = "ESTUDIANTE",   // lo pone el trigger (RN-22)
+            Origen = origen,
+        };
+        _tabla.Add(registro);
+        return Task.FromResult(registro);
+    }
 }
