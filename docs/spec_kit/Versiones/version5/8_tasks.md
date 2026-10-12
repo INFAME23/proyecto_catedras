@@ -341,4 +341,4 @@ un solo uso se muestra en un recuadro que **no** es `.alert`.
       «construida». *(Corregido además: `6_contracts.md` §9 (el front sí
       está en `docker-compose.yml`) y el fragmento de `ServicioUsuario` de
       `3_plan.md` §4.1.)*
-- [ ] Commit y tag: `git tag v5`.
+- [x] Commit y tag: `git tag v5`.
