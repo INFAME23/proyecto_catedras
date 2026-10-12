@@ -1,6 +1,6 @@
 # Quickstart — Versión 5: usuarios, login y registro de asistencia
 
-> ✅ **Revisada contra la BD real (2026-10-08), sin construir** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Revisada y construida (2026-10-11)** — ver nota de [2_spec.md](2_spec.md).
 >
 > **Documento 7 de 8** del spec kit. Validación del sistema ya
 > construido en v5, sobre lo que dejaron v1-v4.
@@ -103,6 +103,19 @@ verificación de `BCrypt.Verify` (con una clave y un hash fijos en el
 código de prueba, sin necesidad de PostgreSQL) y el bloqueo de
 `origen: QR/ENLACE` en `RegistroAsistencia`. Termina con código 0.
 
+### Verificación automática de la API (criterios 2-7)
+
+Los pasos 2-9 de arriba están automatizados en
+`api_catedras/pruebas/verificar_v5.ps1`. Con la API arriba y **sin datos
+previos de otra corrida** (`down -v && up -d --build`), desde la raíz:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\api_catedras\pruebas\verificar_v5.ps1
+```
+
+Resultado esperado: **62 pasadas, 0 fallidas**. El script ESCRIBE datos
+(usuarios, una sesión, enlaces, registros): para repetirlo hay que resetear.
+
 ## 3. Frontend (`front_catedras/`, aparte del `docker compose` de arriba)
 
 Arranque sin cambios respecto a v1-v4.
@@ -120,8 +133,11 @@ Con la API corriendo (§1-2 de aquí):
    confirma "asistencia registrada" o explica el motivo del rechazo.
 3. **http://localhost:5000/admin/** → sin sesión redirige a `/login`;
    con `admin.catedras` muestra 5 tarjetas nuevas; `EnlaceRegistro`
-   ofrece "emitir"/"revocar"; `ClaveAcceso` solo lista (de solo lectura,
-   sin ningún formulario de creación directa).
+   ofrece "emitir"/"revocar" (se entra desde la sesión: botón del código
+   QR en Administración › Sesión); `ClaveAcceso` solo lista (de solo
+   lectura, sin ningún formulario de creación directa). Un usuario con
+   solo el rol `CONSULTA` inicia sesión, no ve «Administración» en el
+   navbar y `/admin/` le responde 403.
 4. **Datos mock eliminados (igual que v1-v4):** apagar la API y
    recargar cualquier pantalla de esta versión → error claro.
 
@@ -134,4 +150,6 @@ Con la API corriendo (§1-2 de aquí):
 | `POST /api/Usuario/login` responde 401 con una clave "que debería funcionar" | Confirmar que el usuario tenga `activo: true` — una cuenta inactiva responde 401 igual que una clave incorrecta, a propósito (D27) |
 | `GET /api/Usuario/{id}` "no trae la clave" | Correcto: `clave_hash` nunca se serializa (D23) — no es un bug, es la especificación (RF138) |
 | `POST /api/RegistroAsistencia` con `origen: "ENLACE"` responde 400 | Correcto: la única vía para `QR`/`ENLACE` es `POST /api/ClaveAcceso/validar` — un `POST` directo solo acepta `MANUAL`/`IMPORTADO` (D26) |
-| Todo roto | `docker compose down -v && docker compose up -d --build` (API); para el front, confirmar que `API_BASE_URL` siga en `http://localhost:8142/api` |
+| Todo roto | `docker compose down -v && docker compose up -d --build` (API); para el front, confirmar que `API_BASE_URL` valga `http://api:8042/api` (front en Docker) o `http://localhost:8142/api` (front fuera de Docker) |
+| Tras un `down -v`, el login del administrador da 401 | La clave de `admin.catedras` se pierde con el volumen: repetir el paso 2 (`PATCH /api/Usuario/1`) |
+| `curl`/`Invoke-RestMethod` responde «Empty reply» o «la conexión ha terminado» justo después de `up` | La API (`dotnet watch`) aún compila; esperar ~40 s. En PowerShell usar `127.0.0.1`, no `localhost` (resuelve a IPv6) |

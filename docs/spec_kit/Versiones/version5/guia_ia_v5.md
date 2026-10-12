@@ -11,9 +11,10 @@
 > Si esta guía contradice al spec kit, gana el spec kit y se corrige esta
 > guía.
 >
-> **Estado de la v5 (2026-10-11):** spec kit revisado contra la BD real y
-> contra la v4 cerrada (tag `v4`); **todavía sin construir** — ninguna casilla
-> de `8_tasks.md` está marcada. Esta guía describe cómo construirla.
+> **Estado de la v5 (2026-10-11):** **construida y verificada en Docker** (62
+> casos por HTTP, 345 en la prueba de capas, front probado a mano); solo
+> falta el tag `v5`. Esta guía sigue sirviendo para reconstruirla o
+> repasarla fase por fase.
 
 ---
 
@@ -476,7 +477,11 @@ cada pantalla nueva muestra "No se pudo contactar la API".
 
 **Errores típicos:** guardar la clave en la sesión de Flask (solo usuario y
 roles); proteger `/admin` pantalla por pantalla en vez de un único
-`before_request`; mostrar el 500 de la API crudo en la pantalla pública.
+`before_request`; mostrar el 500 de la API crudo en la pantalla pública;
+pedir ids a mano para `fk_asistente`/`fk_sesion` (Regla 2: búsqueda + `<select>`
+o id fijado por la URL); mostrar la clave de un solo uso dentro de un
+`.alert` (`main.js` lo borra a los 5 s); aceptar un `siguiente=` externo en el
+login (redirección abierta: solo rutas internas que empiecen por `/`).
 
 ### Fase 46 — Cierre
 

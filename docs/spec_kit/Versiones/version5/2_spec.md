@@ -1,13 +1,20 @@
 # Especificación — Versión 5 del proyecto: usuarios, login y registro de asistencia
 
 > ✅ **Revisada contra la BD real y contra la v4 cerrada (2026-10-08);
-> todavía sin construir.** La v4 ya tiene su tag, así que (Artículo 1)
-> esta spec es la oficial. Frente al borrador original se ajustó: la
+> construida y verificada en Docker el 2026-10-11.** La v4 ya tenía su tag, así
+> que (Artículo 1) esta spec fue la oficial. Frente al borrador original se ajustó: la
 > numeración (ADR D22-D29 y RNF12-RNF14, porque D21 y RNF11 ya eran de la
 > v4), las fechas (`DateTime` UTC, ADR D21 de v4), el límite conocido de
 > los intentos de clave (RF153), el conteo de ejemplo (168 registros) y
 > el front (reutiliza `routes/registro.py`, protege `/admin`). Detalle:
 > sección «Ajustes al borrador» de [4_research.md](4_research.md).
+>
+> **Verificación (2026-10-11):** criterio 1 en `/swagger`; criterios 2-7 por
+> HTTP contra Docker con `api_catedras/pruebas/verificar_v5.ps1`
+> (**62 pasadas, 0 fallidas**); criterio 8 con `dotnet run --project
+> pruebas` (**345 pasadas, 0 fallidas**, 29 entidades); criterios 9-10 a
+> mano en el front (login, 403 sin rol `ADMIN`, autorregistro público de
+> punta a punta y las 5 tarjetas nuevas).
 >
 > Rige la constitución del proyecto:
 > [../1_constitution.md](../1_constitution.md) y la

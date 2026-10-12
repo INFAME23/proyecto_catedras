@@ -62,6 +62,8 @@
                         <td>{{ ms.estado(s.estado) }}</td>
                         <td class="text-end text-nowrap">
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.ponencias_listar', fk_sesion=s.id_sesion) }}" title="Ponentes"><i class="fas fa-chalkboard-teacher"></i></a>
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.enlaces_listar', fk_sesion=s.id_sesion) }}" title="Enlace de registro (QR)"><i class="fas fa-qrcode"></i></a>
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.registros_listar', fk_sesion=s.id_sesion) }}#manual" title="Registros de asistencia"><i class="fas fa-clipboard-check"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.sesiones_editar', id_sesion=s.id_sesion) }}" title="Editar"><i class="fas fa-edit"></i></a>
                             <form class="d-inline" method="post" action="{{ url_for('admin.sesiones_eliminar', id_sesion=s.id_sesion) }}"
                                   onsubmit="return confirm('¿Eliminar la sesión {{ s.id_sesion }}? Sus ponencias se borrarán también (CASCADE). Si ya tiene registros de asistencia o un lote de migración, la base de datos NO lo permitirá.');">

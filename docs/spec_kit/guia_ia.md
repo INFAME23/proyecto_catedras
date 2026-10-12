@@ -51,13 +51,16 @@ cifrado reversible. El hash se calcula en el **servicio**, nunca en el
 controlador ni en el repositorio. Se compara con `BCrypt.Verify`, nunca
 comparando el hash manualmente.
 
-## Estado de cumplimiento (revisado 2026-10-08, al construir la V4)
+## Estado de cumplimiento (revisado 2026-10-11, al construir la V5)
 
-| Regla | V1-V4 actuales | Acción |
+| Regla | V1-V5 actuales | Acción |
 |---|---|---|
-| 1. SP maestro-detalle | V2: `sp_guardar_programa_academico` (ADR D14). V3: `sp_guardar_asistente` y `sp_guardar_lote_carga` (Fase 22 de `Versiones/version3/8_tasks.md`). **V4: no aplica** — `sesion` y `ponencia` se crean cada una por su cuenta, en peticiones distintas (es el caso "No aplica" de arriba); no hay migración nueva | Ninguna |
-| 2. FK = select | Cumple en todos los formularios de admin. En V3, el `fk_asistente` de los detalles (14.811 personas: un `<select>` no es viable) no se digita: lo fija la URL de la ficha del asistente. En V4: `fk_catedra` de una sesión lo fija la URL (`?fk_catedra=`, se entra desde la cátedra); `fk_asistente` de una ponencia sale de un `<select>` llenado con una búsqueda (`?q=`); modalidad, sede, periodo y encuesta, de `<select>` con el catálogo | Ninguna |
-| 3. BCrypt | No aplica todavía (no hay tabla con contraseña hasta `usuario`, V5) | Queda registrada para cuando se escriba V5 |
+| 1. SP maestro-detalle | V2: `sp_guardar_programa_academico` (ADR D14). V3: `sp_guardar_asistente` y `sp_guardar_lote_carga` (Fase 22 de `Versiones/version3/8_tasks.md`). **V4: no aplica** — `sesion` y `ponencia` se crean cada una por su cuenta, en peticiones distintas (es el caso "No aplica" de arriba); no hay migración nueva. **V5: no aplica** — ninguna de sus 5 tablas se guarda con SP maestro-detalle (enlaces y claves usan las funciones `fn_*_api`, ADR D24) | Ninguna |
+| 2. FK = select | Cumple en todos los formularios de admin. En V3, el `fk_asistente` de los detalles (14.811 personas: un `<select>` no es viable) no se digita: lo fija la URL de la ficha del asistente. En V4: `fk_catedra` de una sesión lo fija la URL (`?fk_catedra=`, se entra desde la cátedra); `fk_asistente` de una ponencia sale de un `<select>` llenado con una búsqueda (`?q=`); modalidad, sede, periodo y encuesta, de `<select>` con el catálogo. En V5: el `fk_asistente` de una cuenta y de un registro manual se busca (`?q=`) y se elige de un `<select>`; el `fk_sesion` de enlaces y registros lo fija la URL (se entra desde la lista de sesiones); `fk_usuario` y `fk_rol` salen de `<select>` | Ninguna |
+| 3. BCrypt | V1-V4: no aplicaba (no había tabla con contraseña). **V5: cumple** — `BCrypt.HashPassword` y `Verify` solo en `ServicioUsuario` (un único `Hashear`); el repositorio trata `clave_hash` como cadena opaca y ninguna respuesta lo expone (ADR D23); la prueba de capas verifica el hash con `BCrypt.Verify` real | Ninguna |
 
 Guía específica de la V4 (orden de lectura, prompts por fase, trampas):
 [Versiones/version4/guia_ia_v4.md](Versiones/version4/guia_ia_v4.md).
+
+Guía específica de la V5 (BCrypt, funciones SQL, login y autorregistro):
+[Versiones/version5/guia_ia_v5.md](Versiones/version5/guia_ia_v5.md).

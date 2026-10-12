@@ -1,6 +1,6 @@
 # Modelo de datos — Versión 5: usuarios, login y registro de asistencia
 
-> ✅ **Revisada contra la BD real (2026-10-08), sin construir** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Revisada y construida (2026-10-11)** — ver nota de [2_spec.md](2_spec.md).
 
 ## 1. Cadena de FK de esta versión
 
