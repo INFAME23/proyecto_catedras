@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block titulo %}Iniciar sesión · Cátedras USB{% endblock %}
+{% block contenido %}
+<div class="row justify-content-center">
+    <div class="col-md-5 col-lg-4">
+        <div class="card shadow-sm animate-fade-in">
+            <div class="card-body p-4">
+                <div class="text-center mb-3">
+                    <i class="fas fa-user-lock fa-3x text-primary-custom mb-2"></i>
+                    <h1 class="h4 fw-bold mb-0">Iniciar sesión</h1>
+                    <p class="text-muted small mb-0">Acceso para el personal de Cátedras</p>
+                </div>
+
+                <form method="post" action="{{ url_for('auth.login') }}">
+                    {# 'siguiente' recuerda la página protegida a la que se quería entrar. #}
+                    {% if siguiente %}<input type="hidden" name="siguiente" value="{{ siguiente }}">{% endif %}
+
+                    <div class="mb-3">
+                        <label class="form-label" for="usuario">Usuario</label>
+                        <input type="text" class="form-control" id="usuario" name="usuario" required autofocus
+                               autocomplete="username" autocapitalize="none" value="{{ usuario }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="clave">Clave</label>
+                        <input type="password" class="form-control" id="clave" name="clave" required
+                               autocomplete="current-password">
+                    </div>
+                    <button class="btn btn-primary w-100" type="submit">
+                        <i class="fas fa-sign-in-alt me-1"></i>Entrar
+                    </button>
+                </form>
+
+                <hr>
+                <p class="small text-muted mb-0 text-center">
+                    ¿Vas a registrar tu asistencia a una sesión?
+                    <a href="{{ url_for('registro.inicio') }}">No necesitas iniciar sesión</a>.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

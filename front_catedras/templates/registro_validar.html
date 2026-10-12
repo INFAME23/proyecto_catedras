@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block titulo %}Registro de asistencia · Cátedras USB{% endblock %}
+{% block contenido %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow-sm animate-fade-in">
+            <div class="card-body p-4">
+
+                {% if registrado %}
+                {# ---------- Éxito: la asistencia quedó registrada ---------- #}
+                <div class="text-center py-3">
+                    <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+                    <h1 class="h4 fw-bold">¡Asistencia registrada!</h1>
+                    <p class="text-muted">Tu clave fue validada y quedaste registrado en la sesión. Ya puedes cerrar esta página.</p>
+                    <a class="btn btn-outline-primary" href="{{ url_for('catedras.inicio') }}">
+                        <i class="fas fa-home me-1"></i>Ir al inicio
+                    </a>
+                </div>
+
+                {% else %}
+                {# ---------- Paso 2: escribir la clave ---------- #}
+                <div class="text-center mb-3">
+                    <i class="fas fa-key fa-3x text-primary-custom mb-2"></i>
+                    <h1 class="h4 fw-bold mb-1">Escribe tu clave</h1>
+                    <p class="text-muted mb-0">Paso 2 de 2 · La clave es de un solo uso y vence en pocos minutos.</p>
+                </div>
+
+                {% if clave %}
+                {# RNF12: la clave solo viaja en texto plano en esta respuesta. En producción
+                   llegaría por correo; aquí se muestra para simular el envío. Es un <div>
+                   con clase 'border', NO un '.alert': main.js borra los '.alert' a los 5 s. #}
+                <div class="border border-primary rounded-3 p-3 text-center mb-3 bg-light">
+                    <div class="small text-muted mb-1">
+                        Simulación del correo enviado a <strong>{{ enviado_a }}</strong>
+                    </div>
+                    <div class="fs-1 fw-bold font-monospace" style="letter-spacing: .3em;">{{ clave }}</div>
+                    <div class="small text-muted">Tu clave de un solo uso</div>
+                </div>
+                {% endif %}
+
+                <form method="post" action="{{ url_for('registro.validar', token=token) }}">
+                    <input type="hidden" name="id_clave" value="{{ id_clave }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="clave">Clave recibida</label>
+                        <input type="text" class="form-control form-control-lg text-center font-monospace"
+                               id="clave" name="clave" required autofocus autocomplete="off"
+                               inputmode="numeric" maxlength="100">
+                    </div>
+
+                    {% if errores %}
+                    <div class="alert alert-danger py-2">
+                        <ul class="mb-0 small">
+                            {% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-primary" type="submit"><i class="fas fa-check me-1"></i>Registrar mi asistencia</button>
+                        <a class="btn btn-outline-secondary" href="{{ url_for('registro.solicitar', token=token) }}">Pedir otra clave</a>
+                    </div>
+                </form>
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

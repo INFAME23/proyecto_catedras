@@ -18,7 +18,7 @@ app.config.from_object(Config)
 
 CORS(app)
 
-# Ayudas de sesión para las plantillas (v2: siempre "sin sesión").
+# Ayudas de sesión para las plantillas (v5: leen la sesión real de Flask).
 registrar_en(app)
 
 # v4: filtros Jinja '|fecha_hora' y '|para_input' (UTC <-> hora de Colombia).
@@ -32,6 +32,12 @@ app.register_blueprint(ponente_bp, url_prefix='/ponente')
 app.register_blueprint(estudiante_bp, url_prefix='/estudiante')
 app.register_blueprint(carga_bp, url_prefix='/')
 app.register_blueprint(sesiones_bp, url_prefix='/')
+
+
+@app.errorhandler(403)
+def sin_permiso(e):
+    # v5: usuario con sesión pero sin el rol ADMIN intentando entrar a /admin.
+    return render_template('errors/403.html'), 403
 
 
 @app.errorhandler(404)

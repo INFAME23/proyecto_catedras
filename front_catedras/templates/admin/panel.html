@@ -3,7 +3,7 @@
 {% block contenido %}
 <div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
     <h1 class="fw-bold mb-0"><i class="fas fa-cogs me-2"></i>Administración</h1>
-    <p class="text-white-50 mb-0">Las 24 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2 + 7 de la v3 + 2 de la v4)</p>
+    <p class="text-white-50 mb-0">Las 29 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2 + 7 de la v3 + 2 de la v4 + 5 de la v5)</p>
 </div>
 
 <div class="row g-3">
@@ -250,6 +250,55 @@
                 <i class="fas fa-calendar-alt fa-2x text-primary-custom mb-2"></i>
                 <h6 class="fw-bold mb-1">Calendario del ponente</h6>
                 <p class="text-muted small mb-0">Las sesiones de una persona, por fecha.</p>
+            </div>
+        </a>
+    </div>
+</div>
+
+<h2 class="h5 fw-bold mt-5 mb-3"><i class="fas fa-user-lock text-primary-custom me-2"></i>Usuarios y registro de asistencia <span class="badge badge-primary">v5</span></h2>
+<div class="row g-3">
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.usuarios_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-user-lock fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Usuario</h6>
+                <p class="text-muted small mb-0">Cuentas de inicio de sesión (la clave nunca se muestra).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.roles_usuario_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-user-shield fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Rol por usuario</h6>
+                <p class="text-muted small mb-0">Asignar y cerrar roles; ADMIN abre esta sección.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.enlaces_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-qrcode fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Enlace de registro</h6>
+                <p class="text-muted small mb-0">Emitir y revocar el enlace (QR) de cada sesión.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.claves_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-key fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Clave de acceso</h6>
+                <p class="text-muted small mb-0">Claves de un solo uso emitidas (solo lectura).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.registros_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-clipboard-check fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Registro de asistencia</h6>
+                <p class="text-muted small mb-0">Quién asistió a cada sesión; alta manual.</p>
             </div>
         </a>
     </div>
