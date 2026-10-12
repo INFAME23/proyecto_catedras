@@ -1,6 +1,6 @@
 # Contratos de integración — Versión 5: usuarios, login y registro de asistencia
 
-> ✅ **Revisada contra la BD real (2026-10-08), sin construir** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Revisada y construida (2026-10-11)** — ver nota de [2_spec.md](2_spec.md).
 >
 > **Documento 6 de 8** del spec kit. Los endpoints HTTP (verbos,
 > formatos exactos) están en [2_spec.md](2_spec.md) (RF132-RF158) y se
@@ -170,8 +170,14 @@ no hay nada que agregar aquí.
   producción real sería un correo, aquí se muestra o se "simula" el
   envío) y un formulario que envía a `/registro/<token>/validar`, que
   llama `POST /api/ClaveAcceso/validar`.
-- El front sigue sin estar en `docker-compose.yml`; `API_BASE_URL`
-  sigue en `http://localhost:8142/api`, sin cambios.
+- El front SÍ está en `docker-compose.yml` (servicio `front`, puerto
+  5000, con su carpeta montada en caliente) y no necesita servicio nuevo
+  en v5. Dentro de Docker su `API_BASE_URL` es `http://api:8042/api`; el
+  valor `http://localhost:8142/api` solo vale si el front corre fuera de
+  Docker. Sin paquetes Python nuevos (`requirements.txt` no cambia).
+- `SECRET_KEY` firma la cookie de sesión; el valor por defecto
+  (`dev-key-para-pruebas`) basta para este proyecto didáctico, pero en un
+  despliegue real se define por variable de entorno.
 
 ## 10. Reset completo
 

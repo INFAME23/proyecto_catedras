@@ -10,17 +10,27 @@
 <h1 class="h3 fw-bold mb-1"><i class="fas fa-clipboard-check text-primary-custom me-2"></i>Registros de asistencia</h1>
 <p class="text-muted small">Quién asistió a cada sesión. Los registros por QR los crea la API al validar una clave; aquí también puedes registrar a mano (MANUAL o IMPORTADO). Es un registro de auditoría: no se edita ni se elimina. Horas en hora de Colombia.</p>
 
-<div class="card shadow-sm mb-3">
+{% if sesion %}
+<div class="card shadow-sm mb-3" id="manual">
     <div class="card-body">
-        <h2 class="h6 fw-bold">Registrar asistencia a mano</h2>
+        <h2 class="h6 fw-bold">Registrar asistencia a mano en la sesión {{ sesion.id_sesion }}</h2>
+        <p class="small text-muted mb-2">Reunión {{ sesion.numero_reunion }} de la cátedra {{ sesion.fk_catedra }} · {{ sesion.inicio|fecha_hora }}</p>
+        {# Regla 2: la persona se busca (la API filtra con ?q=) y se elige de la lista. #}
+        <form class="d-flex gap-2 mb-2" method="get" action="{{ url_for('admin.registros_listar') }}#manual">
+            <input type="hidden" name="fk_sesion" value="{{ sesion.id_sesion }}">
+            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Buscar persona por nombre, apellido o código ASIS" autocomplete="off">
+            <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
+        </form>
+        {% if candidatos %}
         <form class="row g-2 align-items-end" method="post" action="{{ url_for('admin.registros_nuevo') }}">
-            <div class="col-md-3">
-                <label class="form-label small mb-1" for="fk_sesion_nuevo">Id de la sesión</label>
-                <input type="number" min="1" class="form-control" id="fk_sesion_nuevo" name="fk_sesion" required value="{{ fk_sesion or '' }}">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small mb-1" for="fk_asistente_nuevo">Id del asistente</label>
-                <input type="number" min="1" class="form-control" id="fk_asistente_nuevo" name="fk_asistente" required value="{{ fk_asistente or '' }}">
+            <input type="hidden" name="fk_sesion" value="{{ sesion.id_sesion }}">
+            <div class="col-md-6">
+                <label class="form-label small mb-1" for="fk_asistente_nuevo">Persona ({{ candidatos|length }} resultado{{ '' if candidatos|length == 1 else 's' }})</label>
+                <select class="form-select" id="fk_asistente_nuevo" name="fk_asistente" required>
+                    {% for a in candidatos %}
+                    <option value="{{ a.id_asistente }}">{{ a.id_asistente }} · {{ a.nombres }} {{ a.apellidos }}{% if a.id_asis %} · {{ a.id_asis }}{% endif %}</option>
+                    {% endfor %}
+                </select>
             </div>
             <div class="col-md-3">
                 <label class="form-label small mb-1" for="origen">Origen</label>
@@ -33,9 +43,15 @@
                 <button class="btn btn-primary w-100" type="submit"><i class="fas fa-plus me-1"></i>Registrar</button>
             </div>
         </form>
-        <div class="form-text">El asistente debe tener una vinculación vigente (RN-07); si no, la base de datos lo rechaza y se muestra el motivo.</div>
+        <div class="form-text">La persona debe tener una vinculación vigente (RN-07); si no, la base de datos lo rechaza y se muestra el motivo.</div>
+        {% elif q %}
+        <p class="text-muted small mb-0">Nadie coincide con «{{ q }}».</p>
+        {% endif %}
     </div>
 </div>
+{% else %}
+<p class="small text-muted">Para <strong>registrar a mano</strong>, entra desde la sesión: botón <i class="fas fa-clipboard-check"></i> en Administración › <a href="{{ url_for('admin.sesiones_listar') }}">Sesión</a>. Abajo se ven los registros existentes.</p>
+{% endif %}
 
 <form class="row g-2 mb-3" method="get" action="{{ url_for('admin.registros_listar') }}">
     <div class="col"><input class="form-control" type="number" min="1" name="fk_sesion" value="{{ fk_sesion or '' }}" placeholder="Id de sesión"></div>

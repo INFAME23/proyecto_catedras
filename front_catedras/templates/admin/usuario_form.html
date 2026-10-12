@@ -10,17 +10,48 @@
 </nav>
 <h1 class="h3 fw-bold mb-3"><i class="fas fa-user-lock text-primary-custom me-2"></i>{{ 'Nuevo usuario' if modo == 'nueva' else 'Editar usuario ' ~ usr.usuario }}</h1>
 
+{% if modo == 'nueva' %}
+{# Regla 2 (guía IA): con 14.811 personas no cabe un <select> con todas. Paso 1: buscar
+   (GET, la API filtra con ?q=). Paso 2: elegir de los resultados y llenar el formulario. #}
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <h2 class="h6 fw-bold">Paso 1 · Buscar a la persona</h2>
+        <form class="d-flex gap-2" method="get" action="{{ url_for('admin.usuarios_nuevo') }}">
+            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Nombre, apellido o código ASIS" autocomplete="off">
+            <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
+        </form>
+        {% if q and not candidatos %}<p class="text-muted small mt-2 mb-0">Nadie coincide con «{{ q }}».</p>{% endif %}
+    </div>
+</div>
+{% endif %}
+
 <div class="card shadow-sm">
     <div class="card-body">
+        {% if modo == 'nueva' %}<h2 class="h6 fw-bold">Paso 2 · Datos de la cuenta</h2>{% endif %}
         <form method="post"
               action="{{ url_for('admin.usuarios_nuevo') if modo == 'nueva' else url_for('admin.usuarios_editar', id_usuario=usr.id_usuario) }}">
 
+            {% if modo == 'nueva' %}
             <div class="mb-3">
-                <label class="form-label" for="fk_asistente">Id del asistente</label>
-                <input type="number" min="1" class="form-control" id="fk_asistente" name="fk_asistente" required
-                       value="{{ usr.fk_asistente if usr and usr.fk_asistente else '' }}">
-                <div class="form-text">La persona a la que pertenece la cuenta (búscala en Administración › Asistente).</div>
+                <label class="form-label" for="fk_asistente">Persona ({{ candidatos|length }} resultado{{ '' if candidatos|length == 1 else 's' }})</label>
+                <select class="form-select" id="fk_asistente" name="fk_asistente" required {{ 'disabled' if not candidatos }}>
+                    {% if not candidatos %}<option value="">— primero busca a la persona —</option>{% endif %}
+                    {% for a in candidatos %}
+                    <option value="{{ a.id_asistente }}" {{ 'selected' if usr and usr.fk_asistente == a.id_asistente }}>{{ a.id_asistente }} · {{ a.nombres }} {{ a.apellidos }}{% if a.id_asis %} · {{ a.id_asis }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Cada persona puede tener una sola cuenta.</div>
             </div>
+            {% else %}
+            <div class="mb-3">
+                <label class="form-label">Persona</label>
+                <div>
+                    <a href="{{ url_for('admin.asistentes_detalle', id_asistente=usr.fk_asistente) }}">Asistente {{ usr.fk_asistente }}</a>
+                    <span class="text-muted small">(la persona dueña de la cuenta no se cambia)</span>
+                </div>
+                <input type="hidden" name="fk_asistente_actual" value="{{ usr.fk_asistente }}">
+            </div>
+            {% endif %}
 
             <div class="mb-3">
                 <label class="form-label" for="usuario">Usuario</label>
@@ -55,7 +86,7 @@
             {% endif %}
 
             <div class="d-flex gap-2">
-                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <button class="btn btn-primary" type="submit" {{ 'disabled' if modo == 'nueva' and not candidatos }}><i class="fas fa-save me-1"></i>Guardar</button>
                 <a class="btn btn-outline-secondary" href="{{ url_for('admin.usuarios_listar') }}">Cancelar</a>
             </div>
         </form>

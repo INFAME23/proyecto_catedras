@@ -1,6 +1,6 @@
 # Plan técnico — Versión 5: usuarios, login y registro de asistencia
 
-> ✅ **Revisada contra la BD real (2026-10-08), sin construir** — ver nota de [2_spec.md](2_spec.md).
+> ✅ **Revisada y construida (2026-10-11)** — ver nota de [2_spec.md](2_spec.md).
 
 ## 1. Stack
 
@@ -62,16 +62,19 @@ cliente SQL de la misma forma). Ver §4.3.
 
 ```csharp
 // ServicioUsuario.cs
-public async Task<Usuario> CrearAsync(UsuarioCrear peticion)
+// Único punto de hash del proyecto (el costo es el que trae BCrypt.Net por defecto).
+private static string Hashear(string clave) => BCrypt.Net.BCrypt.HashPassword(clave);
+
+public async Task<(long IdUsuario, DateTime CreadoEn)> CrearAsync(UsuarioCrear peticion)
 {
     var usuario = new Usuario
     {
         FkAsistente = peticion.FkAsistente!.Value,
         NombreUsuario = peticion.Usuario!,
-        ClaveHash = BCrypt.Net.BCrypt.HashPassword(peticion.Clave!),   // único punto de hash
+        ClaveHash = Hashear(peticion.Clave!),                          // la clave en claro termina aquí
         Activo = peticion.Activo ?? true,
     };
-    return await _repositorio.CrearAsync(usuario);
+    return await _repositorio.CrearAsync(usuario);                     // el repo devuelve id y fecha de alta
 }
 
 public async Task<(Usuario Usuario, List<string> Roles)?> LoginAsync(UsuarioLogin peticion)
@@ -82,7 +85,8 @@ public async Task<(Usuario Usuario, List<string> Roles)?> LoginAsync(UsuarioLogi
         return null;                                   // el Controller lo traduce a 401
 
     await _repositorio.ActualizarUltimoAccesoAsync(usuario.IdUsuario);
-    var roles = await _repositorioRolPorUsuario.ObtenerVigentesAsync(usuario.IdUsuario);
+    usuario.UltimoAcceso = DateTime.UtcNow;     // el objeto se leyó ANTES del UPDATE: se corrige para la respuesta
+    var roles = await _repositorioRoles.ObtenerVigentesAsync(usuario.IdUsuario);
     return (usuario, roles);
 }
 ```
@@ -219,7 +223,8 @@ blueprints ya están registrados en `app.py` y el navbar ya apunta a
 #   sin sesión -> redirige a /login; con sesión sin rol ADMIN -> 403. La API sigue abierta (D28).
 
 # routes/registro.py — pantalla PÚBLICA, sin pasar por /admin:
-# GET  /registro                 -> explica y pide pegar el enlace o el token (el navbar apunta aquí)
+# GET  /registro                 -> explica y pide pegar el enlace o el token (el navbar apunta aquí);
+#                                   su POST extrae el token del texto pegado y redirige a /registro/<token>
 # GET  /registro/<token>         -> formulario "ingresa tu identificador"
 # POST /registro/<token>         -> POST /api/ClaveAcceso/solicitar; muestra la clave (RNF12)
 # POST /registro/<token>/validar -> POST /api/ClaveAcceso/validar; "asistencia registrada" o el motivo del 500

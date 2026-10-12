@@ -1,11 +1,12 @@
 # ==========================================================================
-#  docker-compose.yml  ·  Proyecto Cátedras · Versión 1
+#  docker-compose.yml  ·  Proyecto Cátedras · Versiones 1 a 5
 # --------------------------------------------------------------------------
 #  El Artículo 4 de la constitución manda "un solo comando":
 #      docker compose up -d --build
 #  ...deja TODO el sistema de la versión funcionando.
 #
-#  En la v1 ese "todo" son TRES servicios:
+#  Desde la v1 ese "todo" son TRES servicios (la v5 no agrega ninguno ni
+#  cambia el nombre del proyecto: así el volumen de datos sigue siendo el mismo):
 #      postgres  -> la base de datos (se siembra sola con el script provisto)
 #      api       -> la API .NET, con 'dotnet watch' (recarga al guardar)
 #      front     -> el front en Flask, que consume la API por HTTP

@@ -1,6 +1,6 @@
 # Decisiones de diseño — Versión 5: usuarios, login y registro de asistencia
 
-> ✅ **Revisada contra la BD real (2026-10-08), sin construir** — ver nota de [2_spec.md](2_spec.md). La versión con
+> ✅ **Revisada y construida (2026-10-11)** — ver nota de [2_spec.md](2_spec.md). La versión con
 > más decisiones nuevas del proyecto — 8 ADR (D22-D29), frente a 1-4
 > por versión anterior.
 

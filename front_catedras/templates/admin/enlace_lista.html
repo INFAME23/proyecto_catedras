@@ -11,20 +11,18 @@
 {# No es un CRUD (ADR D22/D24): se EMITE y se REVOCA. #}
 <p class="text-muted small">El enlace (o su QR) que se comparte para que los asistentes registren su asistencia en una sesión. Se emite y se revoca; no se edita. Emitir uno nuevo para una sesión <strong>revoca el anterior</strong> (RN-14). Horas en hora de Colombia.</p>
 
+{% if sesion %}
 <div class="card shadow-sm mb-3">
     <div class="card-body">
-        <h2 class="h6 fw-bold">Emitir un enlace</h2>
+        <h2 class="h6 fw-bold">Emitir un enlace para la sesión {{ sesion.id_sesion }}</h2>
+        <p class="small text-muted mb-2">Reunión {{ sesion.numero_reunion }} de la cátedra {{ sesion.fk_catedra }} · {{ sesion.inicio|fecha_hora }} a {{ sesion.fin|fecha_hora }}</p>
         <form class="row g-2 align-items-end" method="post" action="{{ url_for('admin.enlaces_emitir') }}">
-            <div class="col-md-4">
-                <label class="form-label small mb-1" for="fk_sesion_nuevo">Id de la sesión</label>
-                <input type="number" min="1" class="form-control" id="fk_sesion_nuevo" name="fk_sesion" required
-                       value="{{ fk_sesion or '' }}">
-            </div>
-            <div class="col-md-3">
+            <input type="hidden" name="fk_sesion" value="{{ sesion.id_sesion }}">
+            <div class="col-md-5">
                 <label class="form-label small mb-1" for="minutos_antes">Abre (min antes)</label>
                 <input type="number" min="0" max="1440" class="form-control" id="minutos_antes" name="minutos_antes" placeholder="por defecto">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-5">
                 <label class="form-label small mb-1" for="minutos_despues">Cierra (min después)</label>
                 <input type="number" min="0" max="1440" class="form-control" id="minutos_despues" name="minutos_despues" placeholder="por defecto">
             </div>
@@ -32,9 +30,12 @@
                 <button class="btn btn-primary w-100" type="submit"><i class="fas fa-plus me-1"></i>Emitir</button>
             </div>
         </form>
-        <div class="form-text">La ventana se cuenta desde el inicio y el fin de la sesión. El id de la sesión está en Administración › Sesión.</div>
+        <div class="form-text">La ventana se cuenta desde el inicio y el fin de la sesión.</div>
     </div>
 </div>
+{% else %}
+<p class="small text-muted">Para <strong>emitir</strong> un enlace, entra desde la sesión: botón <i class="fas fa-qrcode"></i> en Administración › <a href="{{ url_for('admin.sesiones_listar') }}">Sesión</a>. Abajo se ven los enlaces ya emitidos.</p>
+{% endif %}
 
 <form class="d-flex gap-2 mb-3" method="get" action="{{ url_for('admin.enlaces_listar') }}">
     <input class="form-control" type="number" min="1" name="fk_sesion" value="{{ fk_sesion or '' }}" placeholder="Filtrar por id de sesión">

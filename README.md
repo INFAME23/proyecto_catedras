@@ -1,12 +1,48 @@
-# Proyecto Cátedras — Versión 4
+# Proyecto Cátedras — Versión 5
 
 API REST del sistema de **asistencia a cátedras universitarias**, construida
-por **versiones incrementales**. Esta es la **v4**: las **sesiones** (cada
-reunión concreta de una cátedra, con fecha y hora) y las **ponencias**
-(quién la dictó y con qué rol), sobre las personas de la v3, la estructura
-académica de la v2 y la arquitectura en capas de la v1.
+por **versiones incrementales**. Esta es la **v5**: **usuarios y login**
+(contraseñas con BCrypt, roles con vigencia) y el **registro de asistencia**
+(enlace o QR por sesión, clave de un solo uso y el registro mismo), sobre las
+sesiones de la v4, las personas de la v3, la estructura académica de la v2 y
+la arquitectura en capas de la v1.
 
-## Qué incluye la v4
+## Qué incluye la v5
+
+- Lo nuevo que enseña la v5:
+  - **Contraseñas con BCrypt** (ADR D23, Guía IA Regla 3): la clave llega en
+    texto plano en `POST/PUT/PATCH /api/Usuario`, el **servicio** la convierte
+    en hash y `clave_hash` **nunca** sale en ninguna respuesta.
+  - **Login** (`POST /api/Usuario/login`): `200` con el usuario y sus roles
+    vigentes; usuario inexistente, cuenta inactiva o clave incorrecta dan el
+    **mismo** `401` (ADR D27, no se revela la causa).
+  - **Lógica de negocio en funciones de la BD** (ADR D24): `EnlaceRegistro` y
+    `ClaveAcceso` no son CRUD; la API llama `fn_emitir_enlace_api`,
+    `fn_solicitar_clave_api` y `fn_validar_clave_api`. Los rechazos de negocio
+    de la BD (clave incorrecta, usada, expirada, enlace vencido…) salen como
+    `500` con el motivo en `detalle` (ADR D25).
+  - **Secreto de un solo uso** (RNF12): la clave de 6 dígitos viaja en texto
+    plano **una sola vez**, en la respuesta de `solicitar` (en producción
+    llegaría por correo).
+  - **`origen` validado en el servicio** (ADR D26): el alta manual de
+    `RegistroAsistencia` solo admite `MANUAL`/`IMPORTADO` (`400`); `QR` y
+    `ENLACE` solo nacen de validar una clave.
+  - **Autenticar sí, autorizar no, en la API** (ADR D28-D29): la sesión es una
+    cookie de **Flask** firmada con `SECRET_KEY`; `/admin` exige el rol
+    `ADMIN` en el front y la API sigue abierta.
+  - **Integridad desde tablas ya sembradas**: `DELETE /api/Asistente/1` → `500`
+    por `registro_asistencia`.
+- Front (Flask): **`/login`** y **`/logout`**; `/admin` redirige al login sin
+  sesión y responde `403` sin el rol `ADMIN`; **autorregistro público**
+  (`/registro` y `/registro/<token>`, sin login) y, en `/admin`, los 5
+  bloques nuevos (Usuario, Rol por usuario, Enlace de registro, Clave de
+  acceso y Registro de asistencia).
+- Las **29 tablas** que hoy expone la API: las 24 de las versiones 1-4
+  (listadas abajo) más las 5 de la v5: `Usuario`, `RolPorUsuario`,
+  `EnlaceRegistro`, `ClaveAcceso` y `RegistroAsistencia` (21 endpoints
+  nuevos).
+
+## Lo que enseñó la v4 (sigue vigente)
 
 - Lo nuevo que enseña la v4:
   - **Una regla de negocio que vive en la BD** (ADR D20, RNF10): el número
@@ -29,7 +65,7 @@ académica de la v2 y la arquitectura en capas de la v1.
   detalle de sesión con sus ponentes (buscar → elegir → asignar / quitar),
   **calendario del ponente** (`/ponente/`) y, en `/admin`, el CRUD de
   `Sesion` y la asignación de `Ponencia`.
-- Las **24 tablas** que hoy expone la API:
+- Las 24 tablas de las versiones 1-4:
   - las 10 sin foreign key de la v1 (`Sede`, `Encuesta`, `EstadoProceso`,
     `Modalidad`, `PeriodoAcademico`, `Rol`, `TipoDocumento`, `TipoEvento`,
     `TipoPregunta`, `TipoVinculacion`);
@@ -68,12 +104,13 @@ académica de la v2 y la arquitectura en capas de la v1.
 | Acceso a datos | Dapper sobre Npgsql (SQL a mano, siempre `@parametro`) |
 | Documentación | Swashbuckle.AspNetCore (Swagger) |
 | Motor | PostgreSQL 16 (contenedor oficial) |
-| Front | Flask + Bootstrap 5 (identidad USB) · `openpyxl` para leer Excel |
+| Front | Flask + Bootstrap 5 (identidad USB) · `openpyxl` para leer Excel · sesión de Flask para el login |
 | Orquestación | Docker Compose |
 
-Paquetes NuGet: `Npgsql`, `Dapper`, `Swashbuckle.AspNetCore` — y ninguno más
-(Artículo 2 de la constitución). La v4 no agrega paquetes ni a la API ni
-al front.
+Paquetes NuGet: `Npgsql`, `Dapper`, `Swashbuckle.AspNetCore` y, desde la v5,
+`BCrypt.Net-Next` — y ninguno más (Artículo 2 de la constitución; el de
+BCrypt es la única excepción, y solo se usa en `ServicioUsuario`). El front
+no agrega paquetes.
 
 ## Cómo levantarlo
 
@@ -85,7 +122,9 @@ docker compose up -d --build
 |---|---|
 | Diagnóstico | http://localhost:8142/ |
 | Swagger UI | http://localhost:8142/swagger |
-| API (ejemplo v4) | http://localhost:8142/api/Sesion?fkCatedra=3975 |
+| API (ejemplo v5) | http://localhost:8142/api/RolPorUsuario?fkUsuario=1 |
+| Front · inicio de sesión | http://localhost:5000/login |
+| Front · registro de asistencia (público) | http://localhost:5000/registro |
 | Front · calendario de una cátedra | http://localhost:5000/catedras/3975 |
 | Front · detalle de sesión y ponentes | http://localhost:5000/sesiones/1 |
 | Front · calendario del ponente | http://localhost:5000/ponente/ |
@@ -93,11 +132,11 @@ docker compose up -d --build
 | Front · carga de datos | http://localhost:5000/carga_datos |
 | PostgreSQL (herramienta externa) | localhost,15542 · base `bdcatedras_postgres_local` · `sa` / `Construccion123!` |
 
-> **¿Vienes de la v3 con el volumen de PostgreSQL ya creado?** La v4 no
-> agrega ninguna migración: no hay nada que reaplicar. (Si vienes de la v2
+> **¿Vienes de la v3 con el volumen de PostgreSQL ya creado?** La v4 y la v5
+> no agregan ninguna migración: no hay nada que reaplicar. (Si vienes de la v2
 > o antes, mira `docs/spec_kit/Versiones/version3/7_quickstart.md` §1.)
 
-Prueba de capas (sin PostgreSQL, 24 entidades, 256 verificaciones esperadas). Se
+Prueba de capas (sin PostgreSQL, 29 entidades, 345 verificaciones esperadas). Se
 corre dentro del contenedor de la API (en Windows, el Control de
 aplicaciones puede bloquear la DLL recién compilada):
 
@@ -105,6 +144,18 @@ aplicaciones puede bloquear la DLL recién compilada):
 docker compose exec api dotnet run --project pruebas
 ```
 
+Verificación de la v5 contra Docker real (62 casos; ESCRIBE datos de
+ejemplo, así que se corre sobre un entorno recién reseteado):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\api_catedras\pruebas\verificar_v5.ps1
+```
+
+> La cuenta de ejemplo `admin.catedras` trae una clave que nadie conoce. Para
+> iniciar sesión en el front, primero se fija una (se repite tras cada
+> `down -v`):
+> `Invoke-RestMethod -Method Patch -Uri http://127.0.0.1:8142/api/Usuario/1 -ContentType 'application/json' -Body '{"clave":"Admin12345"}'`
+>
 > Las pruebas del quickstart agregan y modifican datos de ejemplo. Para
 > volver al estado original: `docker compose down -v && docker compose up -d --build`.
 
@@ -116,9 +167,12 @@ db/postgres/
   script_bdcatedras.sql         # la BD completa, PROVISTA (se monta, no se genera)
   migraciones/                  # SP maestro-detalle PROPIOS (Guía IA, Regla 1):
                                 #  001 programa (v2) · 002 asistente · 003 lote de carga (v3)
+                                #  (v4 y v5: sin migraciones nuevas)
 api_catedras/                   # la API .NET (Controllers, Modelos, Peticiones,
-                                #  Servicios, Repositorios, Excepciones, pruebas)
-front_catedras/                 # el front Flask (routes/carga.py + servicios/carga_asistentes.py: carga)
+                                #  Servicios, Repositorios, Excepciones, pruebas;
+                                #  pruebas/verificar_v5.ps1 = verificación contra Docker)
+front_catedras/                 # el front Flask (routes/carga.py + servicios/carga_asistentes.py: carga;
+                                #  routes/auth.py + auth_helpers.py: login; routes/registro.py: autorregistro)
 docs/
   GUIA_ESTUDIANTE.md            # guía de arranque (v1)
   spec_kit/1_constitution.md    # reglas permanentes de todas las versiones
@@ -129,19 +183,22 @@ docs/
     version2/  2_spec .. 8_tasks
     version3/  2_spec .. 8_tasks
     version4/  2_spec .. 8_tasks + guia_ia_v4.md (guía para construir/verificar la v4 con IA)
+    version5/  2_spec .. 8_tasks + guia_ia_v5.md (guía para construir/verificar la v5 con IA)
 ```
 
-## Documentación de la v4
+## Documentación de la v5
 
-En `docs/spec_kit/Versiones/version4/`: `2_spec.md` (qué y criterios de
-aceptación, RF119-RF131), `3_plan.md` (cómo), `4_research.md` (decisiones
-D19-D21), `5_data_model.md` (las 2 tablas, sus FK y los datos de ejemplo
+En `docs/spec_kit/Versiones/version5/`: `2_spec.md` (qué y criterios de
+aceptación, RF132-RF158), `3_plan.md` (cómo), `4_research.md` (decisiones
+D22-D29), `5_data_model.md` (las 5 tablas, sus FK y los datos de ejemplo
 útiles para probar), `6_contracts.md`, `7_quickstart.md` (smoke test),
-`8_tasks.md` (fases 32-37) y **`guia_ia_v4.md`** (cómo trabajar esta
+`8_tasks.md` (fases 38-46) y **`guia_ia_v5.md`** (cómo trabajar esta
 versión con un asistente de IA: orden de lectura, prompts por fase y
-trampas conocidas).
+trampas conocidas). La documentación de la v4 sigue en `version4/`
+(RF119-RF131, D19-D21, fases 32-37).
 
-**Estado:** v4 completa y verificada en Docker (2026-10-08): smoke test
-de `7_quickstart.md` y pantallas del front comprobados, y la prueba de capas con
-**256 pasadas, 0 fallidas**. Solo queda el commit con el tag `v4`
-(Fase 37 de `8_tasks.md`).
+**Estado:** v5 completa y verificada en Docker (2026-10-11): `verificar_v5.ps1`
+con **62 pasadas, 0 fallidas**, la prueba de capas con **345 pasadas, 0
+fallidas** y las pantallas del front (login, 403 sin rol, autorregistro
+público y los 5 bloques de administración) comprobadas a mano. Solo queda el
+commit con el tag `v5` (Fase 46 de `8_tasks.md`).

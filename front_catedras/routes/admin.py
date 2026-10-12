@@ -1901,10 +1901,25 @@ def usuarios_listar():
     return render_template('admin/usuario_lista.html', usuarios=usuarios)
 
 
+def _candidatos_de(fk_asistente):
+    """Para repintar el <select> tras un error: la persona que ya se había elegido."""
+    if not fk_asistente:
+        return []
+    try:
+        return [obtener('Asistente', fk_asistente)]
+    except ErrorApi as ex:
+        _avisar(ex)
+        return []
+
+
 @admin_bp.route('/usuarios/nuevo', methods=['GET', 'POST'])
 def usuarios_nuevo():
     if request.method == 'GET':
-        return render_template('admin/usuario_form.html', modo='nueva', usr=None, errores=[])
+        # Regla 2 (guía IA): con 14.811 personas no cabe un <select> completo;
+        # se busca (?q=, la API filtra en SQL) y se elige de los resultados.
+        texto = request.args.get('q', '').strip()
+        return render_template('admin/usuario_form.html', modo='nueva', usr=None, errores=[],
+                               q=texto, candidatos=buscar_candidatos(texto))
 
     datos = {
         'fk_asistente': _entero_o_none(request.form.get('fk_asistente')),
@@ -1917,7 +1932,8 @@ def usuarios_nuevo():
     except ErrorApi as ex:
         _avisar(ex)
         datos.pop('clave')                 # la clave nunca se devuelve al formulario
-        return render_template('admin/usuario_form.html', modo='nueva', usr=datos, errores=ex.errores)
+        return render_template('admin/usuario_form.html', modo='nueva', usr=datos, errores=ex.errores,
+                               q='', candidatos=_candidatos_de(datos['fk_asistente']))
 
     flash(f"Usuario '{datos['usuario']}' creado.", 'exito')
     return redirect(url_for('admin.usuarios_listar'))
@@ -1931,10 +1947,11 @@ def usuarios_editar(id_usuario):
         except ErrorApi as ex:
             _avisar(ex)
             return redirect(url_for('admin.usuarios_listar'))
-        return render_template('admin/usuario_form.html', modo='editar', usr=usr, errores=[])
+        return render_template('admin/usuario_form.html', modo='editar', usr=usr, errores=[],
+                               q='', candidatos=[])
 
+    # La persona dueña de la cuenta NO se cambia desde aquí (se muestra fija).
     datos = {
-        'fk_asistente': _entero_o_none(request.form.get('fk_asistente')),
         'usuario': request.form.get('usuario', '').strip(),
         'activo': request.form.get('activo') == 'on',
     }
@@ -1946,7 +1963,9 @@ def usuarios_editar(id_usuario):
         _avisar(ex)
         datos.pop('clave', None)
         datos['id_usuario'] = id_usuario
-        return render_template('admin/usuario_form.html', modo='editar', usr=datos, errores=ex.errores)
+        datos['fk_asistente'] = _entero_o_none(request.form.get('fk_asistente_actual'))
+        return render_template('admin/usuario_form.html', modo='editar', usr=datos, errores=ex.errores,
+                               q='', candidatos=[])
 
     flash(f"Usuario '{datos['usuario']}' actualizado.", 'exito')
     return redirect(url_for('admin.usuarios_listar'))
@@ -2025,6 +2044,17 @@ def roles_usuario_cerrar():
 #  nuevo para una sesión revoca el anterior de esa sesión (RN-14).
 # ==========================================================================
 
+def _sesion_o_none(fk_sesion):
+    """La sesión de una pantalla v5 (viene de la URL: ?fk_sesion=). None si no hay o no existe."""
+    if not fk_sesion:
+        return None
+    try:
+        return obtener('Sesion', fk_sesion)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return None
+
+
 def _estado_enlace(enlace):
     """'Revocado' | 'Programado' | 'Vencido' | 'Vigente', según revocado_en y la ventana."""
     if enlace.get('revocado_en'):
@@ -2041,6 +2071,7 @@ def _estado_enlace(enlace):
 @admin_bp.route('/enlaces')
 def enlaces_listar():
     fk_sesion = _entero_o_none(request.args.get('fk_sesion'))
+    sesion = _sesion_o_none(fk_sesion)       # Regla 2: la sesión se fija por URL, no se digita
     try:
         enlaces = listar('EnlaceRegistro', limite=200, fkSesion=fk_sesion)
     except ErrorApi as ex:
@@ -2051,7 +2082,7 @@ def enlaces_listar():
         # El enlace que se COMPARTE con el público es el de ESTE front
         # (url_publica de la BD es solo el dato guardado).
         e['enlace_publico'] = url_for('registro.solicitar', token=e['token'], _external=True)
-    return render_template('admin/enlace_lista.html', enlaces=enlaces, fk_sesion=fk_sesion)
+    return render_template('admin/enlace_lista.html', enlaces=enlaces, fk_sesion=fk_sesion, sesion=sesion)
 
 
 @admin_bp.route('/enlaces/emitir', methods=['POST'])
@@ -2112,13 +2143,17 @@ def claves_listar():
 def registros_listar():
     fk_sesion = _entero_o_none(request.args.get('fk_sesion'))
     fk_asistente = _entero_o_none(request.args.get('fk_asistente'))
+    texto = request.args.get('q', '').strip()
+    sesion = _sesion_o_none(fk_sesion)
     try:
         registros = listar('RegistroAsistencia', limite=200, fkSesion=fk_sesion, fkAsistente=fk_asistente)
     except ErrorApi as ex:
         _avisar(ex)
         registros = []
+    # El alta manual solo se ofrece con una sesión fijada; la persona se busca y se elige.
     return render_template('admin/registro_asistencia_lista.html', registros=registros,
-                           fk_sesion=fk_sesion, fk_asistente=fk_asistente)
+                           fk_sesion=fk_sesion, fk_asistente=fk_asistente, sesion=sesion,
+                           q=texto, candidatos=buscar_candidatos(texto) if sesion else [])
 
 
 @admin_bp.route('/registros/nuevo', methods=['POST'])
@@ -2129,6 +2164,9 @@ def registros_nuevo():
         'fk_asistente': _entero_o_none(request.form.get('fk_asistente')),
         'origen': request.form.get('origen', ''),
     }
+    if datos['fk_asistente'] is None:
+        flash('Selecciona una persona de la lista (primero búscala).', 'error')
+        return redirect(url_for('admin.registros_listar', fk_sesion=fk_sesion))
     try:
         respuesta = crear('RegistroAsistencia', datos)
         flash(f"Asistencia registrada (registro {respuesta['id_registro']}).", 'exito')
