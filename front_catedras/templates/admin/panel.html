@@ -3,7 +3,7 @@
 {% block contenido %}
 <div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
     <h1 class="fw-bold mb-0"><i class="fas fa-cogs me-2"></i>Administración</h1>
-    <p class="text-white-50 mb-0">Las 33 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2 + 7 de la v3 + 2 de la v4 + 5 de la v5 + 4 de la v6)</p>
+    <p class="text-white-50 mb-0">Las 37 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2 + 7 de la v3 + 2 de la v4 + 5 de la v5 + 4 de la v6 + 4 de la v7)</p>
 </div>
 
 <div class="row g-3">
@@ -339,6 +339,46 @@
                 <i class="fas fa-list-check fa-2x text-primary-custom mb-2"></i>
                 <h6 class="fw-bold mb-1">Ítem de respuesta</h6>
                 <p class="text-muted small mb-0">Cada respuesta individual a una pregunta (solo lectura).</p>
+            </div>
+        </a>
+    </div>
+</div>
+
+<h2 class="h5 fw-bold mt-5 mb-3"><i class="fas fa-file-export text-primary-custom me-2"></i>Migración a ASIS, auditoría y parámetros <span class="badge badge-primary">v7</span></h2>
+<div class="row g-3">
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.lotes_migracion_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-file-export fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Lote de migración</h6>
+                <p class="text-muted small mb-0">Archivos para ASIS y su estado. Se generan desde el detalle de una sesión.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.detalles_migracion_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-stream fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Detalle de migración</h6>
+                <p class="text-muted small mb-0">Cada registro enviado y lo que respondió ASIS (aceptado o rechazado).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.bitacora_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-history fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Bitácora</h6>
+                <p class="text-muted small mb-0">Auditoría que escribe la base de datos (solo lectura).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.parametros_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-sliders-h fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Parámetro</h6>
+                <p class="text-muted small mb-0">Configuración que leen las funciones: clave, ventana, dominios…</p>
             </div>
         </a>
     </div>
