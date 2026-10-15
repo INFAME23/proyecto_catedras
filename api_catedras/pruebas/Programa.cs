@@ -823,10 +823,33 @@ Afirmar("DELETE elimina 1 fila", await servicioAlias.EliminarAsync(aliasCreado.I
 await AfirmarLanza<NoEncontradoExcepcion>(
     "segundo DELETE lanza NoEncontradoExcepcion", () => servicioAlias.EliminarAsync(aliasCreado.IdAlias));
 
-// Comprobación por REFLEXIÓN: la interfaz de verdad no declara un método
-// de actualizar (la ausencia es la especificación, ADR D12).
-Afirmar("IRepositorioAliasPrograma no declara ActualizarAsync",
-    typeof(IRepositorioAliasPrograma).GetMethod("ActualizarAsync") is null);
+// RETROFIT criterio 3: sp_actualizar_alias_programa ahora SÍ tiene llamador
+// (PUT/PATCH /api/AliasPrograma/{id}). Esto revierte el ADR D12 ("tabla
+// solo-anexo"); ver AJUSTES_PATRON_SEDE_LOTE.md §2 · AliasPrograma.
+Afirmar("IRepositorioAliasPrograma declara ActualizarAsync (retrofit: revierte ADR D12)",
+    typeof(IRepositorioAliasPrograma).GetMethod("ActualizarAsync") is not null);
+
+// PUT: reemplaza todo; 'origen' ausente vuelve a FORMULARIO (la columna no admite NULL).
+Afirmar("PUT (Reemplazar) del alias semilla 3 cambia 1 fila",
+    await servicioAlias.ReemplazarAsync(3, new AliasProgramaReemplazo { TextoNormalizado = "ing datos (put)", FkPrograma = "M0286" }) == 1);
+var aliasPut = await servicioAlias.ObtenerAsync(3);
+Afirmar("...y deja el texto nuevo con origen = FORMULARIO por defecto",
+    aliasPut.TextoNormalizado == "ing datos (put)" && aliasPut.Origen == "FORMULARIO");
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PUT a un alias inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioAlias.ReemplazarAsync(999, new AliasProgramaReemplazo { TextoNormalizado = "x", FkPrograma = "M0286" }));
+
+// PATCH: solo cambia lo enviado.
+await servicioAlias.ActualizarAsync(3, new AliasProgramaActualizar { Origen = "CARGA_MASIVA" });
+var aliasPatch = await servicioAlias.ObtenerAsync(3);
+Afirmar("PATCH cambia solo 'origen' y conserva el texto del PUT",
+    aliasPatch.Origen == "CARGA_MASIVA" && aliasPatch.TextoNormalizado == "ing datos (put)");
+await AfirmarLanza<ArgumentException>(
+    "PATCH sin campos lanza ArgumentException (400)",
+    () => servicioAlias.ActualizarAsync(3, new AliasProgramaActualizar()));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PATCH a un alias inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioAlias.ActualizarAsync(999, new AliasProgramaActualizar { Origen = "FORMULARIO" }));
 
 // ============================================================================
 //  v2 · Prueba de capas: ServicioCatedra + repositorio falso
@@ -1277,7 +1300,8 @@ Afirmar("IRepositorioSesion no declara un método para calcular el consecutivo (
 // ============================================================================
 //  v4 · Prueba de capas: ServicioPonencia + repositorio falso
 //  LLAVE COMPUESTA SIN VIGENCIA (ADR D19): se asigna y se BORRA; no se
-//  "cierra" ni se edita.
+//  "cierra". Desde el RETROFIT criterio 3 el PUT cambia el ROL (único
+//  cambio con sentido: las 3 columnas son la llave).
 // ============================================================================
 var servicioPonencia = new ServicioPonencia(new RepositorioPonenciaFalso());
 
@@ -1320,16 +1344,36 @@ var (datosPonS10b, _) = await servicioPonencia.ListarAsync(10, null, null);
 Afirmar("...y el MODERADOR de la misma sesión sigue ahí (otra fila)",
     datosPonS10b.Count == 1 && datosPonS10b[0].Rol == "MODERADOR");
 
-// ADR D19 por REFLEXIÓN: lo que NO existe también es la especificación.
-Afirmar("IRepositorioPonencia no declara ObtenerPorIdAsync ni ActualizarAsync, pero SÍ EliminarAsync (D19 ≠ D16)",
+// Por REFLEXIÓN: llave compuesta (sin ObtenerPorIdAsync) y, desde el RETROFIT
+// criterio 3, SÍ hay ActualizarAsync: sp_actualizar_ponencia cambia el ROL
+// (revierte ADR D19, "sin actualizar"; ver AJUSTES_PATRON_SEDE_LOTE.md §2 · Ponencia).
+Afirmar("IRepositorioPonencia no declara ObtenerPorIdAsync, pero SÍ ActualizarAsync (retrofit) y EliminarAsync",
     typeof(IRepositorioPonencia).GetMethod("ObtenerPorIdAsync") is null
-    && typeof(IRepositorioPonencia).GetMethod("ActualizarAsync") is null
+    && typeof(IRepositorioPonencia).GetMethod("ActualizarAsync") is not null
     && typeof(IRepositorioPonencia).GetMethod("EliminarAsync") is not null);
 Afirmar("El modelo Ponencia no tiene propiedad 'Id' (llave compuesta)",
     typeof(Ponencia).GetProperty("Id") is null && typeof(Ponencia).GetProperty("IdPonencia") is null);
-Afirmar("PonenciaCrear es la ÚNICA petición: no existen PonenciaReemplazo ni PonenciaActualizar",
-    typeof(PonenciaCrear).Assembly.GetType("ApiCatedras.Peticiones.PonenciaReemplazo") is null
-    && typeof(PonenciaCrear).Assembly.GetType("ApiCatedras.Peticiones.PonenciaActualizar") is null);
+Afirmar("Peticiones: existe PonenciaReemplazo (PUT, solo 'rol') y NO existe PonenciaActualizar (sin PATCH)",
+    typeof(PonenciaCrear).Assembly.GetType("ApiCatedras.Peticiones.PonenciaReemplazo") is not null
+    && typeof(PonenciaCrear).Assembly.GetType("ApiCatedras.Peticiones.PonenciaActualizar") is null
+    && string.Join(",", typeof(PonenciaReemplazo).GetProperties().Select(p => p.Name)) == "Rol");
+
+// PUT /api/Ponencia/{fkSesion}/{fkAsistente}/{rol}: cambia el rol de la fila.
+var ponCambiada = await servicioPonencia.ReemplazarAsync(10, 167, "MODERADOR", new PonenciaReemplazo { Rol = "INVITADO" });
+Afirmar("PUT (Reemplazar) MODERADOR -> INVITADO devuelve la llave nueva",
+    ponCambiada.FkSesion == 10 && ponCambiada.FkAsistente == 167 && ponCambiada.Rol == "INVITADO");
+var ponInvitado = await servicioPonencia.ObtenerAsync(10, 167, "INVITADO");
+Afirmar("...y la fila existe con el rol nuevo", ponInvitado.Rol == "INVITADO");
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "...y la llave vieja (MODERADOR) ya no existe (404)",
+    () => servicioPonencia.ObtenerAsync(10, 167, "MODERADOR"));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "PUT sobre una llave inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioPonencia.ReemplazarAsync(10, 167, "PONENTE", new PonenciaReemplazo { Rol = "MODERADOR" }));
+await servicioPonencia.CrearAsync(new PonenciaCrear { FkSesion = 10, FkAsistente = 167, Rol = "PONENTE" });
+await AfirmarLanza<InvalidOperationException>(
+    "PUT a un rol que el asistente YA tiene en esa sesión falla (PK duplicada simulada; en la API real -> 500)",
+    () => servicioPonencia.ReemplazarAsync(10, 167, "PONENTE", new PonenciaReemplazo { Rol = "INVITADO" }));
 
 // ############################################################################
 //  VERSIÓN 5 · Usuarios, roles, enlaces, claves y registro de asistencia
@@ -1694,6 +1738,131 @@ Afirmar("'Origen' lleva [Required] pero NO [RegularExpression] (D26: si no, dar�
         .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), false).Length == 1
     && typeof(RegistroAsistenciaCrear).GetProperty("Origen")!
         .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RegularExpressionAttribute), false).Length == 0);
+
+// ============================================================================
+//  RETROFIT criterio 3 · Fase 4 (PLAN_RETROFIT_SP.md) — tester: Isaac
+//  (a) Regla 1 del retrofit: los contratos de las 7 tablas existentes del
+//      lote NO cambiaron (si alguien agrega o quita un método al pasar a
+//      procedimientos, esta prueba lo delata).
+//  (b) LoteMigracion + DetalleMigracion (v7, construidas en este lote):
+//      servicio real + repositorios FALSOS que comparten la lista de
+//      detalles (simula que sp_generar_lote_migracion los insertó en la
+//      misma BD, igual que el par LoteCarga/NovedadCarga de la v3).
+//  Los procedimientos en sí se prueban contra PostgreSQL real en
+//  db/postgres/pruebas/prueba_sp_retrofit_fase4.sql.
+// ============================================================================
+Console.WriteLine("\n== Retrofit Fase 4 · contratos IRepositorio* sin cambios (regla 1) ==\n");
+
+// Nombres de los métodos de una interfaz, ordenados y unidos: "A,B,C".
+static string MetodosDe(Type interfaz) =>
+    string.Join(",", interfaz.GetMethods().Select(m => m.Name).OrderBy(n => n));
+
+Afirmar("IRepositorioAsistente sigue con sus 5 métodos",
+    MetodosDe(typeof(IRepositorioAsistente)) == "ActualizarAsync,CrearAsync,EliminarAsync,ObtenerPorIdAsync,ObtenerTodosAsync");
+Afirmar("IRepositorioDocumentoAsistente sigue con sus 5 métodos",
+    MetodosDe(typeof(IRepositorioDocumentoAsistente)) == "ActualizarAsync,CrearAsync,EliminarAsync,ObtenerPorIdAsync,ObtenerTodosAsync");
+Afirmar("IRepositorioVinculacionAsistente sigue con 3 (sin Obtener/Actualizar/Eliminar, ADR D16)",
+    MetodosDe(typeof(IRepositorioVinculacionAsistente)) == "CerrarAsync,CrearAsync,ObtenerTodosAsync");
+Afirmar("IRepositorioProgramaAsistente sigue con 3 (sin Obtener/Actualizar/Eliminar, ADR D16)",
+    MetodosDe(typeof(IRepositorioProgramaAsistente)) == "CambiarEstadoAsync,CrearAsync,ObtenerTodosAsync");
+Afirmar("IRepositorioConsentimientoDatos sigue con 3 (Ley 1581: sin Actualizar/Eliminar)",
+    MetodosDe(typeof(IRepositorioConsentimientoDatos)) == "CrearAsync,ObtenerPorIdAsync,ObtenerTodosAsync");
+Afirmar("IRepositorioLoteCargaAsistente sigue con 4 (abrir + cerrar, RF117)",
+    MetodosDe(typeof(IRepositorioLoteCargaAsistente)) == "CerrarAsync,CrearAsync,ObtenerPorIdAsync,ObtenerTodosAsync");
+Afirmar("IRepositorioNovedadCarga sigue de solo lectura (RF118)",
+    MetodosDe(typeof(IRepositorioNovedadCarga)) == "ObtenerPorIdAsync,ObtenerTodosAsync");
+Afirmar("ConsentimientoDatosController sigue sin PUT/PATCH/DELETE",
+    !typeof(ApiCatedras.Controllers.ConsentimientoDatosController).GetMethods()
+        .SelectMany(m => m.GetCustomAttributes(true))
+        .Any(a => a is Microsoft.AspNetCore.Mvc.HttpPutAttribute
+               || a is Microsoft.AspNetCore.Mvc.HttpPatchAttribute
+               || a is Microsoft.AspNetCore.Mvc.HttpDeleteAttribute));
+
+Console.WriteLine("\n== Retrofit Fase 4 · ServicioLoteMigracion + ServicioDetalleMigracion ==\n");
+
+var migTablaDetalles = new List<DetalleMigracion>();
+var migRepoLote = new RepositorioLoteMigracionFalso(migTablaDetalles);
+var migServicioLote = new ServicioLoteMigracion(migRepoLote);
+var migServicioDetalle = new ServicioDetalleMigracion(new RepositorioDetalleMigracionFalso(migTablaDetalles));
+
+// ---- LoteMigracion ----------------------------------------------------------
+var migLote = await migServicioLote.GenerarAsync(new LoteMigracionGenerar { FkSesion = 5712, FkUsuario = 7 });
+Afirmar("Generar() devuelve el lote GENERADO con lo que calculó la BD (nombre, total)",
+    migLote.IdLoteMigracion == 1 && migLote.FkSesion == 5712 && migLote.FkUsuario == 7
+    && migLote.FkEstadoProceso == "GENERADO" && migLote.TotalFilas == 3 && migLote.NombreArchivo != "");
+
+await AfirmarLanza<InvalidOperationException>(
+    "Generar() de una sesión sin migrables deja subir el error de la BD (no lo traga)",
+    () => migServicioLote.GenerarAsync(new LoteMigracionGenerar { FkSesion = RepositorioLoteMigracionFalso.SesionSinMigrables }));
+
+await migServicioLote.GenerarAsync(new LoteMigracionGenerar { FkSesion = 9000 });
+var (migLotesSesion, migTotalSesion) = await migServicioLote.ListarAsync(5712, null);
+Afirmar("Listar(fkSesion) filtra por sesión", migTotalSesion == 1 && migLotesSesion[0].IdLoteMigracion == migLote.IdLoteMigracion);
+var (migTodos, _) = await migServicioLote.ListarAsync(null, null);
+Afirmar("Listar() sin filtro: el más reciente primero", migTodos.Count == 2 && migTodos[0].FkSesion == 9000);
+await AfirmarLanza<ArgumentException>(
+    "LoteMigracion: Listar(limite 0) lanza ArgumentException (400)", () => migServicioLote.ListarAsync(null, 0));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "LoteMigracion: Obtener(999) lanza NoEncontradoExcepcion (404)", () => migServicioLote.ObtenerAsync(999));
+
+int migFilas = await migServicioLote.ActualizarAsync(migLote.IdLoteMigracion,
+    new LoteMigracionActualizar { FkEstadoProceso = "EN_CURSO" });
+var migTrasPatch = await migServicioLote.ObtenerAsync(migLote.IdLoteMigracion);
+Afirmar("PATCH cambia solo el estado y deja 'observaciones' y 'total_filas' igual",
+    migFilas == 1 && migTrasPatch.FkEstadoProceso == "EN_CURSO"
+    && migTrasPatch.Observaciones is null && migTrasPatch.TotalFilas == 3);
+
+int migLlamadasAntes = migRepoLote.LlamadasTotales;
+await AfirmarLanza<ArgumentException>(
+    "LoteMigracion: PATCH sin campos lanza ArgumentException (400)",
+    () => migServicioLote.ActualizarAsync(migLote.IdLoteMigracion, new LoteMigracionActualizar()));
+Afirmar("...y el repositorio NUNCA se invocó", migRepoLote.LlamadasTotales == migLlamadasAntes);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "LoteMigracion: PATCH a un lote inexistente lanza NoEncontradoExcepcion (404)",
+    () => migServicioLote.ActualizarAsync(999, new LoteMigracionActualizar { Observaciones = "x" }));
+
+Afirmar("IRepositorioLoteMigracion no declara EliminarAsync (RF185: es evidencia)",
+    typeof(IRepositorioLoteMigracion).GetMethod("EliminarAsync") is null);
+Afirmar("LoteMigracionGenerar solo expone fk_sesion y fk_usuario (el resto lo calcula la BD)",
+    string.Join(",", typeof(LoteMigracionGenerar).GetProperties().Select(p => p.Name).OrderBy(n => n)) == "FkSesion,FkUsuario");
+
+// ---- DetalleMigracion -------------------------------------------------------
+var (migDetalles, migTotalDet) = await migServicioDetalle.ListarAsync(migLote.IdLoteMigracion, null);
+Afirmar("Los detalles nacieron con el lote: 3, todos PENDIENTE y del lote generado",
+    migTotalDet == 3 && migDetalles.All(d => d.FkLoteMigracion == migLote.IdLoteMigracion && d.Resultado == "PENDIENTE"));
+
+long migIdDetalle = migDetalles[0].IdDetalle;
+await migServicioDetalle.ActualizarAsync(migIdDetalle, new DetalleMigracionActualizar { Resultado = "RECHAZADO" });
+await migServicioDetalle.ActualizarAsync(migIdDetalle, new DetalleMigracionActualizar { Mensaje = "ID no existe en ASIS" });
+var migDetalle = await migServicioDetalle.ObtenerAsync(migIdDetalle);
+Afirmar("Dos PATCH parciales seguidos: el segundo NO borra lo que puso el primero",
+    migDetalle.Resultado == "RECHAZADO" && migDetalle.Mensaje == "ID no existe en ASIS"
+    && migDetalle.IdAsisEnviado == "1000001");
+
+await AfirmarLanza<ArgumentException>(
+    "DetalleMigracion: PATCH sin campos lanza ArgumentException (400)",
+    () => migServicioDetalle.ActualizarAsync(migIdDetalle, new DetalleMigracionActualizar()));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "DetalleMigracion: PATCH inexistente lanza NoEncontradoExcepcion (404)",
+    () => migServicioDetalle.ActualizarAsync(999, new DetalleMigracionActualizar { Resultado = "ACEPTADO" }));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "DetalleMigracion: Obtener(999) lanza NoEncontradoExcepcion (404)", () => migServicioDetalle.ObtenerAsync(999));
+await AfirmarLanza<ArgumentException>(
+    "DetalleMigracion: Listar(limite 0) lanza ArgumentException (400)", () => migServicioDetalle.ListarAsync(null, 0));
+
+// La forma (422) la vigilan las anotaciones de la petición, no el servicio.
+var migPeticionMala = new DetalleMigracionActualizar { Resultado = "QUIZAS" };
+bool migValida = System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+    migPeticionMala, new System.ComponentModel.DataAnnotations.ValidationContext(migPeticionMala),
+    new List<System.ComponentModel.DataAnnotations.ValidationResult>(), validateAllProperties: true);
+Afirmar("DetalleMigracionActualizar rechaza un 'resultado' fuera de la lista (-> 422)", !migValida);
+
+Afirmar("IRepositorioDetalleMigracion no declara CrearAsync ni EliminarAsync (RF189)",
+    typeof(IRepositorioDetalleMigracion).GetMethod("CrearAsync") is null
+    && typeof(IRepositorioDetalleMigracion).GetMethod("EliminarAsync") is null);
+Afirmar("DetalleMigracionActualizar no expone las columnas *_enviado(a) (copia literal)",
+    new[] { "IdAsisEnviado", "ProgramaEnviado", "ReunionEnviada", "FkRegistro", "FkLoteMigracion" }
+        .All(p => typeof(DetalleMigracionActualizar).GetProperty(p) is null));
 
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
@@ -2899,8 +3068,8 @@ class RepositorioSesionFalso : IRepositorioSesion
 
 // ==========================================================================
 //  v4 · Repositorio FALSO de 'Ponencia' (llave compuesta SIN vigencia).
-//  NO implementa ActualizarAsync: no existe en la interfaz (ADR D19). La
-//  PK duplicada se simula con una excepción, como hace la BD.
+//  ActualizarAsync (RETROFIT criterio 3) cambia el ROL de la fila. La PK
+//  duplicada se simula con una excepción, como hace la BD.
 // ==========================================================================
 class RepositorioPonenciaFalso : IRepositorioPonencia
 {
@@ -3256,5 +3425,137 @@ class RepositorioRegistroAsistenciaFalso : IRepositorioRegistroAsistencia
         };
         _tabla.Add(registro);
         return Task.FromResult(registro);
+    }
+}
+
+// ==========================================================================
+//  RETROFIT Fase 4 · Repositorio FALSO de 'LoteMigracion'. Simula
+//  sp_generar_lote_migracion: al "generar" calcula el nombre del archivo y
+//  el total, y deja 3 filas de detalle en la lista COMPARTIDA con el falso
+//  de DetalleMigracion. Para la sesión 'SesionSinMigrables' lanza una
+//  excepción, como el RAISE EXCEPTION de la BD. Cuenta las llamadas para
+//  demostrar que el 400 del PATCH vacío no llega al repositorio.
+// ==========================================================================
+class RepositorioLoteMigracionFalso : IRepositorioLoteMigracion
+{
+    public const long SesionSinMigrables = 404;
+
+    private readonly List<LoteMigracion> _lotes = new();
+    private readonly List<DetalleMigracion> _detalles;
+    private long _siguienteLote = 1;
+    private long _siguienteDetalle = 1;
+
+    public int LlamadasTotales { get; private set; }
+
+    public RepositorioLoteMigracionFalso(List<DetalleMigracion> detalles)
+    {
+        _detalles = detalles;
+    }
+
+    public Task<List<LoteMigracion>> ObtenerTodosAsync(long? fkSesion, int limite)
+    {
+        LlamadasTotales++;
+        var filas = _lotes
+            .Where(l => fkSesion is null || l.FkSesion == fkSesion)
+            .OrderByDescending(l => l.IdLoteMigracion)
+            .Take(limite)
+            .ToList();
+        return Task.FromResult(filas);
+    }
+
+    public Task<LoteMigracion?> ObtenerPorIdAsync(long idLoteMigracion)
+    {
+        LlamadasTotales++;
+        return Task.FromResult(_lotes.FirstOrDefault(l => l.IdLoteMigracion == idLoteMigracion));
+    }
+
+    public Task<LoteMigracion> CrearAsync(long fkSesion, long? fkUsuario)
+    {
+        LlamadasTotales++;
+        if (fkSesion == SesionSinMigrables)
+            throw new InvalidOperationException(
+                $"No hay registros migrables en la sesion {fkSesion} (simula el RAISE de la BD).");
+
+        var lote = new LoteMigracion
+        {
+            IdLoteMigracion = _siguienteLote++,
+            FkSesion = fkSesion,
+            FkUsuario = fkUsuario,
+            NombreArchivo = $"ME_CATEDRA_FALSO_S{fkSesion}.xlsx",
+            GeneradoEn = DateTimeOffset.UtcNow,
+            TotalFilas = 3,
+        };
+        _lotes.Add(lote);
+
+        for (int i = 1; i <= lote.TotalFilas; i++)
+        {
+            _detalles.Add(new DetalleMigracion
+            {
+                IdDetalle = _siguienteDetalle++,
+                FkLoteMigracion = lote.IdLoteMigracion,
+                FkRegistro = i,
+                IdAsisEnviado = $"100000{i}",
+                ProgramaEnviado = "M0200",
+                ReunionEnviada = 1,
+            });
+        }
+
+        return Task.FromResult(lote);
+    }
+
+    public Task<int> ActualizarAsync(long idLoteMigracion, Dictionary<string, object?> datos)
+    {
+        LlamadasTotales++;
+        var lote = _lotes.FirstOrDefault(l => l.IdLoteMigracion == idLoteMigracion);
+        if (lote is null)
+            return Task.FromResult(0);
+
+        // Misma mezcla que el repositorio real: lo que no llegó, se queda.
+        if (datos.TryGetValue("instancia_proceso_asis", out var vInstancia)) lote.InstanciaProcesoAsis = (string?)vInstancia;
+        if (datos.TryGetValue("fk_estado_proceso", out var vEstado)) lote.FkEstadoProceso = (string)vEstado!;
+        if (datos.TryGetValue("observaciones", out var vObs)) lote.Observaciones = (string?)vObs;
+
+        return Task.FromResult(1);
+    }
+}
+
+// ==========================================================================
+//  RETROFIT Fase 4 · Repositorio FALSO de 'DetalleMigracion'. Lee y edita la
+//  lista que llenó el falso de lotes al "generar".
+// ==========================================================================
+class RepositorioDetalleMigracionFalso : IRepositorioDetalleMigracion
+{
+    private readonly List<DetalleMigracion> _detalles;
+
+    public RepositorioDetalleMigracionFalso(List<DetalleMigracion> detalles)
+    {
+        _detalles = detalles;
+    }
+
+    public Task<List<DetalleMigracion>> ObtenerTodosAsync(long? fkLoteMigracion, int limite)
+    {
+        var filas = _detalles
+            .Where(d => fkLoteMigracion is null || d.FkLoteMigracion == fkLoteMigracion)
+            .OrderBy(d => d.FkLoteMigracion).ThenBy(d => d.IdDetalle)
+            .Take(limite)
+            .ToList();
+        return Task.FromResult(filas);
+    }
+
+    public Task<DetalleMigracion?> ObtenerPorIdAsync(long idDetalle)
+    {
+        return Task.FromResult(_detalles.FirstOrDefault(d => d.IdDetalle == idDetalle));
+    }
+
+    public Task<int> ActualizarAsync(long idDetalle, Dictionary<string, object?> datos)
+    {
+        var detalle = _detalles.FirstOrDefault(d => d.IdDetalle == idDetalle);
+        if (detalle is null)
+            return Task.FromResult(0);
+
+        if (datos.TryGetValue("resultado", out var vResultado)) detalle.Resultado = (string)vResultado!;
+        if (datos.TryGetValue("mensaje", out var vMensaje)) detalle.Mensaje = (string?)vMensaje;
+
+        return Task.FromResult(1);
     }
 }

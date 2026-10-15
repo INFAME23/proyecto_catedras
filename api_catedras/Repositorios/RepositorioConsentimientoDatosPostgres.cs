@@ -1,15 +1,19 @@
 // ==========================================================================
-//  Repositorios/RepositorioConsentimientoDatosPostgres.cs  ·  Cátedras · v3
+//  Repositorios/RepositorioConsentimientoDatosPostgres.cs  ·  Cátedras · v3 + RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioConsentimientoDatos para PostgreSQL con Dapper. Sin UPDATE
-//  ni DELETE.
+//  IRepositorioConsentimientoDatos para PostgreSQL, vía los procedimientos
+//  de '028_sp_consentimiento_datos.sql'. SIGUE sin UPDATE ni DELETE.
 //
-//  Columna 'ip' de tipo INET: Npgsql la entrega como un objeto de red, no
-//  como texto. Para que el modelo la reciba como 'string':
-//   · al LEER se convierte en el SQL con 'host(ip)', que da solo la
-//     dirección como texto ("10.0.0.1"; 'ip::text' daría "10.0.0.1/32").
-//   · al ESCRIBIR se convierte también en el SQL: 'CAST(@Ip AS inet)'. Una
-//     IP mal escrita hace fallar ese CAST -> NpgsqlException (500).
+//  ⚠ Ley 1581 (RF113): el contrato tiene 3 operaciones y se queda así.
+//  La BD ya tiene sp_actualizar_ y sp_eliminar_consentimiento_datos (para
+//  cumplir el criterio 3 al pie de la letra), pero NINGÚN método de esta
+//  clase los llama, y no se deben agregar a IRepositorioConsentimientoDatos
+//  ni al controlador sin una decisión explícita del equipo: un
+//  consentimiento registrado es evidencia legal.
+//
+//  Columna 'ip' (INET): la conversión a/desde texto se hace ahora DENTRO de
+//  los procedimientos (host(ip) al leer; '::inet' al escribir). Una IP mal
+//  escrita sigue fallando en el motor -> NpgsqlException (500).
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -17,8 +21,9 @@ namespace ApiCatedras.Repositorios;
 using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
+using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.consentimiento_datos' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.consentimiento_datos' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioConsentimientoDatosPostgres : IRepositorioConsentimientoDatos
 {
     private readonly string _cadenaConexion;
@@ -30,43 +35,42 @@ public class RepositorioConsentimientoDatosPostgres : IRepositorioConsentimiento
 
     public async Task<List<ConsentimientoDatos>> ObtenerTodosAsync(long? fkAsistente, int limite)
     {
-        // 'host(ip) AS ip': la IP como texto, con el mismo nombre de columna
-        // para que Dapper la asigne a la propiedad 'Ip'.
-        const string sql = @"
-            SELECT id_consentimiento, fk_asistente, version_politica, aceptado_en,
-                   host(ip) AS ip, canal
-            FROM catedras.consentimiento_datos
-            WHERE @fkAsistente::bigint IS NULL OR fk_asistente = @fkAsistente
-            ORDER BY id_consentimiento
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_consentimiento_datos(@fkAsistente, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<ConsentimientoDatos>(sql, new { fkAsistente, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkAsistente, limite });
+
+        return JsonSerializer.Deserialize<List<ConsentimientoDatos>>(json!) ?? [];
     }
 
     public async Task<ConsentimientoDatos?> ObtenerPorIdAsync(long idConsentimiento)
     {
-        const string sql = @"
-            SELECT id_consentimiento, fk_asistente, version_politica, aceptado_en,
-                   host(ip) AS ip, canal
-            FROM catedras.consentimiento_datos
-            WHERE id_consentimiento = @idConsentimiento;";
+        const string sql = "CALL catedras.sp_consultar_consentimiento_datos(@idConsentimiento, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<ConsentimientoDatos>(sql, new { idConsentimiento });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idConsentimiento });
+
+        return json is null ? null : JsonSerializer.Deserialize<ConsentimientoDatos>(json);
     }
 
     public async Task<(long IdConsentimiento, DateTime AceptadoEn)> CrearAsync(ConsentimientoDatos consentimiento)
     {
-        // 'id_consentimiento' (IDENTITY) y 'aceptado_en' (DEFAULT now()) los
-        // genera la BD y RETURNING los devuelve en la misma sentencia.
+        // 'id_consentimiento' (IDENTITY) y 'aceptado_en' (now()) los pone la
+        // BD; el procedimiento devuelve la fila completa y de ahí se toman.
         const string sql = @"
-            INSERT INTO catedras.consentimiento_datos (fk_asistente, version_politica, canal, ip)
-            VALUES (@FkAsistente, @VersionPolitica, @Canal, CAST(@Ip AS inet))
-            RETURNING id_consentimiento, aceptado_en;";
+            CALL catedras.sp_crear_consentimiento_datos(
+                @FkAsistente, @VersionPolitica, @Canal, @Ip, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleAsync<(long, DateTime)>(sql, consentimiento);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new
+        {
+            consentimiento.FkAsistente,
+            consentimiento.VersionPolitica,
+            consentimiento.Canal,
+            consentimiento.Ip,
+        });
+
+        var guardado = JsonSerializer.Deserialize<ConsentimientoDatos>(json!)!;
+        return (guardado.IdConsentimiento, guardado.AceptadoEn);
     }
 }

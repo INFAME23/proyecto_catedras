@@ -1,21 +1,27 @@
 // ==========================================================================
-//  Repositorios/RepositorioAsistentePostgres.cs  ·  Proyecto Cátedras · v3
+//  Repositorios/RepositorioAsistentePostgres.cs  ·  Cátedras · v3 + RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioAsistente para PostgreSQL con Dapper. SQL a mano y
-//  parametrizado; una conexión por operación.
+//  IRepositorioAsistente para PostgreSQL. Los 5 verbos pasan por
+//  procedimientos almacenados (PLAN_RETROFIT_SP.md, Fase 4):
+//     Listar      -> sp_listar_asistente      (024_sp_asistente.sql)
+//     Consultar   -> sp_consultar_asistente   (024)
+//     Crear       -> sp_guardar_asistente     (002 — maestro + 4 detalles, SIN CAMBIOS)
+//     Actualizar  -> sp_actualizar_asistente  (024)
+//     Eliminar    -> sp_eliminar_asistente    (024 — LÓGICO: activo = false)
+//  Esta clase ya no escribe SELECT/UPDATE/DELETE: arma el 'CALL', manda los
+//  parámetros y convierte el JSON que devuelve el procedimiento en objetos.
 //
-//  Tres puntos nuevos de la v3:
-//   1. BÚSQUEDA EN SQL (ADR D18): la tabla tiene 14.811 filas de ejemplo.
-//      El texto 'q' viaja como PARÁMETRO a un 'ILIKE' (comparación sin
-//      distinguir mayúsculas); nunca se pega al SQL.
-//   2. PAGINACIÓN: 'LIMIT @limite OFFSET @desplazamiento' devuelve solo la
-//      página pedida.
-//   3. MAESTRO-DETALLE (Guía IA, Regla 1): el CREATE es UN 'CALL' al SP
-//      'sp_guardar_asistente' con 4 parámetros jsonb. El SP devuelve el id
-//      nuevo en su parámetro INOUT; Dapper lo lee como la columna de una fila.
+//  LO QUE NO CAMBIÓ (SOLID · D): IRepositorioAsistente, ServicioAsistente,
+//  AsistenteController y las Peticiones siguen idénticos.
 //
-//  El DELETE no simula nada: los 4 detalles se borran solos (CASCADE) y
-//  'usuario'/'ponencia'/'registro_asistencia' lo bloquean (RESTRICT -> 500).
+//  LO QUE SÍ CAMBIÓ POR DENTRO (y se ve desde fuera):
+//   · La búsqueda ILIKE ('%q%') y la paginación las hace el procedimiento.
+//   · Listar devuelve solo activos (igual que 'sede').
+//   · Eliminar ya no es DELETE: es activo = false. Ya no hay 500 por
+//     RESTRICT (usuario/ponencia/registro_asistencia) ni CASCADE de los
+//     4 detalles: el asistente queda inactivo con toda su historia.
+//   · PATCH: consulta la fila, mezcla y llama al MISMO sp_actualizar (molde
+//     de RepositorioSedePostgres.ActualizarAsync).
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -23,26 +29,12 @@ namespace ApiCatedras.Repositorios;
 using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
-using System.Text.Json;   // JsonSerializer: convierte cada lista de detalles en texto JSON
+using System.Text.Json;   // lee el JSON de los SP y arma el JSON de los detalles
 
-/// <summary>Acceso a 'catedras.asistente' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.asistente' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioAsistentePostgres : IRepositorioAsistente
 {
     private readonly string _cadenaConexion;
-
-    // Columnas que devuelve toda lectura (las 12 de la tabla).
-    private const string Columnas = @"
-            id_asistente, id_asis, nombres, apellidos, nombre_completo_asis,
-            correo_institucional, correo_personal, celular,
-            es_externo, activo, creado_en, fk_lote_carga";
-
-    // [ACID · C] Lista blanca del UPDATE: solo estas columnas se pueden
-    // cambiar. 'id_asistente', 'creado_en' y 'fk_lote_carga' NO.
-    private static readonly HashSet<string> ColumnasActualizables = new()
-    {
-        "id_asis", "nombres", "apellidos", "nombre_completo_asis",
-        "correo_institucional", "correo_personal", "celular", "es_externo", "activo",
-    };
 
     public RepositorioAsistentePostgres(string cadenaConexion)
     {
@@ -51,39 +43,27 @@ public class RepositorioAsistentePostgres : IRepositorioAsistente
 
     public async Task<List<Asistente>> ObtenerTodosAsync(string? q, int limite, int desplazamiento)
     {
-        // '@patron IS NULL OR ...': si no hay búsqueda, la condición es
-        // verdadera para todas las filas; si la hay, se aplica el ILIKE.
-        // Se busca en "nombres apellidos" juntos (así "Ana Garcia" encuentra
-        // a Ana García) y en id_asis.
-        // '::text' en '@patron' le dice a PostgreSQL el tipo del parámetro
-        // incluso cuando llega NULL (si no, no sabría de qué tipo es).
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.asistente
-            WHERE @patron::text IS NULL
-               OR (nombres || ' ' || apellidos) ILIKE @patron
-               OR id_asis ILIKE @patron
-            ORDER BY id_asistente
-            LIMIT @limite OFFSET @desplazamiento;";
-
-        // Los '%' de ILIKE significan "cualquier texto antes/después".
-        // 'string.IsNullOrWhiteSpace' = null, vacío o solo espacios -> sin filtro.
-        string? patron = string.IsNullOrWhiteSpace(q) ? null : $"%{q.Trim()}%";
+        // El texto 'q' viaja TAL CUAL (como parámetro, nunca pegado al SQL):
+        // el procedimiento le quita espacios, lo envuelve en '%...%' y, si
+        // queda vacío, no filtra (ADR D18).
+        const string sql = "CALL catedras.sp_listar_asistente(@q, @limite, @desplazamiento, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<Asistente>(sql, new { patron, limite, desplazamiento });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { q, limite, desplazamiento });
+
+        // Siempre un arreglo ('[]' si no hay filas): COALESCE(json_agg(...)).
+        return JsonSerializer.Deserialize<List<Asistente>>(json!) ?? [];
     }
 
     public async Task<Asistente?> ObtenerPorIdAsync(long idAsistente)
     {
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.asistente
-            WHERE id_asistente = @idAsistente;";
+        const string sql = "CALL catedras.sp_consultar_asistente(@idAsistente, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<Asistente>(sql, new { idAsistente });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idAsistente });
+
+        // NULL = no existe (mismo contrato que QuerySingleOrDefaultAsync).
+        return json is null ? null : JsonSerializer.Deserialize<Asistente>(json);
     }
 
     public async Task<long> CrearAsync(
@@ -93,6 +73,9 @@ public class RepositorioAsistentePostgres : IRepositorioAsistente
         IReadOnlyList<ProgramaAsistente> programas,
         ConsentimientoDatos? consentimiento)
     {
+        // SIN CAMBIOS en el retrofit: el CREAR de 'asistente' ya era un
+        // procedimiento desde la v3 (sp_guardar_asistente, maestro-detalle).
+        //
         // Guía IA, Regla 1: UN 'CALL' que guarda maestro + 4 detalles en la
         // misma transacción del motor. 'CAST(@X AS jsonb)': Dapper manda el
         // JSON como TEXTO y el CAST lo convierte al tipo del parámetro del
@@ -171,41 +154,61 @@ public class RepositorioAsistentePostgres : IRepositorioAsistente
 
     public async Task<int> ActualizarAsync(long idAsistente, Dictionary<string, object?> datos)
     {
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_clave", idAsistente);
-
-        foreach (var (columna, valor) in datos)
-        {
-            // Solo columnas de la lista blanca: el nombre de columna SÍ se
-            // pega al SQL, por eso nunca puede venir libre del cliente.
-            if (!ColumnasActualizables.Contains(columna))
-                continue;
-
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
-        }
-
-        if (asignaciones.Count == 0)
-            return 0;
-
-        var sql =
-            $"UPDATE catedras.asistente SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_asistente = @id_clave;";
-
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, parametros);
+
+        // 1) Traer la fila actual: sp_actualizar_asistente reemplaza las 9
+        //    columnas de negocio, así que un PATCH necesita completar lo que
+        //    no llegó con lo que ya estaba guardado.
+        const string sqlConsultar = "CALL catedras.sp_consultar_asistente(@idAsistente, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idAsistente });
+
+        if (actualJson is null)
+            return 0;   // no existe -> ni se intenta el UPDATE
+
+        var actual = JsonSerializer.Deserialize<Asistente>(actualJson)!;
+
+        // 2) Mezclar: lo que llegó en 'datos' PISA el valor actual. Un PUT
+        //    manda las 9 claves (incluso las que van en null), así que un PUT
+        //    sigue reemplazando todo. Las claves que no son de estas 9
+        //    columnas se ignoran (antes: lista blanca 'ColumnasActualizables').
+        string? idAsis = datos.TryGetValue("id_asis", out var vIdAsis) ? (string?)vIdAsis : actual.IdAsis;
+        string nombres = datos.TryGetValue("nombres", out var vNombres) ? (string)vNombres! : actual.Nombres;
+        string apellidos = datos.TryGetValue("apellidos", out var vApellidos) ? (string)vApellidos! : actual.Apellidos;
+        string? nombreCompletoAsis = datos.TryGetValue("nombre_completo_asis", out var vCompleto) ? (string?)vCompleto : actual.NombreCompletoAsis;
+        string? correoInst = datos.TryGetValue("correo_institucional", out var vCorreoInst) ? (string?)vCorreoInst : actual.CorreoInstitucional;
+        string? correoPers = datos.TryGetValue("correo_personal", out var vCorreoPers) ? (string?)vCorreoPers : actual.CorreoPersonal;
+        string? celular = datos.TryGetValue("celular", out var vCelular) ? (string?)vCelular : actual.Celular;
+        bool esExterno = datos.TryGetValue("es_externo", out var vExterno) ? (bool)vExterno! : actual.EsExterno;
+        bool activo = datos.TryGetValue("activo", out var vActivo) ? (bool)vActivo! : actual.Activo;
+
+        // 3) Llamar al procedimiento con el conjunto COMPLETO. Los CHECK de
+        //    la tabla (id_asis obligatorio si no es externo, al menos un
+        //    correo...) ahora se evalúan sobre la fila YA mezclada -> 500.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_asistente(
+                @idAsistente, @idAsis, @nombres, @apellidos, @nombreCompletoAsis,
+                @correoInst, @correoPers, @celular, @esExterno, @activo, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(sqlActualizar, new
+        {
+            idAsistente, idAsis, nombres, apellidos, nombreCompletoAsis,
+            correoInst, correoPers, celular, esExterno, activo,
+        });
+
+        // NULL = ya no existía (carrera entre el paso 1 y el 3) -> "0 filas".
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task<int> EliminarAsync(long idAsistente)
     {
-        const string sql = "DELETE FROM catedras.asistente WHERE id_asistente = @idAsistente;";
+        const string sql = "CALL catedras.sp_eliminar_asistente(@idAsistente, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idAsistente });
 
-        // RESTRICT (usuario, ponencia, registro_asistencia) gana sobre
-        // CASCADE (sus 4 detalles): si hay alguna fila que lo bloquee, la
-        // sentencia completa falla y la cascada NO llega a ocurrir.
-        return await conexion.ExecuteAsync(sql, new { idAsistente });
+        // {"eliminado": true|false}. LÓGICO: UPDATE activo=false dentro del
+        // procedimiento. Ya inactivo o inexistente -> false -> 0 -> 404.
+        using var documento = JsonDocument.Parse(json!);
+        bool eliminado = documento.RootElement.GetProperty("eliminado").GetBoolean();
+        return eliminado ? 1 : 0;
     }
 }

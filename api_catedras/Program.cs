@@ -433,6 +433,27 @@ builder.Services.AddScoped<IRepositorioBitacora>(
 builder.Services.AddScoped<IServicioBitacora, ServicioBitacora>();
 
 // --------------------------------------------------------------------------
+//  3.7 Versión 7 (adelantada en el RETROFIT criterio 3, Fase 4) — migración
+//      a ASIS: lote_migracion + detalle_migracion. Nacen YA con el molde de
+//      procedimientos (031/032_sp_*.sql). "Generar" reutiliza
+//      sp_generar_lote_migracion del script provisto (ADR D34).
+// --------------------------------------------------------------------------
+
+// IRepositorioLoteMigracion -> RepositorioLoteMigracionPostgres,
+// IServicioLoteMigracion -> ServicioLoteMigracion. Listar, obtener, generar
+// y PATCH de estado; sin PUT ni DELETE (RF183, RF185).
+builder.Services.AddScoped<IRepositorioLoteMigracion>(
+    _ => new RepositorioLoteMigracionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioLoteMigracion, ServicioLoteMigracion>();
+
+// IRepositorioDetalleMigracion -> RepositorioDetalleMigracionPostgres,
+// IServicioDetalleMigracion -> ServicioDetalleMigracion. Listar, obtener y
+// PATCH de resultado; nace solo al generar su lote (RF189).
+builder.Services.AddScoped<IRepositorioDetalleMigracion>(
+    _ => new RepositorioDetalleMigracionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioDetalleMigracion, ServicioDetalleMigracion>();
+
+// --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
 var app = builder.Build();

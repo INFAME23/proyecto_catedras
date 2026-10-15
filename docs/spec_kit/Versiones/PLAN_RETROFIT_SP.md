@@ -63,9 +63,9 @@ encajó, deténganse y revisen antes de seguir.
 | TipoDocumento | Sí | Pendiente |
 | TipoEvento | Sí | Pendiente |
 | TipoVinculacion | Sí | Pendiente |
-| Asistente | Sí | Pendiente — es maestro-detalle en `CrearAsync` (ya usa `sp_guardar_asistente`, eso no cambia; solo Listar/Consultar/Actualizar/Eliminar) |
+| Asistente | Sí | ✅ Hecho (Fase 4, `024`) — Crear sigue siendo `sp_guardar_asistente`; Eliminar ahora LÓGICO. Ver `RETROFIT_FASE4_NOTAS.md` |
 | Usuario | Sí | Pendiente — ⚠️ no tocar la clave: `ServicioUsuario` sigue siendo el único que ve la clave en texto plano / hashea con BCrypt, el repositorio nunca decide eso |
-| DocumentoAsistente | No | Pendiente — `sp_eliminar` queda `DELETE` (no tiene `activo`) |
+| DocumentoAsistente | No | ✅ Hecho (Fase 4, `025`) — `sp_eliminar` es `DELETE` |
 | Encuesta | No | Pendiente |
 | EstadoProceso | No | Pendiente |
 | OpcionPregunta | No | Pendiente (v6, construida hoy) |
@@ -83,7 +83,7 @@ Mismo molde, pero sin el procedimiento que no aplica.
 | Tabla | Verbos reales | Nota |
 |---|---|---|
 | AliasPrograma | Listar, Consultar, Crear, Eliminar | `CrearAsync` puede seguir siendo parte de `sp_guardar_programa_academico` (maestro-detalle) O tener su propio `sp_crear_alias_programa` si se agrega suelto — revisar cuál aplica caso por caso |
-| ConsentimientoDatos | Listar, Consultar, Crear | Hecho auditable — nunca tendrá `sp_actualizar` ni `sp_eliminar`, y eso está bien |
+| ConsentimientoDatos | Listar, Consultar, Crear | ✅ Hecho (Fase 4, `028`) — se construyeron los 5 SP, pero la API sigue usando SOLO 3 (Ley 1581). Exponer `sp_actualizar`/`sp_eliminar` es decisión del equipo |
 | Ponencia | Listar, Consultar, Crear, Eliminar | Sin `Actualizar` |
 
 ### Grupo C — Acciones especiales (su verbo de escritura YA pasa por función/SP; falta Listar/Consultar)
@@ -99,16 +99,20 @@ que hoy siguen siendo `SELECT` a mano.
 |---|---|---|
 | ClaveAcceso | Solicitar, Validar | Listar, Consultar |
 | EnlaceRegistro | Emitir, Revocar (Revocar es un `UPDATE` suelto hoy — convertir también) | Listar, Consultar, Revocar |
-| LoteCargaAsistente | Crear, Cerrar | Listar, Consultar, Cerrar |
-| NovedadCarga | (sin escritura: nace del lote) | Listar, Consultar |
-| ProgramaAsistente | Crear, CambiarEstado | Listar, CambiarEstado |
+| LoteCargaAsistente | Cerrar (`sp_guardar_lote_carga` es el CIERRE, no el crear) | ✅ Hecho (Fase 4, `029`) — Abrir pasó a `sp_crear_`; Cerrar sin cambios |
+| NovedadCarga | (sin escritura: nace del lote) | ✅ Hecho (Fase 4, `030`) — 5 SP, la API usa 2 |
+| ProgramaAsistente | Crear, CambiarEstado | ✅ Hecho (Fase 4, `027`) — CambiarEstado = `sp_actualizar_`; `sp_eliminar_` = retiro lógico (no expuesto) |
 | RegistroAsistencia | Crear | Listar, Consultar |
 | RespuestaEncuesta | Responder | Listar, Consultar |
 | RespuestaItem | (sin escritura: nace de Responder) | Listar, Consultar |
 | RolPorUsuario | Crear, Cerrar | Listar, ObtenerVigentes, Cerrar |
-| VinculacionAsistente | Crear, Cerrar | Listar, Cerrar |
+| VinculacionAsistente | Crear, Cerrar | ✅ Hecho (Fase 4, `026`) — Cerrar = `sp_eliminar_` (nunca DELETE) |
 
 **10 tablas**, todas con trabajo parcial.
+
+> **Agregadas en la Fase 4 (no estaban en este inventario):** `LoteMigracion` y
+> `DetalleMigracion` (v7) no tenían código; se construyó su capa completa YA con
+> el molde de procedimientos (`031`, `032`). El inventario pasa a 35 repositorios.
 
 ---
 
@@ -123,7 +127,7 @@ esta semana.
 | **1** | Prueba de concepto | Sede | ✅ Hecho hoy |
 | **2** | Catálogos simples v1 (copiar el molde de `sede` tal cual, sin FK complicadas) | Dependencia, Facultad, Modalidad, PeriodoAcademico, TipoDocumento, TipoEvento, TipoVinculacion, Rol, TipoPregunta, EstadoProceso | **German** (9-10 tablas, mecánico una vez que el molde está probado — buen primer lote para medir cuánto tardan las demás) |
 | **3** | v1 con FK + v2 (maestro-detalle) | Catedra, ProgramaAcademico, AliasPrograma, Encuesta | **Jhoan** (coordina porque `ProgramaAcademico`/`AliasPrograma` es el primer maestro-detalle que se toca) |
-| **4** | v3 completo | Asistente, DocumentoAsistente, ConsentimientoDatos, LoteCargaAsistente, NovedadCarga, VinculacionAsistente, ProgramaAsistente | **Isaac** (y de paso, como tester, deja escritas/actualizadas las pruebas de cada una) |
+| **4** | v3 completo + v7 (LoteMigracion, DetalleMigracion) | Asistente, DocumentoAsistente, ConsentimientoDatos, LoteCargaAsistente, NovedadCarga, VinculacionAsistente, ProgramaAsistente, LoteMigracion, DetalleMigracion | **Isaac** — ✅ código + pruebas hechos; migraciones `024`-`032`. Pendiente: corrida en Docker (`correr_todo_fase4.ps1`). Ver `RETROFIT_FASE4_NOTAS.md` |
 | **5** | v4 + v5 | Sesion, Ponencia, TipoPregunta, Usuario, RolPorUsuario, EnlaceRegistro, ClaveAcceso, RegistroAsistencia | **German** (segundo lote, ya con práctica de la Fase 2) — ⚠️ avisar del cuidado con `Sesion` (trigger) y `Usuario` (BCrypt) de la tabla de arriba |
 | **6** | v6 (construida hoy) | Pregunta, OpcionPregunta, RespuestaEncuesta, RespuestaItem | **Alex** (quien ya conoce esas 4 clases de hoy) |
 | **7** | Verificación completa | — | **Isaac**: correr TODA la colección de pruebas (incluida la regresión de v1, obligatoria por §9) contra Docker real, tabla por tabla |

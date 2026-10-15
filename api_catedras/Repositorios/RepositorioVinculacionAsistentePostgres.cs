@@ -1,11 +1,23 @@
 // ==========================================================================
-//  Repositorios/RepositorioVinculacionAsistentePostgres.cs  ·  Cátedras · v3
+//  Repositorios/RepositorioVinculacionAsistentePostgres.cs  ·  Cátedras · v3 + RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioVinculacionAsistente para PostgreSQL con Dapper.
+//  IRepositorioVinculacionAsistente para PostgreSQL, vía los procedimientos
+//  de '026_sp_vinculacion_asistente.sql'.
 //
-//  Primera tabla del proyecto sin columna 'id': el WHERE del cierre usa
-//  las TRES columnas de la llave primaria. Las fechas (DateOnly) viajan
-//  gracias al ManejadorTipoDateOnly que se registra en Program.cs.
+//  Tabla de LLAVE COMPUESTA (ADR D16): el contrato sigue teniendo SOLO 3
+//  operaciones, y no se le agregan más. Cómo encajan en los 5 verbos:
+//     ObtenerTodosAsync -> sp_listar_vinculacion_asistente
+//     CrearAsync        -> sp_crear_vinculacion_asistente
+//     CerrarAsync       -> sp_eliminar_vinculacion_asistente
+//  "Eliminar" en esta tabla ES cerrar (poner fecha_fin): la historia de
+//  vinculaciones nunca se borra. sp_consultar_ y sp_actualizar_ existen en
+//  la BD pero este contrato no los necesita (el servicio busca la llave en
+//  la lista del asistente, como en la v3).
+//
+//  FECHAS: el ManejadorTipoDateOnly (Program.cs) manda cada DateOnly como un
+//  DateTime, que Npgsql tipa como 'timestamp'. Un procedimiento con un
+//  parámetro 'date' NO acepta 'timestamp' sin conversión explícita (no es
+//  un cast implícito), así que cada fecha va con 'CAST(@x AS date)'.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -13,8 +25,9 @@ namespace ApiCatedras.Repositorios;
 using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
+using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.vinculacion_asistente' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.vinculacion_asistente' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioVinculacionAsistentePostgres : IRepositorioVinculacionAsistente
 {
     private readonly string _cadenaConexion;
@@ -26,45 +39,53 @@ public class RepositorioVinculacionAsistentePostgres : IRepositorioVinculacionAs
 
     public async Task<List<VinculacionAsistente>> ObtenerTodosAsync(long? fkAsistente, int limite)
     {
-        // Orden: por asistente y, dentro de cada uno, la más reciente primero.
-        const string sql = @"
-            SELECT fk_asistente, fk_tipo_vinculacion, fecha_ini, fecha_fin
-            FROM catedras.vinculacion_asistente
-            WHERE @fkAsistente::bigint IS NULL OR fk_asistente = @fkAsistente
-            ORDER BY fk_asistente, fecha_ini DESC, fk_tipo_vinculacion
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_vinculacion_asistente(@fkAsistente, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<VinculacionAsistente>(sql, new { fkAsistente, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkAsistente, limite });
+
+        // 'fecha_ini'/'fecha_fin' llegan como "2026-01-20": System.Text.Json
+        // las convierte a DateOnly sin ayuda.
+        return JsonSerializer.Deserialize<List<VinculacionAsistente>>(json!) ?? [];
     }
 
     public async Task CrearAsync(VinculacionAsistente vinculacion)
     {
-        // Una vinculación nace abierta: 'fecha_fin' queda NULL.
+        // Nace abierta ('fecha_fin' NULL). Llave repetida o FK inexistente
+        // -> NpgsqlException (500), igual que antes.
         const string sql = @"
-            INSERT INTO catedras.vinculacion_asistente (fk_asistente, fk_tipo_vinculacion, fecha_ini)
-            VALUES (@FkAsistente, @FkTipoVinculacion, @FechaIni);";
+            CALL catedras.sp_crear_vinculacion_asistente(
+                @FkAsistente, @FkTipoVinculacion, CAST(@FechaIni AS date), NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        await conexion.ExecuteAsync(sql, vinculacion);
+
+        // El contrato no devuelve nada: el servicio ya tiene la llave completa.
+        await conexion.ExecuteAsync(sql, new
+        {
+            vinculacion.FkAsistente,
+            vinculacion.FkTipoVinculacion,
+            vinculacion.FechaIni,
+        });
     }
 
     public async Task<int> CerrarAsync(long fkAsistente, string fkTipoVinculacion,
                                        DateOnly fechaIni, DateOnly fechaFin)
     {
-        // La llave COMPLETA en el WHERE identifica UNA fila. 'AND fecha_fin
-        // IS NULL' es la defensa del motor: aunque el servicio ya revisó que
-        // siguiera abierta, una petición simultánea no puede cerrarla dos veces.
+        // Cerrar = sp_eliminar_vinculacion_asistente: pone 'fecha_fin' solo
+        // si la fila seguía abierta ('AND fecha_fin IS NULL' dentro del
+        // procedimiento: una petición simultánea no puede cerrarla dos veces).
         const string sql = @"
-            UPDATE catedras.vinculacion_asistente
-               SET fecha_fin = @fechaFin
-             WHERE fk_asistente = @fkAsistente
-               AND fk_tipo_vinculacion = @fkTipoVinculacion
-               AND fecha_ini = @fechaIni
-               AND fecha_fin IS NULL;";
+            CALL catedras.sp_eliminar_vinculacion_asistente(
+                @fkAsistente, @fkTipoVinculacion,
+                CAST(@fechaIni AS date), CAST(@fechaFin AS date), NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, new { fkAsistente, fkTipoVinculacion, fechaIni, fechaFin });
+        string? json = await conexion.QuerySingleAsync<string?>(
+            sql, new { fkAsistente, fkTipoVinculacion, fechaIni, fechaFin });
+
+        // {"eliminado": true|false} -> 1 | 0 (0 = no existe o ya estaba cerrada).
+        using var documento = JsonDocument.Parse(json!);
+        bool cerrada = documento.RootElement.GetProperty("eliminado").GetBoolean();
+        return cerrada ? 1 : 0;
     }
 }

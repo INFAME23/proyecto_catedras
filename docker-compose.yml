@@ -98,6 +98,20 @@ services:
       - ./db/postgres/migraciones/021_sp_tipo_evento.sql:/docker-entrypoint-initdb.d/z021_sp_tipo_evento.sql:ro
       - ./db/postgres/migraciones/022_sp_tipo_pregunta.sql:/docker-entrypoint-initdb.d/z022_sp_tipo_pregunta.sql:ro
       - ./db/postgres/migraciones/023_sp_tipo_vinculacion.sql:/docker-entrypoint-initdb.d/z023_sp_tipo_vinculacion.sql:ro
+      # Retrofit criterio 3 · Fase 4 (Isaac): las 7 tablas de la v3 + la v7
+      # (LoteMigracion, DetalleMigracion). Una migración por tabla.
+      # Renumeradas al fusionar ramas: eran 006-014 y chocaban con el lote
+      # de arriba, ahora son 024-032 ('z024_'..'z032_', después de 'z023_').
+      # 'z031_' necesita a sp_generar_lote_migracion, que ya trae el script.
+      - ./db/postgres/migraciones/024_sp_asistente.sql:/docker-entrypoint-initdb.d/z024_sp_asistente.sql:ro
+      - ./db/postgres/migraciones/025_sp_documento_asistente.sql:/docker-entrypoint-initdb.d/z025_sp_documento_asistente.sql:ro
+      - ./db/postgres/migraciones/026_sp_vinculacion_asistente.sql:/docker-entrypoint-initdb.d/z026_sp_vinculacion_asistente.sql:ro
+      - ./db/postgres/migraciones/027_sp_programa_asistente.sql:/docker-entrypoint-initdb.d/z027_sp_programa_asistente.sql:ro
+      - ./db/postgres/migraciones/028_sp_consentimiento_datos.sql:/docker-entrypoint-initdb.d/z028_sp_consentimiento_datos.sql:ro
+      - ./db/postgres/migraciones/029_sp_lote_carga_asistente.sql:/docker-entrypoint-initdb.d/z029_sp_lote_carga_asistente.sql:ro
+      - ./db/postgres/migraciones/030_sp_novedad_carga.sql:/docker-entrypoint-initdb.d/z030_sp_novedad_carga.sql:ro
+      - ./db/postgres/migraciones/031_sp_lote_migracion.sql:/docker-entrypoint-initdb.d/z031_sp_lote_migracion.sql:ro
+      - ./db/postgres/migraciones/032_sp_detalle_migracion.sql:/docker-entrypoint-initdb.d/z032_sp_detalle_migracion.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.

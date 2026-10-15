@@ -73,9 +73,11 @@ function Verificar {
 function Titulo([string]$t) { Write-Host "`n== $t ==" -ForegroundColor Cyan }
 
 # --------------------------------------------------------------------------
-Titulo "0. La API responde y es la v5"
+Titulo "0. La API responde y es la v5 o posterior"
 $raiz = Llamar GET "/"
-Verificar "GET / responde 200 con version v5" ($raiz.Codigo -eq 200 -and $raiz.Json.version -eq "v5") $raiz
+# Retrofit fase 4: la API ya dice "v6"; exigir "v5" exacto hacia fallar esta
+# regresion por algo que no es un error. Se acepta v5 o cualquier version posterior.
+Verificar "GET / responde 200 con version v5 o posterior ($($raiz.Json.version))" ($raiz.Codigo -eq 200 -and $raiz.Json.version -match '^v([5-9]|[1-9][0-9])$') $raiz
 
 # --------------------------------------------------------------------------
 Titulo "1. Login: clave correcta (200), incorrecta (401), usuario inexistente (401)"
@@ -242,11 +244,17 @@ $put = Llamar PUT "/api/RegistroAsistencia/$($man.Json.id_registro)" @{ origen =
 Verificar "PUT /api/RegistroAsistencia/{id} no existe (404 o 405, RF157)" ($put.Codigo -eq 404 -or $put.Codigo -eq 405) $put
 
 # --------------------------------------------------------------------------
-Titulo "8. RESTRICT hacia asistente (criterio 7) y revocar un enlace"
+Titulo "8. Asistente con registros: borrado LOGICO (retrofit fase 4) y revocar un enlace"
+# ANTES del retrofit: DELETE fisico -> RESTRICT de registro_asistencia -> 500.
+# AHORA (regla 3 del retrofit: la tabla tiene 'activo'): sp_eliminar_asistente
+# hace activo=false. Ya no hay nada que RESTRICT pueda bloquear, y los
+# registros de asistencia quedan intactos.
 $del = Llamar DELETE "/api/Asistente/1"
-Verificar "DELETE /api/Asistente/1 (tiene registro_asistencia) -> 500" ($del.Codigo -eq 500) $del
+Verificar "DELETE /api/Asistente/1 (tiene registro_asistencia) -> 200, borrado logico" ($del.Codigo -eq 200) $del
 $sigue = Llamar GET "/api/Asistente/1"
-Verificar "...y el asistente 1 sigue existiendo" ($sigue.Codigo -eq 200) $sigue
+Verificar "...y el asistente 1 sigue existiendo, con activo=false" ($sigue.Codigo -eq 200 -and $sigue.Json.activo -eq $false) $sigue
+$regs = Llamar GET "/api/RegistroAsistencia?fkAsistente=1"
+Verificar "...y sus registros de asistencia siguen ahi" ($regs.Codigo -eq 200 -and $regs.Json.total -ge 1) $regs
 
 $enlC = Llamar POST "/api/EnlaceRegistro" @{ fk_sesion = $idSesion; minutos_antes = 15; minutos_despues = 15 }
 $idC = $enlC.Json.id_enlace

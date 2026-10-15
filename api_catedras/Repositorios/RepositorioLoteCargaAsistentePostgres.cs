@@ -1,11 +1,19 @@
 // ==========================================================================
-//  Repositorios/RepositorioLoteCargaAsistentePostgres.cs  ·  Cátedras · v3
+//  Repositorios/RepositorioLoteCargaAsistentePostgres.cs  ·  Cátedras · v3 + RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioLoteCargaAsistente para PostgreSQL con Dapper.
+//  IRepositorioLoteCargaAsistente para PostgreSQL. Todo pasa por
+//  procedimientos almacenados:
+//     ObtenerTodosAsync -> sp_listar_lote_carga_asistente     (029)
+//     ObtenerPorIdAsync -> sp_consultar_lote_carga_asistente  (029)
+//     CrearAsync (abrir)-> sp_crear_lote_carga_asistente      (029, NUEVO)
+//     CerrarAsync       -> sp_guardar_lote_carga              (003, SIN CAMBIOS)
+//  El CIERRE ya era un procedimiento desde la v3 (maestro-detalle:
+//  contadores + novedades, ADR D15) y no se toca. Lo que pasó a
+//  procedimiento en el retrofit es el ABRIR, que antes era un INSERT suelto.
 //
-//  El CIERRE es el segundo maestro-detalle de la v3 (Guía IA, Regla 1):
-//  un 'CALL' a 'sp_guardar_lote_carga' que actualiza los contadores del
-//  lote e inserta sus novedades en la misma transacción (ADR D15).
+//  sp_actualizar_ y sp_eliminar_lote_carga_asistente existen en la BD pero
+//  este contrato no los usa: RF117, el lote es la bitácora de una ejecución
+//  ya ocurrida (sin PUT/PATCH/DELETE).
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -15,7 +23,7 @@ using Dapper;
 using Npgsql;
 using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.lote_carga_asistente' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.lote_carga_asistente' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioLoteCargaAsistentePostgres : IRepositorioLoteCargaAsistente
 {
     private readonly string _cadenaConexion;
@@ -27,47 +35,44 @@ public class RepositorioLoteCargaAsistentePostgres : IRepositorioLoteCargaAsiste
 
     public async Task<List<LoteCargaAsistente>> ObtenerTodosAsync(int limite)
     {
-        // Del más reciente al más antiguo: lo útil es ver la última carga.
-        const string sql = @"
-            SELECT id_lote_carga, nombre_archivo, cargado_en, fk_usuario,
-                   filas_leidas, filas_aceptadas, filas_rechazadas, observaciones
-            FROM catedras.lote_carga_asistente
-            ORDER BY id_lote_carga DESC
-            LIMIT @limite;";
+        // Del más reciente al más antiguo (lo ordena el procedimiento).
+        const string sql = "CALL catedras.sp_listar_lote_carga_asistente(@limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<LoteCargaAsistente>(sql, new { limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { limite });
+
+        // 'cerrado' NO viene en el JSON (no es columna): LoteCargaAsistente
+        // lo recalcula solo a partir de los contadores, como antes.
+        return JsonSerializer.Deserialize<List<LoteCargaAsistente>>(json!) ?? [];
     }
 
     public async Task<LoteCargaAsistente?> ObtenerPorIdAsync(long idLoteCarga)
     {
-        const string sql = @"
-            SELECT id_lote_carga, nombre_archivo, cargado_en, fk_usuario,
-                   filas_leidas, filas_aceptadas, filas_rechazadas, observaciones
-            FROM catedras.lote_carga_asistente
-            WHERE id_lote_carga = @idLoteCarga;";
+        const string sql = "CALL catedras.sp_consultar_lote_carga_asistente(@idLoteCarga, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<LoteCargaAsistente>(sql, new { idLoteCarga });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idLoteCarga });
+
+        return json is null ? null : JsonSerializer.Deserialize<LoteCargaAsistente>(json);
     }
 
     public async Task<(long IdLoteCarga, DateTime CargadoEn)> CrearAsync(LoteCargaAsistente lote)
     {
         // Los 3 contadores NO se mandan: nacen en 0 (DEFAULT de la columna).
         // 'fk_usuario' viaja null en v3 (salvedad de la FK circular, mapa §3).
-        const string sql = @"
-            INSERT INTO catedras.lote_carga_asistente (nombre_archivo, fk_usuario)
-            VALUES (@NombreArchivo, @FkUsuario)
-            RETURNING id_lote_carga, cargado_en;";
+        const string sql = "CALL catedras.sp_crear_lote_carga_asistente(@NombreArchivo, @FkUsuario, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleAsync<(long, DateTime)>(sql, lote);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { lote.NombreArchivo, lote.FkUsuario });
+
+        var guardado = JsonSerializer.Deserialize<LoteCargaAsistente>(json!)!;
+        return (guardado.IdLoteCarga, guardado.CargadoEn);
     }
 
     public async Task CerrarAsync(LoteCargaAsistente lote, IReadOnlyList<NovedadCarga> novedades)
     {
-        // UN 'CALL': contadores (maestro) + novedades (detalle), todo o nada.
+        // SIN CAMBIOS en el retrofit. UN 'CALL': contadores (maestro) +
+        // novedades (detalle), todo o nada.
         const string sql = @"
             CALL catedras.sp_guardar_lote_carga(
                 @IdLoteCarga, @FilasLeidas, @FilasAceptadas, @FilasRechazadas,

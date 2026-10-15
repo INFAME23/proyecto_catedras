@@ -1,13 +1,21 @@
 // ==========================================================================
-//  Repositorios/RepositorioProgramaAsistentePostgres.cs  ·  Cátedras · v3
+//  Repositorios/RepositorioProgramaAsistentePostgres.cs  ·  Cátedras · v3 + RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioProgramaAsistente para PostgreSQL con Dapper. La llave
-//  primaria son 3 columnas (asistente, programa, periodo): el UPDATE del
-//  cambio de estado las usa todas en el WHERE.
+//  IRepositorioProgramaAsistente para PostgreSQL, vía los procedimientos de
+//  '027_sp_programa_asistente.sql'.
 //
-//  'fk_periodo' es CHAR(6) en la BD: PostgreSQL rellena con espacios a la
-//  derecha si el valor es más corto. Los periodos tienen siempre 6
-//  caracteres ('2026-1'), y la petición lo exige, así que no hay relleno.
+//  Tabla de LLAVE COMPUESTA (ADR D16): el contrato sigue con 3 operaciones.
+//     ObtenerTodosAsync  -> sp_listar_programa_asistente
+//     CrearAsync         -> sp_crear_programa_asistente
+//     CambiarEstadoAsync -> sp_consultar_ + sp_actualizar_programa_asistente
+//  'estado' es la única columna que no es llave: "cambiar estado" ES el
+//  reemplazo completo, así que va por sp_actualizar_ con el mismo molde
+//  de RepositorioSedePostgres.ActualizarAsync (consultar, mezclar, llamar).
+//  sp_eliminar_programa_asistente (retiro lógico: estado = RETIRADO) existe
+//  en la BD pero este contrato no lo usa: no hay EliminarAsync.
+//
+//  'fk_periodo' es CHAR(6) en la BD; 'text -> character' es un cast
+//  implícito, así que el string viaja sin CAST.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -15,8 +23,9 @@ namespace ApiCatedras.Repositorios;
 using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
+using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.programa_asistente' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.programa_asistente' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioProgramaAsistentePostgres : IRepositorioProgramaAsistente
 {
     private readonly string _cadenaConexion;
@@ -28,40 +37,56 @@ public class RepositorioProgramaAsistentePostgres : IRepositorioProgramaAsistent
 
     public async Task<List<ProgramaAsistente>> ObtenerTodosAsync(long? fkAsistente, int limite)
     {
-        const string sql = @"
-            SELECT fk_asistente, fk_programa, fk_periodo, estado
-            FROM catedras.programa_asistente
-            WHERE @fkAsistente::bigint IS NULL OR fk_asistente = @fkAsistente
-            ORDER BY fk_asistente, fk_periodo DESC, fk_programa
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_programa_asistente(@fkAsistente, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<ProgramaAsistente>(sql, new { fkAsistente, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkAsistente, limite });
+
+        return JsonSerializer.Deserialize<List<ProgramaAsistente>>(json!) ?? [];
     }
 
     public async Task CrearAsync(ProgramaAsistente programa)
     {
+        // Llave repetida (RF111) o FK inexistente -> NpgsqlException (500).
         const string sql = @"
-            INSERT INTO catedras.programa_asistente (fk_asistente, fk_programa, fk_periodo, estado)
-            VALUES (@FkAsistente, @FkPrograma, @FkPeriodo, @Estado);";
+            CALL catedras.sp_crear_programa_asistente(
+                @FkAsistente, @FkPrograma, @FkPeriodo, @Estado, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        await conexion.ExecuteAsync(sql, programa);
+        await conexion.ExecuteAsync(sql, new
+        {
+            programa.FkAsistente,
+            programa.FkPrograma,
+            programa.FkPeriodo,
+            programa.Estado,
+        });
     }
 
     public async Task<int> CambiarEstadoAsync(long fkAsistente, string fkPrograma, string fkPeriodo, string estado)
     {
-        // La llave COMPLETA en el WHERE identifica UNA fila. Un estado fuera
-        // de la lista lo rechazaría el CHECK de la BD (la petición ya lo filtra).
-        const string sql = @"
-            UPDATE catedras.programa_asistente
-               SET estado = @estado
-             WHERE fk_asistente = @fkAsistente
-               AND fk_programa = @fkPrograma
-               AND fk_periodo = @fkPeriodo;";
-
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, new { fkAsistente, fkPrograma, fkPeriodo, estado });
+
+        // 1) Fila actual por su llave completa.
+        const string sqlConsultar = @"
+            CALL catedras.sp_consultar_programa_asistente(
+                @fkAsistente, @fkPrograma, @fkPeriodo, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(
+            sqlConsultar, new { fkAsistente, fkPrograma, fkPeriodo });
+
+        if (actualJson is null)
+            return 0;
+
+        // 2) Mezclar: la única columna que no es llave es 'estado', y llega
+        //    siempre (la petición la exige). La mezcla queda trivial, pero
+        //    se mantiene el mismo paso del molde para que, si la tabla gana
+        //    columnas, el lugar donde completarlas ya exista.
+        // 3) Conjunto completo al procedimiento.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_programa_asistente(
+                @fkAsistente, @fkPrograma, @fkPeriodo, @estado, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(
+            sqlActualizar, new { fkAsistente, fkPrograma, fkPeriodo, estado });
+
+        return resultadoJson is null ? 0 : 1;
     }
 }

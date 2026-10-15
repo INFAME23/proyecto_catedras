@@ -1,10 +1,20 @@
 // ==========================================================================
-//  Repositorios/RepositorioDocumentoAsistentePostgres.cs  ·  Cátedras · v3
+//  Repositorios/RepositorioDocumentoAsistentePostgres.cs  ·  Cátedras · v3 + RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioDocumentoAsistente para PostgreSQL con Dapper. CRUD
-//  estándar. Las dos reglas fuertes de la tabla —un solo documento vigente
-//  por persona (ux_documento_vigente) y número único por tipo
-//  (uq_documento_numero)— las aplica el motor; aquí no se simulan (D9).
+//  IRepositorioDocumentoAsistente para PostgreSQL. Los 5 verbos pasan por
+//  los procedimientos de '025_sp_documento_asistente.sql' (molde de
+//  RepositorioSedePostgres). Las dos reglas fuertes de la tabla —un solo
+//  documento vigente por persona (ux_documento_vigente) y número único por
+//  tipo (uq_documento_numero)— las sigue aplicando el motor (D9).
+//
+//  Diferencias con 'sede':
+//   · La lista acepta el filtro opcional por asistente.
+//   · El id lo genera la BD: 'sp_crear_' devuelve la fila completa y de
+//     ella se toman 'id_documento' y 'registrado_en' (mismo contrato de la
+//     v3: CrearAsync devuelve esa tupla).
+//   · Eliminar es DELETE FÍSICO (la tabla no tiene 'activo').
+//  IRepositorioDocumentoAsistente, el servicio, el controlador y las
+//  Peticiones NO cambiaron.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -12,16 +22,12 @@ namespace ApiCatedras.Repositorios;
 using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
+using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.documento_asistente' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.documento_asistente' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioDocumentoAsistentePostgres : IRepositorioDocumentoAsistente
 {
     private readonly string _cadenaConexion;
-
-    // [ACID · C] Lista blanca del UPDATE. 'fk_asistente' no se cambia (un
-    // documento no cambia de dueño); 'id_documento' y 'registrado_en' tampoco.
-    private static readonly HashSet<string> ColumnasActualizables =
-        new() { "fk_tipo_documento", "numero", "vigente" };
 
     public RepositorioDocumentoAsistentePostgres(string cadenaConexion)
     {
@@ -30,78 +36,86 @@ public class RepositorioDocumentoAsistentePostgres : IRepositorioDocumentoAsiste
 
     public async Task<List<DocumentoAsistente>> ObtenerTodosAsync(long? fkAsistente, int limite)
     {
-        // '@fkAsistente::bigint IS NULL OR ...': sin filtro -> todas las filas.
-        const string sql = @"
-            SELECT id_documento, fk_asistente, fk_tipo_documento, numero, vigente, registrado_en
-            FROM catedras.documento_asistente
-            WHERE @fkAsistente::bigint IS NULL OR fk_asistente = @fkAsistente
-            ORDER BY id_documento
-            LIMIT @limite;";
+        // 'fkAsistente' null -> el procedimiento no filtra.
+        const string sql = "CALL catedras.sp_listar_documento_asistente(@fkAsistente, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<DocumentoAsistente>(sql, new { fkAsistente, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkAsistente, limite });
+
+        return JsonSerializer.Deserialize<List<DocumentoAsistente>>(json!) ?? [];
     }
 
     public async Task<DocumentoAsistente?> ObtenerPorIdAsync(long idDocumento)
     {
-        const string sql = @"
-            SELECT id_documento, fk_asistente, fk_tipo_documento, numero, vigente, registrado_en
-            FROM catedras.documento_asistente
-            WHERE id_documento = @idDocumento;";
+        const string sql = "CALL catedras.sp_consultar_documento_asistente(@idDocumento, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<DocumentoAsistente>(sql, new { idDocumento });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idDocumento });
+
+        return json is null ? null : JsonSerializer.Deserialize<DocumentoAsistente>(json);
     }
 
     public async Task<(long IdDocumento, DateTime RegistradoEn)> CrearAsync(DocumentoAsistente documento)
     {
-        // 'id_documento' (IDENTITY) y 'registrado_en' (DEFAULT now()) los
-        // genera la BD; RETURNING los devuelve en la misma sentencia.
         const string sql = @"
-            INSERT INTO catedras.documento_asistente (fk_asistente, fk_tipo_documento, numero, vigente)
-            VALUES (@FkAsistente, @FkTipoDocumento, @Numero, @Vigente)
-            RETURNING id_documento, registrado_en;";
+            CALL catedras.sp_crear_documento_asistente(
+                @FkAsistente, @FkTipoDocumento, @Numero, @Vigente, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        // Una fila con dos columnas -> una tupla (long, DateTime), en orden.
-        return await conexion.QuerySingleAsync<(long, DateTime)>(sql, documento);
+        // Segundo vigente o número repetido -> NpgsqlException (500), igual
+        // que antes. Si todo va bien, la fila vuelve tal como quedó.
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new
+        {
+            documento.FkAsistente,
+            documento.FkTipoDocumento,
+            documento.Numero,
+            documento.Vigente,
+        });
+
+        var guardado = JsonSerializer.Deserialize<DocumentoAsistente>(json!)!;
+        return (guardado.IdDocumento, guardado.RegistradoEn);
     }
 
     public async Task<int> ActualizarAsync(long idDocumento, Dictionary<string, object?> datos)
     {
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_clave", idDocumento);
+        await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        foreach (var (columna, valor) in datos)
-        {
-            if (!ColumnasActualizables.Contains(columna))
-                continue;
+        // 1) Fila actual (el procedimiento reemplaza las 3 columnas).
+        const string sqlConsultar = "CALL catedras.sp_consultar_documento_asistente(@idDocumento, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idDocumento });
 
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
-        }
-
-        if (asignaciones.Count == 0)
+        if (actualJson is null)
             return 0;
 
-        var sql =
-            $"UPDATE catedras.documento_asistente SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_documento = @id_clave;";
+        var actual = JsonSerializer.Deserialize<DocumentoAsistente>(actualJson)!;
 
-        await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, parametros);
+        // 2) Mezclar. 'fk_asistente' no está: un documento no cambia de dueño.
+        string fkTipoDocumento = datos.TryGetValue("fk_tipo_documento", out var vTipo) ? (string)vTipo! : actual.FkTipoDocumento;
+        string numero = datos.TryGetValue("numero", out var vNumero) ? (string)vNumero! : actual.Numero;
+        bool vigente = datos.TryGetValue("vigente", out var vVigente) ? (bool)vVigente! : actual.Vigente;
+
+        // 3) Conjunto completo al procedimiento.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_documento_asistente(
+                @idDocumento, @fkTipoDocumento, @numero, @vigente, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(
+            sqlActualizar, new { idDocumento, fkTipoDocumento, numero, vigente });
+
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task<int> EliminarAsync(long idDocumento)
     {
-        // Ninguna tabla referencia a documento_asistente: este DELETE nunca
-        // falla por integridad referencial (RF105).
-        const string sql = "DELETE FROM catedras.documento_asistente WHERE id_documento = @idDocumento;";
+        const string sql = "CALL catedras.sp_eliminar_documento_asistente(@idDocumento, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, new { idDocumento });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idDocumento });
+
+        // {"eliminado": true|false}. FÍSICO: ninguna tabla referencia a
+        // documento_asistente, así que ninguna FK lo bloquea (RF105).
+        using var documento = JsonDocument.Parse(json!);
+        bool eliminado = documento.RootElement.GetProperty("eliminado").GetBoolean();
+        return eliminado ? 1 : 0;
     }
 }

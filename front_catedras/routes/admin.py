@@ -1404,11 +1404,13 @@ def asistentes_editar(id_asistente):
 def asistentes_eliminar(id_asistente):
     try:
         eliminar('Asistente', id_asistente)
-        flash(f"Asistente {id_asistente} eliminado (y sus documentos, vinculaciones, "
-              f"programas y consentimientos, por ON DELETE CASCADE).", 'exito')
+        # Retrofit criterio 3 (Fase 4): el borrado es LÓGICO (activo = false).
+        # Ya no hay CASCADE de sus detalles ni 500 por RESTRICT: el asistente
+        # queda inactivo, con toda su historia, y sale de la lista.
+        flash(f"Asistente {id_asistente} desactivado (borrado lógico: sus documentos, "
+              f"vinculaciones, programas, consentimientos y registros se conservan).", 'exito')
     except ErrorApi as ex:
-        # Lo normal con los asistentes sembrados: 500 porque tiene registros
-        # de asistencia o usuario (FK RESTRICT). No se borró nada.
+        # 404 si no existe o ya estaba inactivo.
         _avisar(ex)
         return redirect(url_for('admin.asistentes_detalle', id_asistente=id_asistente))
     return redirect(url_for('admin.asistentes_listar'))
