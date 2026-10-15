@@ -1,9 +1,14 @@
 // ==========================================================================
-//  Repositorios/RepositorioTipoPreguntaPostgres.cs  ·  Proyecto Cátedras
+//  Repositorios/RepositorioTipoPreguntaPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  Implementación de IRepositorioTipoPregunta para PostgreSQL con Dapper.
-//  SQL a mano, SIEMPRE parametrizado; una conexión por operación. Mismo
-//  patrón que RepositorioSedePostgres.
+//  Los 5 verbos pasan por los procedimientos de
+//  'db/postgres/migraciones/013_sp_tipo_pregunta.sql', con el MISMO molde
+//  de RepositorioSedePostgres.cs: esta clase solo arma el 'CALL', manda
+//  los parámetros y convierte el JSON que devuelve el procedimiento.
+//
+//  'tipo_pregunta' NO tiene 'activo' -> el eliminar es un DELETE físico.
+//  'IRepositorioTipoPregunta', 'ServicioTipoPregunta',
+//  'TipoPreguntaController' y las 'Peticiones/' NO cambiaron (SOLID · D).
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -11,14 +16,12 @@ namespace ApiCatedras.Repositorios;
 using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
+using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.tipo_pregunta' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.tipo_pregunta' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioTipoPreguntaPostgres : IRepositorioTipoPregunta
 {
     private readonly string _cadenaConexion;
-
-    private static readonly HashSet<string> ColumnasActualizables =
-        new() { "nombre", "guarda_numero", "guarda_texto", "guarda_opcion" };
 
     public RepositorioTipoPreguntaPostgres(string cadenaConexion)
     {
@@ -27,72 +30,77 @@ public class RepositorioTipoPreguntaPostgres : IRepositorioTipoPregunta
 
     public async Task<List<TipoPregunta>> ObtenerTodosAsync(int limite)
     {
-        const string sql = @"
-            SELECT id_tipo_pregunta, nombre, guarda_numero, guarda_texto, guarda_opcion
-            FROM catedras.tipo_pregunta
-            ORDER BY id_tipo_pregunta
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_tipo_pregunta(@limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<TipoPregunta>(sql, new { limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { limite });
+
+        // Siempre un arreglo ('[]' si no hay filas): json_agg + COALESCE.
+        return JsonSerializer.Deserialize<List<TipoPregunta>>(json!) ?? [];
     }
 
     public async Task<TipoPregunta?> ObtenerPorIdAsync(string idTipoPregunta)
     {
-        const string sql = @"
-            SELECT id_tipo_pregunta, nombre, guarda_numero, guarda_texto, guarda_opcion
-            FROM catedras.tipo_pregunta
-            WHERE id_tipo_pregunta = @idTipoPregunta;";
+        const string sql = "CALL catedras.sp_consultar_tipo_pregunta(@idTipoPregunta, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<TipoPregunta>(sql, new { idTipoPregunta });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idTipoPregunta });
+
+        // NULL = no existe -> mismo contrato que QuerySingleOrDefaultAsync.
+        return json is null ? null : JsonSerializer.Deserialize<TipoPregunta>(json);
     }
 
     public async Task CrearAsync(TipoPregunta tipoPregunta)
     {
         const string sql = @"
-            INSERT INTO catedras.tipo_pregunta
-                (id_tipo_pregunta, nombre, guarda_numero, guarda_texto, guarda_opcion)
-            VALUES (@IdTipoPregunta, @Nombre, @GuardaNumero, @GuardaTexto, @GuardaOpcion);";
+            CALL catedras.sp_crear_tipo_pregunta(
+                @IdTipoPregunta, @Nombre, @GuardaNumero, @GuardaTexto, @GuardaOpcion, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+
+        // Clave repetida o chk_tipo_pregunta_destino -> NpgsqlException, igual que antes.
         await conexion.ExecuteAsync(sql, tipoPregunta);
     }
 
     public async Task<int> ActualizarAsync(string idTipoPregunta, Dictionary<string, object?> datos)
     {
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_clave", idTipoPregunta);
-
-        foreach (var (columna, valor) in datos)
-        {
-            if (!ColumnasActualizables.Contains(columna))
-                continue;
-
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
-        }
-
-        if (asignaciones.Count == 0)
-            return 0;
-
-        var sql =
-            $"UPDATE catedras.tipo_pregunta SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_tipo_pregunta = @id_clave;";
-
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, parametros);
+
+        // 1) Traer la fila actual (el procedimiento reemplaza TODAS las columnas).
+        const string sqlConsultar = "CALL catedras.sp_consultar_tipo_pregunta(@idTipoPregunta, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idTipoPregunta });
+
+        if (actualJson is null)
+            return 0;   // no existe -> ni se intenta el UPDATE
+
+        var actual = JsonSerializer.Deserialize<TipoPregunta>(actualJson)!;
+
+        // 2) Mezclar: lo que llegó PISA el valor actual; lo demás se queda.
+        string nombre = datos.TryGetValue("nombre", out var vNombre) ? (string)vNombre! : actual.Nombre;
+        bool guardaNumero = datos.TryGetValue("guarda_numero", out var vNumero) ? (bool)vNumero! : actual.GuardaNumero;
+        bool guardaTexto = datos.TryGetValue("guarda_texto", out var vTexto) ? (bool)vTexto! : actual.GuardaTexto;
+        bool guardaOpcion = datos.TryGetValue("guarda_opcion", out var vOpcion) ? (bool)vOpcion! : actual.GuardaOpcion;
+
+        // 3) Llamar al procedimiento con el conjunto COMPLETO.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_tipo_pregunta(
+                @idTipoPregunta, @nombre, @guardaNumero, @guardaTexto, @guardaOpcion, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(
+            sqlActualizar, new { idTipoPregunta, nombre, guardaNumero, guardaTexto, guardaOpcion });
+
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task<int> EliminarAsync(string idTipoPregunta)
     {
-        const string sql = "DELETE FROM catedras.tipo_pregunta WHERE id_tipo_pregunta = @idTipoPregunta;";
+        const string sql = "CALL catedras.sp_eliminar_tipo_pregunta(@idTipoPregunta, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        // Si el tipo de pregunta tiene preguntas asociadas, fk_pregunta_tipo
-        // (ON DELETE RESTRICT) hace que PostgreSQL lance NpgsqlException.
-        return await conexion.ExecuteAsync(sql, new { idTipoPregunta });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idTipoPregunta });
+
+        // {"eliminado": true|false}. Sin 'activo': DELETE físico.
+        using var documento = JsonDocument.Parse(json!);
+        bool eliminado = documento.RootElement.GetProperty("eliminado").GetBoolean();
+        return eliminado ? 1 : 0;
     }
 }

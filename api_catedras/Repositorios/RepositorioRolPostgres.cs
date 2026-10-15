@@ -1,9 +1,14 @@
 // ==========================================================================
-//  Repositorios/RepositorioRolPostgres.cs  ·  Proyecto Cátedras
+//  Repositorios/RepositorioRolPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  Implementación de IRepositorioRol para PostgreSQL con Dapper. SQL a
-//  mano, SIEMPRE parametrizado; una conexión por operación. Mismo patrón
-//  que RepositorioSedePostgres.
+//  Los 5 verbos pasan por los procedimientos de
+//  'db/postgres/migraciones/010_sp_rol.sql', con el MISMO molde de
+//  RepositorioSedePostgres.cs: esta clase solo arma el 'CALL', manda los
+//  parámetros y convierte el JSON que devuelve el procedimiento.
+//
+//  'rol' NO tiene 'activo' -> el eliminar es un DELETE físico.
+//  'IRepositorioRol', 'ServicioRol', 'RolController' y las 'Peticiones/'
+//  NO cambiaron (SOLID · D).
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -11,14 +16,12 @@ namespace ApiCatedras.Repositorios;
 using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
+using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.rol' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.rol' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioRolPostgres : IRepositorioRol
 {
     private readonly string _cadenaConexion;
-
-    private static readonly HashSet<string> ColumnasActualizables =
-        new() { "nombre", "descripcion" };
 
     public RepositorioRolPostgres(string cadenaConexion)
     {
@@ -27,71 +30,75 @@ public class RepositorioRolPostgres : IRepositorioRol
 
     public async Task<List<Rol>> ObtenerTodosAsync(int limite)
     {
-        const string sql = @"
-            SELECT id_rol, nombre, descripcion
-            FROM catedras.rol
-            ORDER BY id_rol
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_rol(@limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<Rol>(sql, new { limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { limite });
+
+        // Siempre un arreglo ('[]' si no hay filas): json_agg + COALESCE.
+        return JsonSerializer.Deserialize<List<Rol>>(json!) ?? [];
     }
 
     public async Task<Rol?> ObtenerPorIdAsync(string idRol)
     {
-        const string sql = @"
-            SELECT id_rol, nombre, descripcion
-            FROM catedras.rol
-            WHERE id_rol = @idRol;";
+        const string sql = "CALL catedras.sp_consultar_rol(@idRol, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<Rol>(sql, new { idRol });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idRol });
+
+        // NULL = no existe -> mismo contrato que QuerySingleOrDefaultAsync.
+        return json is null ? null : JsonSerializer.Deserialize<Rol>(json);
     }
 
     public async Task CrearAsync(Rol rol)
     {
         const string sql = @"
-            INSERT INTO catedras.rol (id_rol, nombre, descripcion)
-            VALUES (@IdRol, @Nombre, @Descripcion);";
+            CALL catedras.sp_crear_rol(
+                @IdRol, @Nombre, @Descripcion, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+
+        // Clave repetida -> NpgsqlException, igual que antes.
         await conexion.ExecuteAsync(sql, rol);
     }
 
     public async Task<int> ActualizarAsync(string idRol, Dictionary<string, object?> datos)
     {
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_clave", idRol);
-
-        foreach (var (columna, valor) in datos)
-        {
-            if (!ColumnasActualizables.Contains(columna))
-                continue;
-
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
-        }
-
-        if (asignaciones.Count == 0)
-            return 0;
-
-        var sql =
-            $"UPDATE catedras.rol SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_rol = @id_clave;";
-
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, parametros);
+
+        // 1) Traer la fila actual (el procedimiento reemplaza TODAS las columnas).
+        const string sqlConsultar = "CALL catedras.sp_consultar_rol(@idRol, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idRol });
+
+        if (actualJson is null)
+            return 0;   // no existe -> ni se intenta el UPDATE
+
+        var actual = JsonSerializer.Deserialize<Rol>(actualJson)!;
+
+        // 2) Mezclar: lo que llegó PISA el valor actual; lo demás se queda.
+        string nombre = datos.TryGetValue("nombre", out var vNombre) ? (string)vNombre! : actual.Nombre;
+        string? descripcion = datos.TryGetValue("descripcion", out var vDescripcion) ? (string?)vDescripcion : actual.Descripcion;
+
+        // 3) Llamar al procedimiento con el conjunto COMPLETO.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_rol(
+                @idRol, @nombre, @descripcion, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(
+            sqlActualizar, new { idRol, nombre, descripcion });
+
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task<int> EliminarAsync(string idRol)
     {
-        const string sql = "DELETE FROM catedras.rol WHERE id_rol = @idRol;";
+        const string sql = "CALL catedras.sp_eliminar_rol(@idRol, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        // Si el rol tiene usuarios asociados, fk_rolusr_rol
-        // (ON DELETE RESTRICT) hace que PostgreSQL lance NpgsqlException.
-        return await conexion.ExecuteAsync(sql, new { idRol });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idRol });
+
+        // {"eliminado": true|false}. Sin 'activo': DELETE físico.
+        using var documento = JsonDocument.Parse(json!);
+        bool eliminado = documento.RootElement.GetProperty("eliminado").GetBoolean();
+        return eliminado ? 1 : 0;
     }
 }
