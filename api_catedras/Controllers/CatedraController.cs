@@ -39,11 +39,11 @@ public class CatedraController : ControllerBase
     //  RF84 · GET /api/Catedra?limite=N   -> 200 { tabla, limite, total, datos } | 204
     // ----------------------------------------------------------------------
     [HttpGet]
-    public async Task<IActionResult> Listar([FromQuery] int? limite)
+    public async Task<IActionResult> Listar([FromQuery] int? limite, [FromQuery] bool incluirInactivos = false)
     {
         try
         {
-            var (datos, total) = await _servicio.ListarAsync(limite);
+            var (datos, total) = await _servicio.ListarAsync(limite, incluirInactivos);
 
             // Sin filas devueltas -> 204 (aquí 'total' es el de la tabla, por
             // eso se mira la lista).

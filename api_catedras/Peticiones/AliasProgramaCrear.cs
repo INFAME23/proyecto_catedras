@@ -1,9 +1,8 @@
 // ==========================================================================
 //  Peticiones/AliasProgramaCrear.cs  ·  Proyecto Cátedras · Versión 2
 // --------------------------------------------------------------------------
-//  Body del POST /api/AliasPrograma. Es la ÚNICA petición de esta entidad:
-//  no existen 'AliasProgramaReemplazo' ni 'AliasProgramaActualizar' porque
-//  la tabla es de solo-anexo (ADR D12). La ausencia ES la especificación.
+//  Body del POST /api/AliasPrograma. (RETROFIT criterio 3: ahora también
+//  existen 'AliasProgramaReemplazo' y 'AliasProgramaActualizar'.)
 //
 //  'id_alias' y 'creado_en' NO están aquí: los pone la BD. Si un cliente
 //  los manda en el JSON, el deserializador los ignora (no hay propiedad

@@ -52,14 +52,25 @@ def panel():
 #  SEDE  (recurso API: "Sede", clave: id_sede)
 # ==========================================================================
 
+def _ver_inactivas():
+    """True si la lista se pidió con '?inactivas=1'.
+
+    RETROFIT criterio 3: los listados de Sede, Facultad, Dependencia, Programa y
+    Cátedra salen de procedimientos que, por defecto, solo devuelven las ACTIVAS.
+    Con esto la API recibe '?incluirInactivos=true' y también trae las inactivas
+    (así se pueden ver y reactivar con Editar). None = no se manda el parámetro.
+    """
+    return 'true' if request.args.get('inactivas') == '1' else None
+
+
 @admin_bp.route('/sedes')
 def sedes_listar():
     try:
-        sedes = listar('Sede')
+        sedes = listar('Sede', incluirInactivos=_ver_inactivas())
     except ErrorApi as ex:
         flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
         sedes = []
-    return render_template('admin/sede_lista.html', sedes=sedes)
+    return render_template('admin/sede_lista.html', sedes=sedes, ver_inactivas=_ver_inactivas() is not None)
 
 
 @admin_bp.route('/sedes/nueva', methods=['GET', 'POST'])
@@ -115,7 +126,7 @@ def sedes_editar(id_sede):
 def sedes_eliminar(id_sede):
     try:
         eliminar('Sede', id_sede)
-        flash(f"Sede '{id_sede}' eliminada.", 'exito')
+        flash(f"Sede '{id_sede}' desactivada (borrado lógico: sigue en la base de datos; la lista con inactivas la muestra y se reactiva con Editar).", 'exito')
     except ErrorApi as ex:
         flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
     return redirect(url_for('admin.sedes_listar'))
@@ -637,11 +648,19 @@ def _texto_o_none(campo):
     return request.form.get(campo, '').strip() or None
 
 
+RECURSOS_CON_ACTIVO = {'Sede', 'Facultad', 'Dependencia', 'ProgramaAcademico', 'Catedra'}
+
+
 def _opciones(recurso):
     """Lista de un recurso para llenar un <select>. Si la API falla, se avisa
     y se devuelve [] (el formulario se muestra igual, sin opciones)."""
+    # Estos 5 recursos solo devuelven las ACTIVAS por defecto (retrofit criterio 3).
+    # Para un <select> se piden todas, como antes: si una fila apunta a un padre /
+    # sede / facultad inactiva y la opción no existe, al guardar el formulario el
+    # valor se perdería (null en el PUT).
+    filtros = {'incluirInactivos': 'true'} if recurso in RECURSOS_CON_ACTIVO else {}
     try:
-        return listar(recurso)
+        return listar(recurso, **filtros)
     except ErrorApi as ex:
         _avisar(ex)
         return []
@@ -829,11 +848,11 @@ def _leer_form_facultad():
 @admin_bp.route('/facultades')
 def facultades_listar():
     try:
-        facultades = listar('Facultad')
+        facultades = listar('Facultad', incluirInactivos=_ver_inactivas())
     except ErrorApi as ex:
         _avisar(ex)
         facultades = []
-    return render_template('admin/facultad_lista.html', facultades=facultades)
+    return render_template('admin/facultad_lista.html', facultades=facultades, ver_inactivas=_ver_inactivas() is not None)
 
 
 @admin_bp.route('/facultades/nueva', methods=['GET', 'POST'])
@@ -886,7 +905,7 @@ def facultades_editar(id_facultad):
 def facultades_eliminar(id_facultad):
     try:
         eliminar('Facultad', id_facultad)
-        flash(f"Facultad '{id_facultad}' eliminada (sus hijas y programas quedan sin facultad).", 'exito')
+        flash(f"Facultad '{id_facultad}' desactivada (borrado lógico: sus hijas y programas siguen enlazados a ella; se reactiva con Editar).", 'exito')
     except ErrorApi as ex:
         _avisar(ex)
     return redirect(url_for('admin.facultades_listar'))
@@ -908,11 +927,11 @@ def _leer_form_dependencia():
 @admin_bp.route('/dependencias')
 def dependencias_listar():
     try:
-        dependencias = listar('Dependencia')
+        dependencias = listar('Dependencia', incluirInactivos=_ver_inactivas())
     except ErrorApi as ex:
         _avisar(ex)
         dependencias = []
-    return render_template('admin/dependencia_lista.html', dependencias=dependencias)
+    return render_template('admin/dependencia_lista.html', dependencias=dependencias, ver_inactivas=_ver_inactivas() is not None)
 
 
 @admin_bp.route('/dependencias/nueva', methods=['GET', 'POST'])
@@ -964,7 +983,7 @@ def dependencias_editar(id_dependencia):
 def dependencias_eliminar(id_dependencia):
     try:
         eliminar('Dependencia', id_dependencia)
-        flash(f"Dependencia '{id_dependencia}' eliminada (sus hijas y cátedras quedan sin dependencia).", 'exito')
+        flash(f"Dependencia '{id_dependencia}' desactivada (borrado lógico: sus hijas y cátedras siguen enlazadas a ella; se reactiva con Editar).", 'exito')
     except ErrorApi as ex:
         _avisar(ex)
     return redirect(url_for('admin.dependencias_listar'))
@@ -994,11 +1013,11 @@ def _render_programa_form(modo, programa, errores):
 @admin_bp.route('/programas')
 def programas_listar():
     try:
-        programas = listar('ProgramaAcademico')
+        programas = listar('ProgramaAcademico', incluirInactivos=_ver_inactivas())
     except ErrorApi as ex:
         _avisar(ex)
         programas = []
-    return render_template('admin/programa_lista.html', programas=programas)
+    return render_template('admin/programa_lista.html', programas=programas, ver_inactivas=_ver_inactivas() is not None)
 
 
 @admin_bp.route('/programas/nuevo', methods=['GET', 'POST'])
@@ -1058,9 +1077,9 @@ def programas_editar(codigo):
 def programas_eliminar(codigo):
     try:
         eliminar('ProgramaAcademico', codigo)
-        flash(f"Programa '{codigo}' eliminado.", 'exito')
+        flash(f"Programa '{codigo}' desactivado (borrado lógico: sus asistentes y alias se conservan; se reactiva con Editar).", 'exito')
     except ErrorApi as ex:
-        # Lo normal: 500 porque tiene asistentes (FK RESTRICT de programa_asistente).
+        # Ya no falla por tener asistentes: el borrado es lógico. Queda para errores de red/API.
         _avisar(ex)
     return redirect(url_for('admin.programas_listar'))
 
@@ -1148,7 +1167,7 @@ def catedras_listar():
         pagina = 1
 
     try:
-        catedras = listar('Catedra', timeout=30)
+        catedras = listar('Catedra', timeout=30, incluirInactivos=_ver_inactivas())
     except ErrorApi as ex:
         _avisar(ex)
         catedras = []
@@ -1163,7 +1182,8 @@ def catedras_listar():
     pagina = min(pagina, total_paginas)
     corte = (pagina - 1) * CATEDRAS_POR_PAGINA
     return render_template('admin/catedra_lista.html', catedras=catedras[corte:corte + CATEDRAS_POR_PAGINA],
-                           q=texto, pagina=pagina, total_paginas=total_paginas, total=total)
+                           q=texto, pagina=pagina, total_paginas=total_paginas, total=total,
+                           ver_inactivas=_ver_inactivas() is not None)
 
 
 @admin_bp.route('/catedras/nueva', methods=['GET', 'POST'])
@@ -1209,7 +1229,7 @@ def catedras_editar(id_catedra):
 def catedras_eliminar(id_catedra):
     try:
         eliminar('Catedra', id_catedra)
-        flash(f"Cátedra {id_catedra} eliminada (y sus sesiones, por ON DELETE CASCADE).", 'exito')
+        flash(f"Cátedra {id_catedra} desactivada (borrado lógico: sus sesiones se conservan; se reactiva con Editar).", 'exito')
     except ErrorApi as ex:
         _avisar(ex)
     return redirect(url_for('admin.catedras_listar'))

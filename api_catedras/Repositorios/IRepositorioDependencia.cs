@@ -16,7 +16,7 @@ using ApiCatedras.Modelos;
 public interface IRepositorioDependencia
 {
     /// <summary>Devuelve las dependencias ordenadas por código, hasta 'limite' filas.</summary>
-    Task<List<Dependencia>> ObtenerTodosAsync(int limite);
+    Task<List<Dependencia>> ObtenerTodosAsync(int limite, bool incluirInactivos = false);
 
     /// <summary>Devuelve la dependencia con ese código, o null si no existe.</summary>
     Task<Dependencia?> ObtenerPorIdAsync(string idDependencia);

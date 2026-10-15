@@ -1,17 +1,11 @@
-# Proyecto Cátedras — Versión 6 (en desarrollo)
+# Proyecto Cátedras — Versión 5
 
 API REST del sistema de **asistencia a cátedras universitarias**, construida
-por **versiones incrementales**. Este repositorio avanza a la **v6: encuestas
-de calidad**, sobre el login y registro de asistencia de la v5, las sesiones
-de la v4, las personas de la v3, la estructura académica de la v2 y la
-arquitectura en capas de la v1.
-
-> **Estado de la v6:** la implementación de backend está presente, pero no
-> debe considerarse cerrada. Según
-> [`ESTADO_V6_Y_CUMPLIMIENTO.md`](docs/spec_kit/Versiones/version6/ESTADO_V6_Y_CUMPLIMIENTO.md),
-> faltan la prueba de capas (fase 50), la verificación con Docker (fase 51),
-> el frontend (fase 52) y el cierre (fase 53). Verifica todo en tu entorno
-> antes de marcar tareas como completadas.
+por **versiones incrementales**. Esta es la **v5**: **usuarios y login**
+(contraseñas con BCrypt, roles con vigencia) y el **registro de asistencia**
+(enlace o QR por sesión, clave de un solo uso y el registro mismo), sobre las
+sesiones de la v4, las personas de la v3, la estructura académica de la v2 y
+la arquitectura en capas de la v1.
 
 ## Qué incluye la v5
 
@@ -165,25 +159,6 @@ powershell -ExecutionPolicy Bypass -File .\api_catedras\pruebas\verificar_v5.ps1
 > Las pruebas del quickstart agregan y modifican datos de ejemplo. Para
 > volver al estado original: `docker compose down -v && docker compose up -d --build`.
 
-## Documentación de la v6
-
-La carpeta `docs/spec_kit/Versiones/version6/` describe la versión de
-**encuestas de calidad**: `Pregunta`, `OpcionPregunta`, `RespuestaEncuesta`
-y `RespuestaItem`. Incluye `2_spec.md` (requisitos), `3_plan.md` (plan
-técnico), `4_research.md` (decisiones), `5_data_model.md` (modelo de datos),
-`6_contracts.md` (contratos), `7_quickstart.md` (smoke test), `8_tasks.md`
-(fases 47–53), `ESTADO_V6_Y_CUMPLIMIENTO.md` (estado y discrepancias
-detectadas) y **`guia_ia_v6.md`** (guía para trabajar fase por fase con una IA).
-
-La v6 agrega la migración
-`db/postgres/migraciones/004_sp_guardar_pregunta.sql`. Si se conserva un
-volumen PostgreSQL anterior, la migración nueva puede necesitar aplicación
-manual; consulta `version6/7_quickstart.md` antes de reiniciar o borrar datos.
-
-**Estado:** en desarrollo; no declarar completada hasta que las fases 50–53
-tengan evidencia verificable y se resuelvan explícitamente las discrepancias
-documentadas contra `VERSION_2.md`.
-
 ## Estructura
 
 ```
@@ -207,12 +182,11 @@ docs/
     version1/  2_spec .. 8_tasks
     version2/  2_spec .. 8_tasks
     version3/  2_spec .. 8_tasks
-    version4/  2_spec .. 8_tasks + guia_ia_v4.md
-    version5/  2_spec .. 8_tasks + guia_ia_v5.md
-    version6/  2_spec .. 8_tasks + guia_ia_v6.md + estado/cumplimiento
+    version4/  2_spec .. 8_tasks + guia_ia_v4.md (guía para construir/verificar la v4 con IA)
+    version5/  2_spec .. 8_tasks + guia_ia_v5.md (guía para construir/verificar la v5 con IA)
 ```
 
-## Documentación de la v5 (versión anterior)
+## Documentación de la v5
 
 En `docs/spec_kit/Versiones/version5/`: `2_spec.md` (qué y criterios de
 aceptación, RF132-RF158), `3_plan.md` (cómo), `4_research.md` (decisiones
