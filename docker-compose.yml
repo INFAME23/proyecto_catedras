@@ -112,6 +112,23 @@ services:
       - ./db/postgres/migraciones/030_sp_novedad_carga.sql:/docker-entrypoint-initdb.d/z030_sp_novedad_carga.sql:ro
       - ./db/postgres/migraciones/031_sp_lote_migracion.sql:/docker-entrypoint-initdb.d/z031_sp_lote_migracion.sql:ro
       - ./db/postgres/migraciones/032_sp_detalle_migracion.sql:/docker-entrypoint-initdb.d/z032_sp_detalle_migracion.sql:ro
+      # Retrofit criterio 3 · lote Fases 5-6 (v5 + v6): los SP de usuario,
+      # rol_por_usuario, enlace_registro, clave_acceso, registro_asistencia,
+      # pregunta, opcion_pregunta, respuesta_encuesta y respuesta_item.
+      # Ver docs/spec_kit/Versiones/AJUSTES_RETROFIT_SP_LOTE_FASE5.md.
+      # Renumeradas al fusionar ramas: eran 006-014 y chocaban con los lotes
+      # de arriba, ahora son 033-041 ('z033_'..'z041_', después de 'z032_').
+      # Son independientes entre sí (CREATE OR REPLACE): el orden solo
+      # importa respecto a 'script_' y a z004 (sp_guardar_pregunta).
+      - ./db/postgres/migraciones/033_sp_usuario.sql:/docker-entrypoint-initdb.d/z033_sp_usuario.sql:ro
+      - ./db/postgres/migraciones/034_sp_rol_por_usuario.sql:/docker-entrypoint-initdb.d/z034_sp_rol_por_usuario.sql:ro
+      - ./db/postgres/migraciones/035_sp_enlace_registro.sql:/docker-entrypoint-initdb.d/z035_sp_enlace_registro.sql:ro
+      - ./db/postgres/migraciones/036_sp_clave_acceso.sql:/docker-entrypoint-initdb.d/z036_sp_clave_acceso.sql:ro
+      - ./db/postgres/migraciones/037_sp_registro_asistencia.sql:/docker-entrypoint-initdb.d/z037_sp_registro_asistencia.sql:ro
+      - ./db/postgres/migraciones/038_sp_pregunta.sql:/docker-entrypoint-initdb.d/z038_sp_pregunta.sql:ro
+      - ./db/postgres/migraciones/039_sp_opcion_pregunta.sql:/docker-entrypoint-initdb.d/z039_sp_opcion_pregunta.sql:ro
+      - ./db/postgres/migraciones/040_sp_respuesta_encuesta.sql:/docker-entrypoint-initdb.d/z040_sp_respuesta_encuesta.sql:ro
+      - ./db/postgres/migraciones/041_sp_respuesta_item.sql:/docker-entrypoint-initdb.d/z041_sp_respuesta_item.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.

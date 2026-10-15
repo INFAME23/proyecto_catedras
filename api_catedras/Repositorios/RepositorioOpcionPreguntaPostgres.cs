@@ -1,10 +1,11 @@
 // ==========================================================================
-//  Repositorios/RepositorioOpcionPreguntaPostgres.cs  ·  Cátedras · v6
+//  Repositorios/RepositorioOpcionPreguntaPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioOpcionPregunta para PostgreSQL con Dapper. CRUD estándar,
-//  sin SP: a diferencia de 'Pregunta', 'OpcionPregunta' no tiene detalle
-//  propio, así que 'CrearAsync' es un INSERT directo con RETURNING (mismo
-//  molde que RepositorioSesionPostgres, v4).
+//  Los 5 verbos pasan por los procedimientos de
+//  'db/postgres/migraciones/039_sp_opcion_pregunta.sql'. Es la tabla del
+//  lote más parecida a 'sede': CRUD estándar, borrado FÍSICO (no tiene
+//  'activo'). Diferencia: 'id_opcion' lo genera la BD, así que CrearAsync
+//  lo lee de la fila que devuelve el procedimiento.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -13,13 +14,10 @@ using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
 
-/// <summary>Acceso a 'catedras.opcion_pregunta' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.opcion_pregunta' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioOpcionPreguntaPostgres : IRepositorioOpcionPregunta
 {
     private readonly string _cadenaConexion;
-
-    private static readonly HashSet<string> ColumnasActualizables =
-        new() { "etiqueta", "valor", "orden" };
 
     public RepositorioOpcionPreguntaPostgres(string cadenaConexion)
     {
@@ -28,77 +26,81 @@ public class RepositorioOpcionPreguntaPostgres : IRepositorioOpcionPregunta
 
     public async Task<List<OpcionPregunta>> ObtenerTodosAsync(long? fkPregunta, int limite)
     {
-        const string sql = @"
-            SELECT id_opcion, fk_pregunta, etiqueta, valor, orden
-            FROM catedras.opcion_pregunta
-            WHERE (@fkPregunta::bigint IS NULL OR fk_pregunta = @fkPregunta)
-            ORDER BY fk_pregunta, orden
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_opcion_pregunta(@fkPregunta::bigint, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<OpcionPregunta>(sql, new { fkPregunta, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkPregunta, limite });
+
+        return LectorJsonSp.Lista<OpcionPregunta>(json);
     }
 
     public async Task<OpcionPregunta?> ObtenerPorIdAsync(long idOpcion)
     {
-        const string sql = @"
-            SELECT id_opcion, fk_pregunta, etiqueta, valor, orden
-            FROM catedras.opcion_pregunta
-            WHERE id_opcion = @idOpcion;";
+        const string sql = "CALL catedras.sp_consultar_opcion_pregunta(@idOpcion, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<OpcionPregunta>(sql, new { idOpcion });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idOpcion });
+
+        return LectorJsonSp.Fila<OpcionPregunta>(json);
     }
 
     public async Task<long> CrearAsync(OpcionPregunta opcion)
     {
-        // 'id_opcion' no se envía: lo pone la BD. '(fk_pregunta, orden)'
-        // duplicado (uq_opcion_orden) o 'fk_pregunta' inexistente -> el
-        // motor rechaza el INSERT -> NpgsqlException (500).
+        // Orden de parámetros del SP: obligatorios primero, 'valor' (con
+        // DEFAULT NULL) al final. '(fk_pregunta, orden)' duplicado o
+        // pregunta inexistente -> NpgsqlException, igual que antes.
         const string sql = @"
-            INSERT INTO catedras.opcion_pregunta (fk_pregunta, etiqueta, valor, orden)
-            VALUES (@FkPregunta, @Etiqueta, @Valor, @Orden)
-            RETURNING id_opcion;";
+            CALL catedras.sp_crear_opcion_pregunta(
+                @FkPregunta, @Etiqueta, @Orden, @Valor, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteScalarAsync<long>(sql, opcion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new
+        {
+            opcion.FkPregunta,
+            opcion.Etiqueta,
+            opcion.Orden,
+            opcion.Valor,
+        });
+
+        return LectorJsonSp.Fila<OpcionPregunta>(json)!.IdOpcion;
     }
 
     public async Task<int> ActualizarAsync(long idOpcion, Dictionary<string, object?> datos)
     {
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_clave", idOpcion);
-
-        foreach (var (columna, valor) in datos)
-        {
-            if (!ColumnasActualizables.Contains(columna))
-                continue;
-
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
-        }
-
-        if (asignaciones.Count == 0)
-            return 0;
-
-        var sql =
-            $"UPDATE catedras.opcion_pregunta SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_opcion = @id_clave;";
-
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, parametros);
+
+        // 1) Traer la fila actual.
+        const string sqlConsultar = "CALL catedras.sp_consultar_opcion_pregunta(@idOpcion, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idOpcion });
+
+        if (actualJson is null)
+            return 0;   // no existe -> ni se intenta el UPDATE
+
+        var actual = LectorJsonSp.Fila<OpcionPregunta>(actualJson)!;
+
+        // 2) Mezclar. 'fk_pregunta' no se cambia (igual que la lista blanca de antes).
+        string etiqueta = datos.TryGetValue("etiqueta", out var vEtiqueta) ? (string)vEtiqueta! : actual.Etiqueta;
+        short? valor = datos.TryGetValue("valor", out var vValor) ? (short?)vValor : actual.Valor;
+        short orden = datos.TryGetValue("orden", out var vOrden) ? (short)vOrden! : actual.Orden;
+
+        // 3) Llamar al procedimiento con el conjunto COMPLETO.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_opcion_pregunta(
+                @idOpcion, @etiqueta, @valor, @orden, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(sqlActualizar,
+            new { idOpcion, etiqueta, valor, orden });
+
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task<int> EliminarAsync(long idOpcion)
     {
-        const string sql = "DELETE FROM catedras.opcion_pregunta WHERE id_opcion = @idOpcion;";
+        const string sql = "CALL catedras.sp_eliminar_opcion_pregunta(@idOpcion, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idOpcion });
 
-        // RESTRICT (respuesta_item.fk_opcion): una opción ya elegida en
-        // alguna respuesta de ejemplo no se puede borrar -> 500.
-        return await conexion.ExecuteAsync(sql, new { idOpcion });
+        // FÍSICO. Opción ya elegida en una respuesta -> RESTRICT -> NpgsqlException.
+        return LectorJsonSp.Bandera(json, "eliminado") ? 1 : 0;
     }
 }

@@ -1,18 +1,15 @@
 // ==========================================================================
-//  Repositorios/RepositorioClaveAccesoPostgres.cs  ·  Cátedras · v5
+//  Repositorios/RepositorioClaveAccesoPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioClaveAcceso para PostgreSQL con Dapper.
+//  Listar y Consultar pasan por los procedimientos de
+//  'db/postgres/migraciones/036_sp_clave_acceso.sql' (molde: sede). El
+//  JSON NO trae 'clave_hash' (RNF12), igual que el SELECT de antes, e
+//  'ip_solicitud' llega ya como texto ("10.0.0.1", host() en el SP).
 //
-//  · LEER: 'ip_solicitud' es inet; Dapper no lo convierte, así que se lee con
-//    host(ip_solicitud) (da "10.0.0.1"; ::text daría "10.0.0.1/32"). El SELECT
-//    NO trae 'clave_hash' (RNF12): la API no tiene por qué cargarlo.
-//  · ESCRIBIR: Dapper tampoco sabe enviar un IPAddress. La IP viaja como texto
-//    y el SQL la convierte con CAST(@ip AS inet) (mismo recurso que
-//    RepositorioConsentimientoDatosPostgres, v3). El servicio ya comprobó que
-//    es una IP válida (400), así que el CAST no debería fallar.
-//  · SOLICITAR y VALIDAR llaman a FUNCIONES (SELECT * FROM fn_..._api), ADR
-//    D24. Si la BD rechaza algo (RAISE EXCEPTION) llega una NpgsqlException y
-//    el controlador responde 500 (ADR D25).
+//  SOLICITAR y VALIDAR NO CAMBIARON: siguen llamando a las funciones de
+//  negocio fn_solicitar_clave_api y fn_validar_clave_api (ADR D24). La IP
+//  viaja como texto y se convierte con CAST(@ip AS inet). Si la BD rechaza
+//  algo (RAISE EXCEPTION) llega una NpgsqlException (ADR D25).
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -21,20 +18,12 @@ using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
 
-/// <summary>Acceso a 'catedras.clave_acceso' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.clave_acceso' en PostgreSQL, vía procedimientos y funciones.</summary>
 public class RepositorioClaveAccesoPostgres : IRepositorioClaveAcceso
 {
     private readonly string _cadenaConexion;
 
-    // Todas las columnas MENOS 'clave_hash'.
-    private const string Columnas = @"
-            id_clave, fk_asistente, fk_enlace, enviado_a, es_correo_institucional,
-            generado_en, expira_en, usado_en, intentos,
-            host(ip_solicitud) AS ip_solicitud";
-
     // Forma de la fila que devuelve fn_solicitar_clave_api (id_clave, clave, enviado_a).
-    // Una clase pequeña y no una tupla: Dapper enlaza por NOMBRE (con
-    // MatchNamesWithUnderscores), sin depender del orden de las columnas.
     private sealed class FilaSolicitud
     {
         public long IdClave { get; set; }
@@ -49,32 +38,28 @@ public class RepositorioClaveAccesoPostgres : IRepositorioClaveAcceso
 
     public async Task<List<ClaveAcceso>> ObtenerTodosAsync(long? fkAsistente, int limite)
     {
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.clave_acceso
-            WHERE @fkAsistente::bigint IS NULL OR fk_asistente = @fkAsistente
-            ORDER BY id_clave
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_clave_acceso(@fkAsistente::bigint, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<ClaveAcceso>(sql, new { fkAsistente, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkAsistente, limite });
+
+        return LectorJsonSp.Lista<ClaveAcceso>(json);
     }
 
     public async Task<ClaveAcceso?> ObtenerPorIdAsync(long idClave)
     {
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.clave_acceso
-            WHERE id_clave = @idClave;";
+        const string sql = "CALL catedras.sp_consultar_clave_acceso(@idClave, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<ClaveAcceso>(sql, new { idClave });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idClave });
+
+        return LectorJsonSp.Fila<ClaveAcceso>(json);
     }
 
     public async Task<(long IdClave, string Clave, string EnviadoA)> SolicitarAsync(
         string identificador, Guid token, string? ip)
     {
+        // SIN CAMBIOS: función de negocio del script provisto.
         const string sql = @"
             SELECT * FROM catedras.fn_solicitar_clave_api(
                 @identificador, @token, CAST(@ip AS inet));";
@@ -87,6 +72,7 @@ public class RepositorioClaveAccesoPostgres : IRepositorioClaveAcceso
 
     public async Task<long> ValidarAsync(long idClave, string clave, string? ip, string? userAgent)
     {
+        // SIN CAMBIOS: función de negocio del script provisto.
         const string sql = @"
             SELECT * FROM catedras.fn_validar_clave_api(
                 @idClave, @clave, CAST(@ip AS inet), @userAgent);";

@@ -1,19 +1,19 @@
 // ==========================================================================
-//  Repositorios/RepositorioEnlaceRegistroPostgres.cs  ·  Cátedras · v5
+//  Repositorios/RepositorioEnlaceRegistroPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioEnlaceRegistro para PostgreSQL con Dapper.
+//  Listar, Consultar y Revocar pasan por los procedimientos de
+//  'db/postgres/migraciones/035_sp_enlace_registro.sql' (molde: sede).
 //
-//  Dos detalles propios de esta tabla:
+//  EMITIR NO CAMBIÓ: sigue llamando a la función de negocio
+//  fn_emitir_enlace_api (ADR D24), que hace CALL a sp_emitir_enlace. Esa
+//  función calcula token, url, canal y ventana, y revoca el enlace vigente
+//  anterior (RN-14). No se reemplaza.
 //
-//  1) 'ventana' es un tstzrange y Dapper no sabe leerlo. El SELECT lo parte
-//     en dos columnas planas: lower(ventana) AS ventana_desde y
-//     upper(ventana) AS ventana_hasta.
+//  REVOCAR antes era un UPDATE suelto aquí; ahora es
+//  'sp_revocar_enlace_registro', con la misma guarda 'revocado_en IS NULL'.
 //
-//  2) EMITIR no es un INSERT: llama a la función fn_emitir_enlace_api (ADR
-//     D24), que internamente hace CALL a sp_emitir_enlace. La función calcula
-//     token, url, canal y ventana, y revoca el enlace vigente anterior
-//     (RN-14). Si la sesión no existe hace RAISE EXCEPTION -> NpgsqlException
-//     -> el controlador responde 500 (ADR D25).
+//  'ventana' (tstzrange) llega ya partida en ventana_desde/ventana_hasta
+//  dentro del JSON del procedimiento.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -22,16 +22,10 @@ using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
 
-/// <summary>Acceso a 'catedras.enlace_registro' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.enlace_registro' en PostgreSQL, vía procedimientos y funciones.</summary>
 public class RepositorioEnlaceRegistroPostgres : IRepositorioEnlaceRegistro
 {
     private readonly string _cadenaConexion;
-
-    // Columnas de lectura, escritas una sola vez. 'ventana' se parte en dos.
-    private const string Columnas = @"
-            id_enlace, fk_sesion, token, url_publica, ruta_imagen_qr, canal,
-            lower(ventana) AS ventana_desde, upper(ventana) AS ventana_hasta,
-            usos_maximos, revocado_en, fk_usuario_crea, creado_en";
 
     public RepositorioEnlaceRegistroPostgres(string cadenaConexion)
     {
@@ -40,31 +34,27 @@ public class RepositorioEnlaceRegistroPostgres : IRepositorioEnlaceRegistro
 
     public async Task<List<EnlaceRegistro>> ObtenerTodosAsync(long? fkSesion, int limite)
     {
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.enlace_registro
-            WHERE @fkSesion::bigint IS NULL OR fk_sesion = @fkSesion
-            ORDER BY id_enlace
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_enlace_registro(@fkSesion::bigint, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<EnlaceRegistro>(sql, new { fkSesion, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkSesion, limite });
+
+        return LectorJsonSp.Lista<EnlaceRegistro>(json);
     }
 
     public async Task<EnlaceRegistro?> ObtenerPorIdAsync(long idEnlace)
     {
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.enlace_registro
-            WHERE id_enlace = @idEnlace;";
+        const string sql = "CALL catedras.sp_consultar_enlace_registro(@idEnlace, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<EnlaceRegistro>(sql, new { idEnlace });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idEnlace });
+
+        return LectorJsonSp.Fila<EnlaceRegistro>(json);
     }
 
     public async Task<long> EmitirAsync(long fkSesion, int? minutosAntes, int? minutosDespues, long? fkUsuario)
     {
+        // SIN CAMBIOS: función de negocio del script provisto (ADR D24).
         // Los parámetros opcionales viajan como NULL y la función aplica sus
         // valores por defecto (tabla 'parametro' o 30 minutos).
         const string sql = @"
@@ -78,16 +68,13 @@ public class RepositorioEnlaceRegistroPostgres : IRepositorioEnlaceRegistro
 
     public async Task<int> RevocarAsync(long idEnlace)
     {
-        // 'AND revocado_en IS NULL': un segundo intento afecta 0 filas y el
-        // servicio lo traduce a 400, en vez de un UPDATE "exitoso" que no
-        // cambió nada.
-        const string sql = @"
-            UPDATE catedras.enlace_registro
-               SET revocado_en = now()
-             WHERE id_enlace = @idEnlace
-               AND revocado_en IS NULL;";
+        const string sql = "CALL catedras.sp_revocar_enlace_registro(@idEnlace, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, new { idEnlace });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idEnlace });
+
+        // NULL = no existe o ya estaba revocado -> "0 filas" (el servicio
+        // responde 400/404 igual que antes).
+        return json is null ? 0 : 1;
     }
 }

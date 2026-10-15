@@ -1,9 +1,15 @@
 // ==========================================================================
-//  Repositorios/RepositorioRespuestaItemPostgres.cs  ·  Cátedras · v6
+//  Repositorios/RepositorioRespuestaItemPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioRespuestaItem para PostgreSQL con Dapper. Solo lectura: no
-//  hay 'CrearAsync' porque la fila nace dentro de 'sp_cerrar_encuesta'
-//  (invocado desde 'fn_responder_encuesta_api'), no desde este repositorio.
+//  Solo lectura (igual que antes): Listar y Consultar pasan por los
+//  procedimientos de 'db/postgres/migraciones/041_sp_respuesta_item.sql'.
+//  Los ítems nacen dentro de sp_responder_encuesta (vía
+//  fn_responder_encuesta_api), no desde este repositorio.
+//
+//  ⚠️ La BD tiene además sp_crear_ / sp_actualizar_ / sp_eliminar_
+//  respuesta_item (criterio al pie de la letra), que se NIEGAN si la
+//  respuesta madre está cerrada. NO se exponen: hecho auditable (D31/D32)
+//  e IRepositorioRespuestaItem no los pide.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -12,13 +18,10 @@ using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
 
-/// <summary>Acceso (solo lectura) a 'catedras.respuesta_item' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso (solo lectura) a 'catedras.respuesta_item' en PostgreSQL, vía procedimientos.</summary>
 public class RepositorioRespuestaItemPostgres : IRepositorioRespuestaItem
 {
     private readonly string _cadenaConexion;
-
-    private const string Columnas =
-        "id_item, fk_respuesta, fk_pregunta, valor_numerico, valor_texto, fk_opcion";
 
     public RepositorioRespuestaItemPostgres(string cadenaConexion)
     {
@@ -27,26 +30,21 @@ public class RepositorioRespuestaItemPostgres : IRepositorioRespuestaItem
 
     public async Task<List<RespuestaItem>> ObtenerTodosAsync(long? fkRespuesta, int limite)
     {
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.respuesta_item
-            WHERE (@fkRespuesta::bigint IS NULL OR fk_respuesta = @fkRespuesta)
-            ORDER BY fk_respuesta, fk_pregunta
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_respuesta_item(@fkRespuesta::bigint, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<RespuestaItem>(sql, new { fkRespuesta, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkRespuesta, limite });
+
+        return LectorJsonSp.Lista<RespuestaItem>(json);
     }
 
     public async Task<RespuestaItem?> ObtenerPorIdAsync(long idItem)
     {
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.respuesta_item
-            WHERE id_item = @idItem;";
+        const string sql = "CALL catedras.sp_consultar_respuesta_item(@idItem, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<RespuestaItem>(sql, new { idItem });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idItem });
+
+        return LectorJsonSp.Fila<RespuestaItem>(json);
     }
 }

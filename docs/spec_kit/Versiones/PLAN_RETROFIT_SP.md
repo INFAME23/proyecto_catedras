@@ -64,12 +64,12 @@ encajó, deténganse y revisen antes de seguir.
 | TipoEvento | Sí | Pendiente |
 | TipoVinculacion | Sí | Pendiente |
 | Asistente | Sí | ✅ Hecho (Fase 4, `024`) — Crear sigue siendo `sp_guardar_asistente`; Eliminar ahora LÓGICO. Ver `RETROFIT_FASE4_NOTAS.md` |
-| Usuario | Sí | Pendiente — ⚠️ no tocar la clave: `ServicioUsuario` sigue siendo el único que ve la clave en texto plano / hashea con BCrypt, el repositorio nunca decide eso |
+| Usuario | Sí | ✅ Hecho (`033`, lote Fases 5-6; ver `AJUSTES_RETROFIT_SP_LOTE_FASE5.md`) — ⚠️ no tocar la clave: `ServicioUsuario` sigue siendo el único que ve la clave en texto plano / hashea con BCrypt, el repositorio nunca decide eso |
 | DocumentoAsistente | No | ✅ Hecho (Fase 4, `025`) — `sp_eliminar` es `DELETE` |
 | Encuesta | No | Pendiente |
 | EstadoProceso | No | Pendiente |
-| OpcionPregunta | No | Pendiente (v6, construida hoy) |
-| Pregunta | No | Pendiente (v6, construida hoy) — su `CrearAsync` ya usa `sp_guardar_pregunta` (maestro-detalle con opciones), eso no cambia |
+| OpcionPregunta | No | ✅ Hecho (`039`) |
+| Pregunta | No | ✅ Hecho (`038`) — su `CrearAsync` ya usa `sp_guardar_pregunta` (maestro-detalle con opciones), eso no cambia |
 | Rol | No | Pendiente |
 | Sesion | No | Pendiente — ⚠️ tiene el trigger `trg_sesion_consecutivo` que calcula `numero_reunion`: el SP debe devolver la fila COMPLETA después del INSERT (como el ejemplo del profesor), no antes, para que venga con el número ya puesto |
 | TipoPregunta | No | Pendiente |
@@ -97,15 +97,15 @@ que hoy siguen siendo `SELECT` a mano.
 
 | Tabla | Verbo(s) de escritura (ya en SP/función) | Falta convertir |
 |---|---|---|
-| ClaveAcceso | Solicitar, Validar | Listar, Consultar |
-| EnlaceRegistro | Emitir, Revocar (Revocar es un `UPDATE` suelto hoy — convertir también) | Listar, Consultar, Revocar |
+| ClaveAcceso | Solicitar, Validar | ✅ Hecho (`036`) |
+| EnlaceRegistro | Emitir, Revocar | ✅ Hecho (`035`, Revocar ahora es `sp_revocar_enlace_registro`) |
 | LoteCargaAsistente | Cerrar (`sp_guardar_lote_carga` es el CIERRE, no el crear) | ✅ Hecho (Fase 4, `029`) — Abrir pasó a `sp_crear_`; Cerrar sin cambios |
 | NovedadCarga | (sin escritura: nace del lote) | ✅ Hecho (Fase 4, `030`) — 5 SP, la API usa 2 |
 | ProgramaAsistente | Crear, CambiarEstado | ✅ Hecho (Fase 4, `027`) — CambiarEstado = `sp_actualizar_`; `sp_eliminar_` = retiro lógico (no expuesto) |
-| RegistroAsistencia | Crear | Listar, Consultar |
-| RespuestaEncuesta | Responder | Listar, Consultar |
-| RespuestaItem | (sin escritura: nace de Responder) | Listar, Consultar |
-| RolPorUsuario | Crear, Cerrar | Listar, ObtenerVigentes, Cerrar |
+| RegistroAsistencia | Crear | ✅ Hecho (`037`; Actualizar/Eliminar en BD, sin exponer) |
+| RespuestaEncuesta | Responder | ✅ Hecho (`040`; Actualizar/Eliminar en BD con guarda D31, sin exponer) |
+| RespuestaItem | (sin escritura: nace de Responder) | ✅ Hecho (`041`; Crear/Actualizar/Eliminar en BD con guarda D31, sin exponer) |
+| RolPorUsuario | Crear, Cerrar | ✅ Hecho (`034`) |
 | VinculacionAsistente | Crear, Cerrar | ✅ Hecho (Fase 4, `026`) — Cerrar = `sp_eliminar_` (nunca DELETE) |
 
 **10 tablas**, todas con trabajo parcial.
@@ -129,7 +129,7 @@ esta semana.
 | **3** | v1 con FK + v2 (maestro-detalle) | Catedra, ProgramaAcademico, AliasPrograma, Encuesta | **Jhoan** (coordina porque `ProgramaAcademico`/`AliasPrograma` es el primer maestro-detalle que se toca) |
 | **4** | v3 completo + v7 (LoteMigracion, DetalleMigracion) | Asistente, DocumentoAsistente, ConsentimientoDatos, LoteCargaAsistente, NovedadCarga, VinculacionAsistente, ProgramaAsistente, LoteMigracion, DetalleMigracion | **Isaac** — ✅ código + pruebas hechos; migraciones `024`-`032`. Pendiente: corrida en Docker (`correr_todo_fase4.ps1`). Ver `RETROFIT_FASE4_NOTAS.md` |
 | **5** | v4 + v5 | Sesion, Ponencia, TipoPregunta, Usuario, RolPorUsuario, EnlaceRegistro, ClaveAcceso, RegistroAsistencia | **German** (segundo lote, ya con práctica de la Fase 2) — ⚠️ avisar del cuidado con `Sesion` (trigger) y `Usuario` (BCrypt) de la tabla de arriba |
-| **6** | v6 (construida hoy) | Pregunta, OpcionPregunta, RespuestaEncuesta, RespuestaItem | **Alex** (quien ya conoce esas 4 clases de hoy) |
+| **6** | v6 (construida hoy) | Pregunta, OpcionPregunta, RespuestaEncuesta, RespuestaItem | **Alex** (quien ya conoce esas 4 clases de hoy) — Usuario, RolPorUsuario, EnlaceRegistro, ClaveAcceso, RegistroAsistencia (Fase 5) y las 4 de la Fase 6: ✅ hechos en el lote Fases 5-6, migraciones `033`-`041`. Ver `AJUSTES_RETROFIT_SP_LOTE_FASE5.md` |
 | **7** | Verificación completa | — | **Isaac**: correr TODA la colección de pruebas (incluida la regresión de v1, obligatoria por §9) contra Docker real, tabla por tabla |
 
 ### Orden sugerido entre fases

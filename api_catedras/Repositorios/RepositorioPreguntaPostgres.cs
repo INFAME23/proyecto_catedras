@@ -1,19 +1,20 @@
 // ==========================================================================
-//  Repositorios/RepositorioPreguntaPostgres.cs  ·  Proyecto Cátedras · v6
+//  Repositorios/RepositorioPreguntaPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioPregunta para PostgreSQL con Dapper. SQL a mano y
-//  parametrizado; una conexión por operación (Artículo 2 de la constitución).
+//  Listar, Consultar, Actualizar y Eliminar pasan por los procedimientos
+//  de 'db/postgres/migraciones/038_sp_pregunta.sql' (molde: sede).
 //
-//  CrearAsync: UN 'CALL' al SP 'sp_guardar_pregunta' (maestro + opciones
-//  iniciales en una sola transacción, Guía IA · Regla 1). Mismo patrón que
-//  RepositorioAsistentePostgres (v3): el parámetro INOUT se manda como
-//  'NULL' en el SQL, y 'QuerySingleAsync<long>' lee la única fila que
-//  devuelve el CALL (el id nuevo).
+//  CREAR NO CAMBIÓ: sigue siendo UN 'CALL' a 'sp_guardar_pregunta'
+//  (migración 004): maestro + opciones iniciales en una sola transacción
+//  (Guía IA · Regla 1). El INOUT 'p_id_pregunta' sale con el id nuevo.
 //
-//  EliminarAsync: 'respuesta_item.fk_pregunta' es RESTRICT y
-//  'opcion_pregunta.fk_pregunta' es CASCADE. PostgreSQL evalúa ambas en la
-//  MISMA sentencia: si hay respuestas, el DELETE completo falla y la
-//  cascada hacia las opciones NO llega a ocurrir (ACID · A).
+//  ACTUALIZAR: un solo 'sp_actualizar_pregunta' con todas las columnas que
+//  la API deja cambiar; el PATCH se mezcla aquí (consultar + mezclar +
+//  llamar completo), copia de RepositorioSedePostgres.ActualizarAsync.
+//
+//  ELIMINAR: respuesta_item.fk_pregunta es RESTRICT y
+//  opcion_pregunta.fk_pregunta es CASCADE. Si hay respuestas, el DELETE
+//  completo falla y la cascada a las opciones no llega a ocurrir.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -23,14 +24,10 @@ using Dapper;
 using Npgsql;
 using System.Text.Json;   // JsonSerializer: convierte la lista de opciones en texto JSON
 
-/// <summary>Acceso a 'catedras.pregunta' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.pregunta' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioPreguntaPostgres : IRepositorioPregunta
 {
     private readonly string _cadenaConexion;
-
-    // [ACID · C] Lista blanca del UPDATE. 'id_pregunta' (la PK) no se actualiza.
-    private static readonly HashSet<string> ColumnasActualizables =
-        new() { "enunciado", "orden", "fk_tipo_pregunta", "obligatoria", "valor_min", "valor_max" };
 
     public RepositorioPreguntaPostgres(string cadenaConexion)
     {
@@ -39,50 +36,35 @@ public class RepositorioPreguntaPostgres : IRepositorioPregunta
 
     public async Task<List<Pregunta>> ObtenerTodosAsync(long? fkEncuesta, int limite)
     {
-        // '@fkEncuesta::bigint IS NULL' deja pasar TODAS las filas cuando
-        // el filtro no llegó (mismo molde que RegistroAsistencia, v5).
-        const string sql = @"
-            SELECT id_pregunta, fk_encuesta, enunciado, orden, fk_tipo_pregunta,
-                   obligatoria, valor_min, valor_max
-            FROM catedras.pregunta
-            WHERE (@fkEncuesta::bigint IS NULL OR fk_encuesta = @fkEncuesta)
-            ORDER BY fk_encuesta, orden
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_pregunta(@fkEncuesta::bigint, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<Pregunta>(sql, new { fkEncuesta, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkEncuesta, limite });
+
+        return LectorJsonSp.Lista<Pregunta>(json);
     }
 
     public async Task<Pregunta?> ObtenerPorIdAsync(long idPregunta)
     {
-        const string sql = @"
-            SELECT id_pregunta, fk_encuesta, enunciado, orden, fk_tipo_pregunta,
-                   obligatoria, valor_min, valor_max
-            FROM catedras.pregunta
-            WHERE id_pregunta = @idPregunta;";
+        const string sql = "CALL catedras.sp_consultar_pregunta(@idPregunta, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<Pregunta>(sql, new { idPregunta });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idPregunta });
+
+        return LectorJsonSp.Fila<Pregunta>(json);
     }
 
     public async Task<long> CrearAsync(Pregunta pregunta, IReadOnlyList<OpcionPregunta> opcionesIniciales)
     {
-        // Guía IA, Regla 1: UN 'CALL' al SP, no dos INSERT sueltos desde
-        // C#. 'CAST(@Opciones AS jsonb)': Dapper manda el JSON como TEXTO;
-        // el CAST lo convierte en jsonb, el tipo del parámetro 'p_opciones'.
-        // El último argumento (NULL) es el INOUT 'p_id_pregunta': entra
-        // vacío y sale con el id generado.
+        // SIN CAMBIOS (migración 004). 'CAST(@Opciones AS jsonb)': Dapper
+        // manda el JSON como TEXTO; el CAST lo convierte en jsonb. El último
+        // argumento (NULL) es el INOUT 'p_id_pregunta'.
         const string sql = @"
             CALL catedras.sp_guardar_pregunta(
                 @FkEncuesta, @Enunciado, @Orden, @FkTipoPregunta,
                 @Obligatoria, @ValorMin, @ValorMax,
                 CAST(@Opciones AS jsonb), NULL);";
 
-        // El "formato" que lee el SP (e ->> 'etiqueta', ...) es un detalle
-        // del MOTOR, por eso el JSON se arma aquí y no en el servicio.
-        // Solo viajan las columnas que pone el cliente: 'fk_pregunta' la
-        // fija el SP con el id del maestro recién creado.
         string? opcionesJson = opcionesIniciales.Count == 0
             ? null    // sin opciones -> p_opciones NULL -> el SP solo crea la pregunta
             : JsonSerializer.Serialize(opcionesIniciales.Select(o => new
@@ -94,11 +76,6 @@ public class RepositorioPreguntaPostgres : IRepositorioPregunta
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        // '(fk_encuesta, orden)' duplicado, tipo de pregunta inexistente o
-        // un 'orden' de opción repetido -> NpgsqlException, y el motor
-        // revierte el CALL completo (ni la pregunta queda creada).
-        // 'CALL' con un parámetro INOUT devuelve UNA fila con ese
-        // parámetro: QuerySingleAsync<long> lee su único valor (el id nuevo).
         return await conexion.QuerySingleAsync<long>(sql, new
         {
             pregunta.FkEncuesta,
@@ -114,39 +91,46 @@ public class RepositorioPreguntaPostgres : IRepositorioPregunta
 
     public async Task<int> ActualizarAsync(long idPregunta, Dictionary<string, object?> datos)
     {
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_clave", idPregunta);
-
-        foreach (var (columna, valor) in datos)
-        {
-            if (!ColumnasActualizables.Contains(columna))
-                continue;
-
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
-        }
-
-        if (asignaciones.Count == 0)
-            return 0;
-
-        var sql =
-            $"UPDATE catedras.pregunta SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_pregunta = @id_clave;";
-
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, parametros);
+
+        // 1) Traer la fila actual.
+        const string sqlConsultar = "CALL catedras.sp_consultar_pregunta(@idPregunta, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idPregunta });
+
+        if (actualJson is null)
+            return 0;   // no existe -> ni se intenta el UPDATE
+
+        var actual = LectorJsonSp.Fila<Pregunta>(actualJson)!;
+
+        // 2) Mezclar: lo que llegó PISA el valor actual. 'fk_encuesta' no
+        //    está (tampoco estaba en la lista blanca de antes).
+        string enunciado = datos.TryGetValue("enunciado", out var vEnunciado) ? (string)vEnunciado! : actual.Enunciado;
+        short orden = datos.TryGetValue("orden", out var vOrden) ? (short)vOrden! : actual.Orden;
+        string fkTipoPregunta = datos.TryGetValue("fk_tipo_pregunta", out var vTipo) ? (string)vTipo! : actual.FkTipoPregunta;
+        bool obligatoria = datos.TryGetValue("obligatoria", out var vObligatoria) ? (bool)vObligatoria! : actual.Obligatoria;
+        short? valorMin = datos.TryGetValue("valor_min", out var vMin) ? (short?)vMin : actual.ValorMin;
+        short? valorMax = datos.TryGetValue("valor_max", out var vMax) ? (short?)vMax : actual.ValorMax;
+
+        // 3) Llamar al procedimiento con el conjunto COMPLETO.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_pregunta(
+                @idPregunta, @enunciado, @orden, @fkTipoPregunta,
+                @obligatoria, @valorMin, @valorMax, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(sqlActualizar,
+            new { idPregunta, enunciado, orden, fkTipoPregunta, obligatoria, valorMin, valorMax });
+
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task<int> EliminarAsync(long idPregunta)
     {
-        const string sql = "DELETE FROM catedras.pregunta WHERE id_pregunta = @idPregunta;";
+        const string sql = "CALL catedras.sp_eliminar_pregunta(@idPregunta, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idPregunta });
 
-        // RESTRICT (respuesta_item) gana sobre CASCADE (opcion_pregunta):
-        // una pregunta con respuestas de ejemplo no se puede borrar, y sus
-        // opciones siguen intactas porque la cascada no llega a ocurrir.
-        return await conexion.ExecuteAsync(sql, new { idPregunta });
+        // FÍSICO ('pregunta' no tiene 'activo'). Con respuestas -> RESTRICT
+        // -> NpgsqlException, igual que antes.
+        return LectorJsonSp.Bandera(json, "eliminado") ? 1 : 0;
     }
 }

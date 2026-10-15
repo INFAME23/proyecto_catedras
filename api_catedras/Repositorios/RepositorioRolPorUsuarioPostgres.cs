@@ -1,14 +1,18 @@
 // ==========================================================================
-//  Repositorios/RepositorioRolPorUsuarioPostgres.cs  ·  Cátedras · v5
+//  Repositorios/RepositorioRolPorUsuarioPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioRolPorUsuario para PostgreSQL con Dapper. Mismo patrón que
-//  RepositorioVinculacionAsistentePostgres (v3): tabla de llave compuesta,
-//  sin columna 'id'. El WHERE del cierre usa las TRES columnas de la llave.
+//  Los 4 métodos de IRepositorioRolPorUsuario pasan por los procedimientos
+//  de 'db/postgres/migraciones/034_sp_rol_por_usuario.sql' (molde: sede).
 //
-//  Se escribe aquí (Fase 39) y no en la Fase 40 porque ServicioUsuario ya lo
-//  necesita para devolver los roles vigentes en el login: sin esta clase, la
-//  API no arrancaría. El servicio y el controlador de RolPorUsuario siguen
-//  siendo de la Fase 40.
+//  La BD tiene además sp_consultar_ / sp_actualizar_ / sp_eliminar_
+//  rol_por_usuario (los 5 verbos del criterio), pero IRepositorioRolPorUsuario
+//  no los pide y la regla del retrofit es NO tocar la interfaz: quedan
+//  listos en la BD, sin exponer.
+//
+//  FECHAS: 'fecha_ini'/'fecha_fin' son DATE. El ManejadorTipoDateOnly manda
+//  un DateOnly como DateTime (-> timestamp), y un CALL no aplica casts de
+//  asignación: sin CAST(... AS date) PostgreSQL responde "procedure ...
+//  does not exist". Por eso cada fecha va con CAST explícito.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -17,7 +21,7 @@ using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
 
-/// <summary>Acceso a 'catedras.rol_por_usuario' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.rol_por_usuario' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioRolPorUsuarioPostgres : IRepositorioRolPorUsuario
 {
     private readonly string _cadenaConexion;
@@ -29,58 +33,50 @@ public class RepositorioRolPorUsuarioPostgres : IRepositorioRolPorUsuario
 
     public async Task<List<RolPorUsuario>> ObtenerTodosAsync(long? fkUsuario, int limite)
     {
-        // Orden: por usuario y, dentro de cada uno, el más reciente primero.
-        const string sql = @"
-            SELECT fk_usuario, fk_rol, fecha_ini, fecha_fin
-            FROM catedras.rol_por_usuario
-            WHERE @fkUsuario::bigint IS NULL OR fk_usuario = @fkUsuario
-            ORDER BY fk_usuario, fecha_ini DESC, fk_rol
-            LIMIT @limite;";
+        // Filtro opcional: NULL = todos los usuarios.
+        const string sql = "CALL catedras.sp_listar_rol_por_usuario(@fkUsuario::bigint, @limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<RolPorUsuario>(sql, new { fkUsuario, limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkUsuario, limite });
+
+        return LectorJsonSp.Lista<RolPorUsuario>(json);
     }
 
     public async Task<List<string>> ObtenerVigentesAsync(long fkUsuario)
     {
-        // Vigente = sin fecha_fin. Solo se necesita el código del rol.
-        const string sql = @"
-            SELECT fk_rol
-            FROM catedras.rol_por_usuario
-            WHERE fk_usuario = @fkUsuario
-              AND fecha_fin IS NULL
-            ORDER BY fk_rol;";
+        // Arreglo JSON de códigos de rol abiertos: ["ADMIN","CONSULTA"].
+        const string sql = "CALL catedras.sp_listar_rol_vigente_usuario(@fkUsuario, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<string>(sql, new { fkUsuario });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { fkUsuario });
+
+        return LectorJsonSp.Lista<string>(json);
     }
 
     public async Task CrearAsync(RolPorUsuario rol)
     {
         // Un rol nace abierto: 'fecha_fin' queda NULL.
         const string sql = @"
-            INSERT INTO catedras.rol_por_usuario (fk_usuario, fk_rol, fecha_ini)
-            VALUES (@FkUsuario, @FkRol, @FechaIni);";
+            CALL catedras.sp_crear_rol_por_usuario(
+                @FkUsuario, @FkRol, CAST(@FechaIni AS date), NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        await conexion.ExecuteAsync(sql, rol);
+        await conexion.ExecuteAsync(sql, new { rol.FkUsuario, rol.FkRol, rol.FechaIni });
     }
 
     public async Task<int> CerrarAsync(long fkUsuario, string fkRol, DateOnly fechaIni, DateOnly fechaFin)
     {
-        // La llave COMPLETA identifica UNA fila; 'AND fecha_fin IS NULL' evita
-        // cerrar dos veces el mismo rol aunque lleguen dos peticiones a la vez.
+        // 'sp_cerrar_' (y no 'sp_actualizar_') conserva la guarda
+        // 'fecha_fin IS NULL': no se cierra dos veces el mismo rol.
         const string sql = @"
-            UPDATE catedras.rol_por_usuario
-               SET fecha_fin = @fechaFin
-             WHERE fk_usuario = @fkUsuario
-               AND fk_rol = @fkRol
-               AND fecha_ini = @fechaIni
-               AND fecha_fin IS NULL;";
+            CALL catedras.sp_cerrar_rol_por_usuario(
+                @fkUsuario, @fkRol, CAST(@fechaIni AS date), CAST(@fechaFin AS date), NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, new { fkUsuario, fkRol, fechaIni, fechaFin });
+        string? json = await conexion.QuerySingleAsync<string?>(sql,
+            new { fkUsuario, fkRol, fechaIni, fechaFin });
+
+        // NULL = no existe o ya estaba cerrado -> "0 filas", igual que antes.
+        return json is null ? 0 : 1;
     }
 }

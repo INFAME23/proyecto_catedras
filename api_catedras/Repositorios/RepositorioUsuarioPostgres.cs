@@ -1,19 +1,27 @@
 // ==========================================================================
-//  Repositorios/RepositorioUsuarioPostgres.cs  ·  Proyecto Cátedras · v5
+//  Repositorios/RepositorioUsuarioPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioUsuario para PostgreSQL con Dapper. SQL a mano y
-//  parametrizado; una conexión por operación.
+//  Todos los métodos pasan por los procedimientos de
+//  'db/postgres/migraciones/033_sp_usuario.sql'. Esta clase ya no escribe
+//  SELECT/INSERT/UPDATE/DELETE: arma el 'CALL', manda los parámetros y
+//  convierte el JSON de 'p_resultado' en objetos C# (molde: sede).
 //
-//  Dos detalles propios de esta tabla:
+//  LO QUE NO CAMBIÓ: IRepositorioUsuario, ServicioUsuario, UsuarioController
+//  y las Peticiones siguen igual. En particular, ESTE ARCHIVO SIGUE SIN
+//  CONOCER BCrypt (ADR D23, RNF13): recibe 'ClaveHash' / "clave_hash" ya
+//  calculado por ServicioUsuario y lo pasa tal cual. Nunca decide si una
+//  clave se hashea.
 //
-//  1) La columna se llama 'usuario' pero la propiedad del modelo es
-//     'NombreUsuario'. Dapper (con MatchNamesWithUnderscores) enlaza
-//     'nombre_usuario' <-> NombreUsuario, pero NO sabe que 'usuario' es lo
-//     mismo. Por eso el SELECT escribe 'usuario AS nombre_usuario'.
+//  'clave_hash' Y EL JSON:
+//   · sp_listar_ / sp_consultar_ / sp_crear_ / sp_actualizar_ NO devuelven
+//     'clave_hash' (esos JSON pueden terminar sirviendo una respuesta).
+//   · Solo 'sp_consultar_usuario_por_login' lo trae, porque el login lo
+//     necesita para BCrypt.Verify. Como el modelo marca ClaveHash con
+//     [JsonIgnore] (para que JAMÁS salga en una respuesta), JsonSerializer
+//     tampoco lo LEE: aquí se saca del JSON aparte y se asigna a mano.
 //
-//  2) Este archivo NO conoce BCrypt (ADR D23, RNF13). Guarda y lee
-//     'clave_hash' como una cadena cualquiera. El hash lo calcula
-//     ServicioUsuario ANTES de llamar aquí, y lo compara también el servicio.
+//  ELIMINAR AHORA ES LÓGICO (activo = false), porque la tabla tiene
+//  'activo'. Antes era un DELETE con CASCADE a rol_por_usuario.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -22,24 +30,10 @@ using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
 
-/// <summary>Acceso a 'catedras.usuario' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.usuario' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioUsuarioPostgres : IRepositorioUsuario
 {
     private readonly string _cadenaConexion;
-
-    // Columnas de lectura (las 7 de la tabla), escritas una sola vez.
-    // 'clave_hash' SÍ se lee: el servicio la necesita para el login. Que no
-    // salga en el JSON lo garantiza el [JsonIgnore] del modelo (RF138).
-    private const string Columnas = @"
-            id_usuario, fk_asistente, usuario AS nombre_usuario, clave_hash,
-            activo, ultimo_acceso, creado_en";
-
-    // [ACID · C] Lista blanca del UPDATE. NO están: 'id_usuario' (PK),
-    // 'creado_en' (la pone la BD) ni 'ultimo_acceso' (tiene su propio método).
-    private static readonly HashSet<string> ColumnasActualizables = new()
-    {
-        "fk_asistente", "usuario", "clave_hash", "activo",
-    };
 
     public RepositorioUsuarioPostgres(string cadenaConexion)
     {
@@ -48,90 +42,105 @@ public class RepositorioUsuarioPostgres : IRepositorioUsuario
 
     public async Task<List<Usuario>> ObtenerTodosAsync(int limite)
     {
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.usuario
-            ORDER BY id_usuario
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_usuario(@limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<Usuario>(sql, new { limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { limite });
+
+        return LectorJsonSp.Lista<Usuario>(json);
     }
 
     public async Task<Usuario?> ObtenerPorIdAsync(long idUsuario)
     {
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.usuario
-            WHERE id_usuario = @idUsuario;";
+        const string sql = "CALL catedras.sp_consultar_usuario(@idUsuario, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<Usuario>(sql, new { idUsuario });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idUsuario });
+
+        // Sin clave_hash: ClaveHash queda "" (nadie fuera del login lo usa).
+        return LectorJsonSp.Fila<Usuario>(json);
     }
 
     public async Task<Usuario?> ObtenerPorLoginAsync(string usuario)
     {
-        // 'uq_usuario_login' garantiza que hay a lo sumo una fila con ese nombre.
-        string sql = $@"
-            SELECT {Columnas}
-            FROM catedras.usuario
-            WHERE usuario = @usuario;";
+        const string sql = "CALL catedras.sp_consultar_usuario_por_login(@usuario, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<Usuario>(sql, new { usuario });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { usuario });
+
+        if (json is null)
+            return null;
+
+        var encontrado = LectorJsonSp.Fila<Usuario>(json)!;
+
+        // [JsonIgnore] impide que JsonSerializer llene ClaveHash: se lee
+        // aparte. Solo vive en memoria para el BCrypt.Verify del servicio.
+        encontrado.ClaveHash = LectorJsonSp.Texto(json, "clave_hash") ?? "";
+        return encontrado;
     }
 
     public async Task<(long IdUsuario, DateTime CreadoEn)> CrearAsync(Usuario usuario)
     {
-        // Ni id_usuario ni creado_en se envían: los pone la BD. 'ultimo_acceso'
-        // tampoco: un usuario nuevo todavía no ha entrado.
-        // Los parámetros salen de las propiedades del modelo (@NombreUsuario...).
+        // El hash ya viene calculado en usuario.ClaveHash (ServicioUsuario).
         const string sql = @"
-            INSERT INTO catedras.usuario
-                (fk_asistente, usuario, clave_hash, activo)
-            VALUES (@FkAsistente, @NombreUsuario, @ClaveHash, @Activo)
-            RETURNING id_usuario, creado_en;";
+            CALL catedras.sp_crear_usuario(
+                @FkAsistente, @NombreUsuario, @ClaveHash, @Activo, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        // Una fila con dos columnas -> tupla (long, DateTime), en ese orden.
-        return await conexion.QuerySingleAsync<(long, DateTime)>(sql, usuario);
+        // Login o persona repetidos (uq_usuario_login, uq_usuario_persona) ->
+        // NpgsqlException, igual que antes.
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new
+        {
+            usuario.FkAsistente,
+            usuario.NombreUsuario,
+            usuario.ClaveHash,
+            usuario.Activo,
+        });
+
+        // id_usuario y creado_en los pone la BD; vienen en la fila devuelta.
+        var creado = LectorJsonSp.Fila<Usuario>(json)!;
+        return (creado.IdUsuario, creado.CreadoEn);
     }
 
     public async Task<int> ActualizarAsync(long idUsuario, Dictionary<string, object?> datos)
     {
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_fila", idUsuario);
-
-        foreach (var (columna, valor) in datos)
-        {
-            if (!ColumnasActualizables.Contains(columna))
-                continue;
-
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
-        }
-
-        if (asignaciones.Count == 0)
-            return 0;
-
-        var sql =
-            $"UPDATE catedras.usuario SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_usuario = @id_fila;";
-
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, parametros);
+
+        // 1) Traer la fila actual (sin clave_hash).
+        const string sqlConsultar = "CALL catedras.sp_consultar_usuario(@idUsuario, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idUsuario });
+
+        if (actualJson is null)
+            return 0;   // no existe -> ni se intenta el UPDATE
+
+        var actual = LectorJsonSp.Fila<Usuario>(actualJson)!;
+
+        // 2) Mezclar. Las claves del diccionario son las de siempre
+        //    (fk_asistente, usuario, clave_hash, activo).
+        long fkAsistente = datos.TryGetValue("fk_asistente", out var vAsistente) ? (long)vAsistente! : actual.FkAsistente;
+        string nombreUsuario = datos.TryGetValue("usuario", out var vUsuario) ? (string)vUsuario! : actual.NombreUsuario;
+        bool activo = datos.TryGetValue("activo", out var vActivo) ? (bool)vActivo! : actual.Activo;
+
+        // La clave NO se mezcla con la actual (el hash guardado nunca sale
+        // de la BD): si llegó "clave_hash" (ya hasheado por el servicio) se
+        // manda; si no llegó, va NULL y el procedimiento conserva el hash
+        // que tenía (COALESCE). Este repositorio no hashea nada.
+        string? claveHash = datos.TryGetValue("clave_hash", out var vClave) ? (string?)vClave : null;
+
+        // 3) Llamar al procedimiento con el conjunto COMPLETO.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_usuario(
+                @idUsuario, @fkAsistente, @nombreUsuario, @claveHash, @activo, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(
+            sqlActualizar, new { idUsuario, fkAsistente, nombreUsuario, claveHash, activo });
+
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task ActualizarUltimoAccesoAsync(long idUsuario)
     {
-        // 'now()' lo evalúa PostgreSQL: la hora es la del servidor de la BD.
-        const string sql = @"
-            UPDATE catedras.usuario
-            SET ultimo_acceso = now()
-            WHERE id_usuario = @idUsuario;";
+        const string sql = "CALL catedras.sp_registrar_acceso_usuario(@idUsuario, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
         await conexion.ExecuteAsync(sql, new { idUsuario });
@@ -139,13 +148,13 @@ public class RepositorioUsuarioPostgres : IRepositorioUsuario
 
     public async Task<int> EliminarAsync(long idUsuario)
     {
-        const string sql = "DELETE FROM catedras.usuario WHERE id_usuario = @idUsuario;";
+        const string sql = "CALL catedras.sp_eliminar_usuario(@idUsuario, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idUsuario });
 
-        // [ACID · A] Un DELETE es UNA transacción implícita: los roles del
-        // usuario (rol_por_usuario, CASCADE) se borran junto con la cuenta, o
-        // no se borra nada si algo falla.
-        return await conexion.ExecuteAsync(sql, new { idUsuario });
+        // {"eliminado": true|false}. LÓGICO: activo=false; sus roles y su
+        // historial se conservan, y el login ya rechaza cuentas inactivas.
+        return LectorJsonSp.Bandera(json, "eliminado") ? 1 : 0;
     }
 }
