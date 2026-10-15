@@ -2,8 +2,8 @@
 //  Servicios/IServicioPonencia.cs  ·  Proyecto Cátedras · Versión 4
 // --------------------------------------------------------------------------
 //  Contrato de negocio de 'Ponencia' (RF127-RF131, ADR D19): listar,
-//  obtener por la llave completa, asignar y desasignar. Sin reemplazar ni
-//  actualizar: no hay columnas fuera de la llave.
+//  obtener por la llave completa, asignar, cambiar el rol (PUT) y
+//  desasignar. Sin PATCH: no hay columnas fuera de la llave aparte del rol.
 // ==========================================================================
 
 namespace ApiCatedras.Servicios;
@@ -21,6 +21,9 @@ public interface IServicioPonencia
 
     /// <summary>Asigna. Devuelve la fila creada (con el rol efectivo).</summary>
     Task<Ponencia> CrearAsync(PonenciaCrear peticion);
+
+    /// <summary>Cambia el rol. Devuelve la fila con el rol nuevo. Llave inexistente -> NoEncontradoExcepcion (404).</summary>
+    Task<Ponencia> ReemplazarAsync(long fkSesion, long fkAsistente, string rol, PonenciaReemplazo peticion);
 
     /// <summary>Desasigna. Inexistente -> NoEncontradoExcepcion (404).</summary>
     Task<int> EliminarAsync(long fkSesion, long fkAsistente, string rol);

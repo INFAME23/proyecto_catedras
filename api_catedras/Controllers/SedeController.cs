@@ -78,12 +78,12 @@ public class SedeController : ControllerBase
     //  Tabla vacía -> 204 sin cuerpo.
     // ----------------------------------------------------------------------
     [HttpGet]
-    public async Task<IActionResult> Listar([FromQuery] int? limite)
+    public async Task<IActionResult> Listar([FromQuery] int? limite, [FromQuery] bool incluirInactivos = false)
     {
         try
         {
             // [FLUJO 3] Salta a la capa de negocio por la interfaz.
-            var (datos, total) = await _servicio.ListarAsync(limite);
+            var (datos, total) = await _servicio.ListarAsync(limite, incluirInactivos);
 
             // Sin filas -> 204 No Content (sin cuerpo).
             if (total == 0)

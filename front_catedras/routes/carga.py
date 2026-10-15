@@ -46,7 +46,7 @@ def carga_datos():
     # Catálogo de programas y alias, UNA vez, para traducir el programa
     # escrito en texto libre a su código (ADR D17).
     try:
-        indice = indice_de_programas(listar('ProgramaAcademico', limite=5000),
+        indice = indice_de_programas(listar('ProgramaAcademico', limite=5000, incluirInactivos='true'),
                                      listar('AliasPrograma', limite=5000))
     except ErrorApi as ex:
         return render_template('carga_datos.html', resultado=None,

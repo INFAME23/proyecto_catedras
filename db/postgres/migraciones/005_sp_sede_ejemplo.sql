@@ -32,8 +32,15 @@ SET search_path TO catedras, public;
 --  límite OPCIONAL: 'LIMIT p_limite' con p_limite NULL = sin límite (así
 --  funciona LIMIT en PostgreSQL, no hace falta COALESCE).
 -- --------------------------------------------------------------------------
+-- CORRECCIÓN (lote 006-014): el listado SOLO traía las activas y el front no podía
+-- ver ni reactivar las inactivas. 'p_incluir_inactivos' (DEFAULT false) conserva el
+-- comportamiento del patrón y permite pedir todas con ?incluirInactivos=true. Cambia
+-- la firma, así que se elimina la anterior (si no, quedaría una sobrecarga ambigua).
+DROP PROCEDURE IF EXISTS catedras.sp_listar_sede(integer, json);
+
 CREATE OR REPLACE PROCEDURE catedras.sp_listar_sede(
     IN    p_limite    integer DEFAULT NULL,
+    IN    p_incluir_inactivos boolean DEFAULT false,
     INOUT p_resultado json    DEFAULT NULL
 )
     LANGUAGE plpgsql
@@ -44,7 +51,7 @@ BEGIN
       INTO p_resultado
       FROM (SELECT id_sede, nombre, direccion, es_virtual, activo
               FROM sede
-             WHERE activo
+             WHERE p_incluir_inactivos OR activo
              ORDER BY id_sede
              LIMIT p_limite) s;
 END;
@@ -78,19 +85,27 @@ $$;
 --  NpgsqlException; el controlador la traduce a 409 (ver PLAN_RETROFIT_SP.md,
 --  eso es trabajo del criterio 7, NO de este procedimiento).
 -- --------------------------------------------------------------------------
+-- CORRECCIÓN (lote 006-014): la versión original no recibía 'activo', así que
+-- POST /api/Sede con "activo": false guardaba activo = true. Se agrega
+-- 'p_activo' (DEFAULT true). Como cambia la firma, se elimina primero la
+-- versión anterior: si no, CREATE OR REPLACE crearía una SOBRECARGA y
+-- CALL sp_crear_sede(...) quedaría ambiguo.
+DROP PROCEDURE IF EXISTS catedras.sp_crear_sede(varchar, varchar, varchar, boolean, json);
+
 CREATE OR REPLACE PROCEDURE catedras.sp_crear_sede(
     IN    p_id_sede    character varying(15),
     IN    p_nombre     character varying(80),
     IN    p_direccion  character varying(200) DEFAULT NULL,
     IN    p_es_virtual boolean DEFAULT false,
+    IN    p_activo     boolean DEFAULT true,
     INOUT p_resultado  json DEFAULT NULL
 )
     LANGUAGE plpgsql
     SET search_path TO 'catedras', 'public'
     AS $$
 BEGIN
-    INSERT INTO sede (id_sede, nombre, direccion, es_virtual)
-    VALUES (p_id_sede, p_nombre, p_direccion, p_es_virtual);
+    INSERT INTO sede (id_sede, nombre, direccion, es_virtual, activo)
+    VALUES (p_id_sede, p_nombre, p_direccion, p_es_virtual, COALESCE(p_activo, true));
 
     SELECT row_to_json(s) INTO p_resultado
       FROM (SELECT id_sede, nombre, direccion, es_virtual, activo

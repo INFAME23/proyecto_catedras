@@ -1,15 +1,16 @@
 // ==========================================================================
-//  Repositorios/RepositorioCatedraPostgres.cs  ·  Proyecto Cátedras · v2
+//  Repositorios/RepositorioCatedraPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  IRepositorioCatedra para PostgreSQL con Dapper.
+//  Los 5 verbos (y el Contar) pasan por los procedimientos de
+//  'db/postgres/migraciones/010_sp_catedra.sql'. Mismo molde que
+//  RepositorioSedePostgres.cs. 'IRepositorioCatedra', 'ServicioCatedra',
+//  'CatedraController' y 'Peticiones/' NO cambiaron.
 //
-//  Lo nuevo (3_plan.md §4.3, ADR D11): el INSERT devuelve DOS valores que
-//  la BD calcula — 'id_catedra' (IDENTITY) y 'nombre_asis' (columna
-//  GENERADA, left(nombre, 30)) — con un solo RETURNING. Así 'nombre_asis'
-//  tiene una única fuente de verdad: la BD. El C# nunca la calcula.
-//
-//  'LIMIT @limite' con @limite = NULL equivale en PostgreSQL a "sin
-//  límite" (LIMIT ALL): por eso el mismo SQL sirve con y sin límite.
+//  · 'catedra' tiene 'activo': 'EliminarAsync' es LÓGICO; el listado y el
+//    conteo solo cuentan las activas (el 'total' y las filas coinciden).
+//  · 'nombre_asis' es una columna GENERADA por PostgreSQL: nunca se manda
+//    al procedimiento; llega en el JSON de vuelta (CrearAsync la devuelve).
+//  · 'creado_en' lo pone la BD; se lee del JSON y se normaliza a UTC.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -17,112 +18,127 @@ namespace ApiCatedras.Repositorios;
 using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
+using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.catedra' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.catedra' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioCatedraPostgres : IRepositorioCatedra
 {
     private readonly string _cadenaConexion;
-
-    // [ACID · C] Lista blanca del UPDATE. NO están: 'id_catedra' (PK),
-    // 'nombre_asis' (generada: PostgreSQL rechazaría escribirla) ni
-    // 'creado_en' (la pone la BD).
-    private static readonly HashSet<string> ColumnasActualizables =
-        new() { "id_evento_asis", "nombre", "fk_tipo_evento", "fk_dependencia", "activo" };
-
-    // Columnas de lectura, escritas una sola vez para los dos SELECT.
-    private const string ColumnasSelect =
-        "id_catedra, id_evento_asis, nombre, nombre_asis, fk_tipo_evento, fk_dependencia, activo, creado_en";
 
     public RepositorioCatedraPostgres(string cadenaConexion)
     {
         _cadenaConexion = cadenaConexion;
     }
 
-    public async Task<List<Catedra>> ObtenerTodosAsync(int? limite)
+    public async Task<List<Catedra>> ObtenerTodosAsync(int? limite, bool incluirInactivos)
     {
-        // Interpolación '$"..."' SOLO con la constante de columnas (texto
-        // nuestro, nunca del cliente). El valor del límite va como @parámetro.
-        string sql = $@"
-            SELECT {ColumnasSelect}
-            FROM catedras.catedra
-            ORDER BY id_catedra
-            LIMIT @limite;";
+        // 'limite' puede ser null (= sin límite): el procedimiento hace
+        // 'LIMIT p_limite' y LIMIT NULL no recorta nada.
+        const string sql = "CALL catedras.sp_listar_catedra(@limite, @incluirInactivos, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<Catedra>(sql, new { limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { limite, incluirInactivos });
+
+        var catedras = JsonSerializer.Deserialize<List<Catedra>>(json!) ?? [];
+        foreach (var c in catedras)
+            c.CreadoEn = c.CreadoEn.ToUniversalTime();   // ver la nota sobre fechas al final
+        return catedras;
     }
 
-    public async Task<int> ContarAsync()
+    public async Task<int> ContarAsync(bool incluirInactivos)
     {
-        const string sql = "SELECT COUNT(*) FROM catedras.catedra;";
+        const string sql = "CALL catedras.sp_contar_catedra(@incluirInactivos, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { incluirInactivos });
 
-        // COUNT(*) devuelve BIGINT; Dapper lo convierte al 'int' pedido.
-        return await conexion.ExecuteScalarAsync<int>(sql);
+        // {"total": n}
+        using var documento = JsonDocument.Parse(json!);
+        return documento.RootElement.GetProperty("total").GetInt32();
     }
 
     public async Task<Catedra?> ObtenerPorIdAsync(long idCatedra)
     {
-        string sql = $@"
-            SELECT {ColumnasSelect}
-            FROM catedras.catedra
-            WHERE id_catedra = @idCatedra;";
+        const string sql = "CALL catedras.sp_consultar_catedra(@idCatedra, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<Catedra>(sql, new { idCatedra });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idCatedra });
+
+        if (json is null)
+            return null;   // el procedimiento no encontró la fila
+
+        var catedra = JsonSerializer.Deserialize<Catedra>(json)!;
+        catedra.CreadoEn = catedra.CreadoEn.ToUniversalTime();
+        return catedra;
     }
 
     public async Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra)
     {
-        // Ni id_catedra, ni nombre_asis, ni creado_en se envían: los pone la BD.
+        // No se manda 'NombreAsis' (columna generada) ni 'IdCatedra' (identity).
         const string sql = @"
-            INSERT INTO catedras.catedra
-                (id_evento_asis, nombre, fk_tipo_evento, fk_dependencia, activo)
-            VALUES (@IdEventoAsis, @Nombre, @FkTipoEvento, @FkDependencia, @Activo)
-            RETURNING id_catedra, nombre_asis;";
+            CALL catedras.sp_crear_catedra(
+                @IdEventoAsis, @Nombre, @FkTipoEvento, @FkDependencia, @Activo, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        // Una fila con dos columnas -> tupla (long, string), en ese orden.
-        return await conexion.QuerySingleAsync<(long, string)>(sql, catedra);
+        // id_evento_asis mal formado (chk_catedra_asis), tipo de evento o
+        // dependencia inexistentes -> NpgsqlException, igual que antes. El
+        // id y el nombre_asis salen de la fila que devuelve el
+        // procedimiento (antes venían del RETURNING).
+        string? json = await conexion.QuerySingleAsync<string?>(sql, catedra);
+
+        var creada = JsonSerializer.Deserialize<Catedra>(json!)!;
+        return (creada.IdCatedra, creada.NombreAsis);
     }
 
     public async Task<int> ActualizarAsync(long idCatedra, Dictionary<string, object?> datos)
     {
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_clave", idCatedra);
+        await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        foreach (var (columna, valor) in datos)
-        {
-            if (!ColumnasActualizables.Contains(columna))
-                continue;
+        // 1) Fila actual: 'sp_actualizar_catedra' reemplaza TODAS las
+        //    columnas de negocio, así que un PATCH necesita completar lo que
+        //    no llegó con el valor guardado.
+        const string sqlConsultar = "CALL catedras.sp_consultar_catedra(@idCatedra, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idCatedra });
 
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
-        }
-
-        if (asignaciones.Count == 0)
+        if (actualJson is null)
             return 0;
 
-        // Si cambia 'nombre', PostgreSQL recalcula 'nombre_asis' en el mismo UPDATE.
-        var sql =
-            $"UPDATE catedras.catedra SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_catedra = @id_clave;";
+        var actual = JsonSerializer.Deserialize<Catedra>(actualJson)!;
 
-        await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, parametros);
+        // 2) Mezclar: lo que llegó PISA el valor actual.
+        string idEventoAsis = datos.TryGetValue("id_evento_asis", out var vEvento) ? (string)vEvento! : actual.IdEventoAsis;
+        string nombre = datos.TryGetValue("nombre", out var vNombre) ? (string)vNombre! : actual.Nombre;
+        string fkTipoEvento = datos.TryGetValue("fk_tipo_evento", out var vTipo) ? (string)vTipo! : actual.FkTipoEvento;
+        string? fkDependencia = datos.TryGetValue("fk_dependencia", out var vDependencia) ? (string?)vDependencia : actual.FkDependencia;
+        bool activo = datos.TryGetValue("activo", out var vActivo) ? (bool)vActivo! : actual.Activo;
+
+        // 3) Procedimiento con el conjunto COMPLETO.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_catedra(
+                @idCatedra, @idEventoAsis, @nombre, @fkTipoEvento, @fkDependencia, @activo, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(
+            sqlActualizar, new { idCatedra, idEventoAsis, nombre, fkTipoEvento, fkDependencia, activo });
+
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task<int> EliminarAsync(long idCatedra)
     {
-        const string sql = "DELETE FROM catedras.catedra WHERE id_catedra = @idCatedra;";
+        const string sql = "CALL catedras.sp_eliminar_catedra(@idCatedra, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idCatedra });
 
-        // ⚠ CASCADE hacia 'sesion': el motor borra también sus sesiones.
-        return await conexion.ExecuteAsync(sql, new { idCatedra });
+        // {"eliminado": true|false}; LÓGICO (activo=false).
+        using var documento = JsonDocument.Parse(json!);
+        bool eliminado = documento.RootElement.GetProperty("eliminado").GetBoolean();
+        return eliminado ? 1 : 0;
     }
+
+    // NOTA SOBRE LAS FECHAS: 'row_to_json' escribe 'creado_en' con el
+    // desfase de la zona horaria de la SESIÓN ("...-05:00") y System.Text.Json
+    // lo entrega como DateTime LOCAL. Antes Npgsql entregaba DateTime UTC
+    // directo de la columna. 'ToUniversalTime()' lo devuelve a UTC para que
+    // la respuesta de la API siga serializando igual ("...Z").
 }

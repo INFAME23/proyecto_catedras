@@ -13,7 +13,7 @@ using ApiCatedras.Peticiones;
 /// <summary>Reglas de negocio del recurso 'ProgramaAcademico'.</summary>
 public interface IServicioProgramaAcademico
 {
-    Task<(List<ProgramaAcademico> Datos, int Total)> ListarAsync(int? limite);
+    Task<(List<ProgramaAcademico> Datos, int Total)> ListarAsync(int? limite, bool incluirInactivos = false);
     Task<ProgramaAcademico> ObtenerAsync(string codigo);
     Task CrearAsync(ProgramaAcademicoCrear peticion);
     Task<int> ReemplazarAsync(string codigo, ProgramaAcademicoReemplazo peticion);

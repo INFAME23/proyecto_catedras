@@ -259,7 +259,7 @@ builder.Services.AddScoped<IRepositorioProgramaAcademico>(
 builder.Services.AddScoped<IServicioProgramaAcademico, ServicioProgramaAcademico>();
 
 // IRepositorioAliasPrograma -> RepositorioAliasProgramaPostgres,
-// IServicioAliasPrograma -> ServicioAliasPrograma (solo-anexo: sin actualizar).
+// IServicioAliasPrograma -> ServicioAliasPrograma (con PUT/PATCH desde el retrofit criterio 3).
 builder.Services.AddScoped<IRepositorioAliasPrograma>(
     _ => new RepositorioAliasProgramaPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioAliasPrograma, ServicioAliasPrograma>();
@@ -422,6 +422,15 @@ builder.Services.AddScoped<IServicioRespuestaEncuesta, ServicioRespuestaEncuesta
 builder.Services.AddScoped<IRepositorioRespuestaItem>(
     _ => new RepositorioRespuestaItemPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioRespuestaItem, ServicioRespuestaItem>();
+
+// Retrofit criterio 3 — tablas sin código previo: configuración y auditoría.
+// 'Bitacora': lectura + POST/PUT/PATCH/DELETE (log de auditoría: ver el riesgo en BitacoraController).
+builder.Services.AddScoped<IRepositorioParametro>(
+    _ => new RepositorioParametroPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioParametro, ServicioParametro>();
+builder.Services.AddScoped<IRepositorioBitacora>(
+    _ => new RepositorioBitacoraPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioBitacora, ServicioBitacora>();
 
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar

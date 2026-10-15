@@ -33,7 +33,7 @@ public interface IServicioSede
     /// Lista sedes. 'limite' nulo -> 1000 por defecto; 'limite' &lt;= 0 ->
     /// ArgumentException (400). Devuelve los datos y el total incluido.
     /// </summary>
-    Task<(List<Sede> Datos, int Total)> ListarAsync(int? limite);
+    Task<(List<Sede> Datos, int Total)> ListarAsync(int? limite, bool incluirInactivos = false);
 
     /// <summary>
     /// Devuelve la sede por código. Si no existe lanza NoEncontradoExcepcion

@@ -1,10 +1,10 @@
 // ==========================================================================
 //  Controllers/AliasProgramaController.cs  ·  Proyecto Cátedras · Versión 2
 // --------------------------------------------------------------------------
-//  Capa HTTP de 'AliasPrograma'. SOLO 4 endpoints: GET lista, GET/{id},
-//  POST y DELETE. NO hay [HttpPut] ni [HttpPatch] (ADR D12): una llamada a
-//  PUT/PATCH responde 404/405 del propio ASP.NET porque la ruta no existe;
-//  no se fabrica ningún error a mano.
+//  Capa HTTP de 'AliasPrograma': GET lista, GET/{id}, POST, PUT, PATCH y
+//  DELETE. PUT y PATCH se agregaron en el RETROFIT criterio 3 (la v2, ADR D12,
+//  lo trataba como solo-anexo) para que sp_actualizar_alias_programa tenga
+//  llamador.
 //
 //  El id es 'long' (lo genera la BD); la restricción de ruta '{idAlias:long}'
 //  hace que "/api/AliasPrograma/abc" ni siquiera entre a este controlador.
@@ -109,6 +109,61 @@ public class AliasProgramaController : ControllerBase
         catch (Exception ex)
         {
             return Problema(500, "error_interno", "Error al crear el alias.", ex.Message);
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    //  PUT /api/AliasPrograma/{idAlias}   -> 200 { filasAfectadas } | 422 | 404 | 500
+    // ----------------------------------------------------------------------
+    [HttpPut("{idAlias:long}")]
+    public async Task<IActionResult> Reemplazar(long idAlias, [FromBody] AliasProgramaReemplazo peticion)
+    {
+        try
+        {
+            int filas = await _servicio.ReemplazarAsync(idAlias, peticion);
+            return Ok(new { filasAfectadas = filas });
+        }
+        catch (NoEncontradoExcepcion ex)
+        {
+            return Problema(404, "no_encontrado", "Alias no encontrado.", ex.Message);
+        }
+        catch (NpgsqlException ex)
+        {
+            // Texto duplicado (uq_alias_texto) o programa inexistente (fk_alias_programa).
+            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Problema(500, "error_interno", "Error al reemplazar el alias.", ex.Message);
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    //  PATCH /api/AliasPrograma/{idAlias}   -> 200 { filasAfectadas } | 400 | 404 | 500
+    // ----------------------------------------------------------------------
+    [HttpPatch("{idAlias:long}")]
+    public async Task<IActionResult> Actualizar(long idAlias, [FromBody] AliasProgramaActualizar peticion)
+    {
+        try
+        {
+            int filas = await _servicio.ActualizarAsync(idAlias, peticion);
+            return Ok(new { filasAfectadas = filas });
+        }
+        catch (ArgumentException ex)
+        {
+            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
+        }
+        catch (NoEncontradoExcepcion ex)
+        {
+            return Problema(404, "no_encontrado", "Alias no encontrado.", ex.Message);
+        }
+        catch (NpgsqlException ex)
+        {
+            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Problema(500, "error_interno", "Error al actualizar el alias.", ex.Message);
         }
     }
 
