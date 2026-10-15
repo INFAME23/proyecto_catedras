@@ -24,7 +24,24 @@ cd proyecto_catedras
 docker compose up -d --build
 ```
 
-## 2. Verificación de la API — 10 pasos
+**Retrofit — si tu volumen de PostgreSQL ya existía** (lo creaste antes
+de agregar `db/postgres/migraciones/`): initdb no vuelve a correr, así
+que el SP `sp_guardar_programa_academico` no existe todavía. Dos
+opciones:
+
+```powershell
+# Opción A: reset completo (borra los datos de prueba y resiembra todo)
+docker compose down -v
+docker compose up -d --build
+
+# Opción B: aplicar solo la migración, conservando los datos
+Get-Content db/postgres/migraciones/001_sp_guardar_programa_academico.sql | docker compose exec -T postgres psql -U sa -d bdcatedras_postgres_local
+```
+
+Sin el SP, `POST /api/ProgramaAcademico` responde 500 con
+`procedure catedras.sp_guardar_programa_academico(...) does not exist`.
+
+## 2. Verificación de la API — 11 pasos
 
 ```powershell
 docker compose ps
@@ -76,6 +93,16 @@ docker compose ps
 10. **Reset** (recomendado después de los pasos 7-9, que modifican
     datos de ejemplo): `docker compose down -v && docker compose up -d
     --build` → las 15 tablas vuelven a sus datos originales.
+
+11. **Maestro-detalle (retrofit, criterio 11):** `POST
+    /api/ProgramaAcademico` con
+    `{"codigo":"Z0001","nombre":"Prueba","alias":[{"texto_normalizado":"prueba uno"},{"texto_normalizado":"prueba dos","origen":"CARGA"}]}`
+    → `200`; `GET /api/AliasPrograma` → aparecen los 2 alias con
+    `fk_programa: "Z0001"`. Luego el mismo body con `codigo: "Z0002"` y
+    un alias `"ingenieria de datos"` (ya existe) → `500`, y
+    `GET /api/ProgramaAcademico/Z0002` → `404`: el SP revirtió todo.
+    Limpieza: `DELETE /api/ProgramaAcademico/Z0001` (sus alias se van en
+    cascada).
 
 **Prueba de capas (criterio de aceptación 8):**
 ```powershell

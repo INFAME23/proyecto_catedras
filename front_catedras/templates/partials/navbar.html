@@ -15,10 +15,18 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint in ('catedras.catalogo', 'catedras.detalle', 'sesiones.detalle') }}" href="{{ url_for('catedras.catalogo') }}">
+                        <i class="fas fa-book-open"></i> Catálogo
+                    </a>
+                </li>
+                {# v5: la entrada a /admin solo se ofrece a quien tiene el rol ADMIN. #}
+                {% if tiene_rol('ADMIN') %}
+                <li class="nav-item">
                     <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}" href="{{ url_for('admin.panel') }}">
                         <i class="fas fa-cogs"></i> Administración
                     </a>
                 </li>
+                {% endif %}
                 <li class="nav-item">
                     <a class="nav-link {{ 'active' if request.endpoint == 'registro.inicio' }}" href="{{ url_for('registro.inicio') }}">
                         <i class="fas fa-clipboard-check"></i> Registro de asistencia
@@ -35,9 +43,23 @@
                     </a>
                 </li>
             </ul>
+            {# auth_helpers.py (v5): lee la sesión de Flask que llena routes/auth.py. #}
+            {% if sesion_activa() %}
+            <div class="d-flex align-items-center gap-2">
+                <span class="navbar-text small" title="Roles: {{ roles_actuales()|join(', ') or 'ninguno' }}">
+                    <i class="fas fa-user me-1"></i>{{ usuario_actual().usuario }}
+                </span>
+                <form method="post" action="{{ url_for('auth.logout') }}" class="m-0">
+                    <button class="btn btn-outline-primary btn-sm" type="submit">
+                        <i class="fas fa-sign-out-alt me-1"></i>Cerrar sesión
+                    </button>
+                </form>
+            </div>
+            {% else %}
             <a class="btn btn-outline-primary btn-sm" href="{{ url_for('auth.login') }}">
                 <i class="fas fa-sign-in-alt me-1"></i>Iniciar sesión
             </a>
+            {% endif %}
         </div>
     </div>
 </nav>

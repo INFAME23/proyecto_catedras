@@ -10,6 +10,12 @@
 //   · 'nivel': lista CERRADA de 6 valores (chk_programa_nivel). La BD lo
 //     guarda como texto, así que aquí también es texto, no un 'enum' de C#.
 //  Un fallo de forma -> 422 y la BD no se toca.
+//
+//  Retrofit V2 (Guía IA, Regla 1 · maestro-detalle): el body acepta además
+//  una lista OPCIONAL 'alias' con los alias iniciales del programa. Si
+//  llega, programa y alias se guardan en UNA sola transacción mediante el
+//  SP 'sp_guardar_programa_academico'. Si no llega (o llega vacía), el
+//  POST se comporta exactamente como antes del retrofit.
 // ==========================================================================
 
 namespace ApiCatedras.Peticiones;
@@ -49,4 +55,11 @@ public class ProgramaAcademicoCrear
     /// <summary>¿Está activo? Opcional (por defecto true).</summary>
     [JsonPropertyName("activo")]
     public bool? Activo { get; set; }
+
+    /// <summary>Alias iniciales. Opcional: null o [] = programa sin alias.
+    /// Cada elemento se valida con las anotaciones de <see cref="AliasInicial"/>.</summary>
+    // 'List<AliasInicial>?' = lista de objetos AliasInicial que PUEDE faltar
+    // (el '?' la hace opcional: si el JSON no trae "alias", queda en null).
+    [JsonPropertyName("alias")]
+    public List<AliasInicial>? Alias { get; set; }
 }

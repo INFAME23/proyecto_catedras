@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block titulo %}Lote {{ lote.id_lote_carga }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.lotes_listar') }}">Lote de carga</a></li>
+        <li class="breadcrumb-item active">{{ lote.id_lote_carga }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-layer-group text-primary-custom me-2"></i>Lote {{ lote.id_lote_carga }} · {{ lote.nombre_archivo }}</h1>
+<p class="text-muted small">Cargado el {{ lote.cargado_en[:19]|replace('T', ' ') }} ·
+    <span class="badge {{ 'badge-success' if lote.cerrado else 'badge-secondary' }}">{{ 'Cerrado' if lote.cerrado else 'Abierto (la carga no terminó)' }}</span></p>
+
+{% include 'partials/resumen_lote.html' %}
+
+{% if lote.observaciones %}<p class="small"><strong>Observaciones:</strong> {{ lote.observaciones }}</p>{% endif %}
+
+<h2 class="h5 fw-bold mt-4">Filas rechazadas ({{ novedades|length }})</h2>
+{% include 'partials/tabla_novedades.html' %}
+{% endblock %}

@@ -31,6 +31,7 @@ api_catedras/
 │   ├── FacultadCrear.cs / FacultadReemplazo.cs / FacultadActualizar.cs
 │   ├── DependenciaCrear.cs / DependenciaReemplazo.cs / DependenciaActualizar.cs
 │   ├── ProgramaAcademicoCrear.cs / ProgramaAcademicoReemplazo.cs / ProgramaAcademicoActualizar.cs
+│   ├── AliasInicial.cs                 # retrofit: elemento de 'alias' en el POST de ProgramaAcademico (§4.8)
 │   ├── AliasProgramaCrear.cs           # ⚠️ ÚNICA petición de AliasPrograma — no hay Reemplazo ni Actualizar (§4.6)
 │   └── CatedraCrear.cs / CatedraReemplazo.cs / CatedraActualizar.cs   # ninguna de las 3 incluye NombreAsis
 ├── Controllers/
@@ -48,7 +49,7 @@ api_catedras/
 └── Repositorios/
     ├── IRepositorioFacultad.cs / RepositorioFacultadPostgres.cs
     ├── IRepositorioDependencia.cs / RepositorioDependenciaPostgres.cs
-    ├── IRepositorioProgramaAcademico.cs / RepositorioProgramaAcademicoPostgres.cs
+    ├── IRepositorioProgramaAcademico.cs / RepositorioProgramaAcademicoPostgres.cs  # CrearAsync = CALL al SP (§4.8)
     ├── IRepositorioAliasPrograma.cs / RepositorioAliasProgramaPostgres.cs  # sin ActualizarAsync (§4.6)
     └── IRepositorioCatedra.cs / RepositorioCatedraPostgres.cs             # CrearAsync devuelve (id, nombreAsis) (§4.3)
 ```
@@ -249,6 +250,35 @@ JavaScript ni un `offset` nuevo en la API — ver el ADR D13 de
 [4_research.md](4_research.md) para las alternativas descartadas (una
 API con `offset`, o filtrar en JavaScript en el navegador).
 
+### 4.8 Retrofit — maestro-detalle `programa_academico` + `alias_programa` con un SP
+
+Regla 1 de la [guía operativa para la IA](../../guia_ia.md): si una
+petición crea un maestro **junto con** sus detalles, se resuelve con UN
+procedimiento almacenado que hace todo en una transacción — nunca dos
+`INSERT` sueltos desde C#. Ver el ADR D14 de [4_research.md](4_research.md).
+
+```
+POST /api/ProgramaAcademico  { ..., "alias": [ {...}, {...} ] }
+  → ProgramaAcademicoCrear (+ List<AliasInicial>?)   valida forma → 422
+  → ServicioProgramaAcademico.CrearAsync             arma List<AliasPrograma>
+                                                      (fk_programa = codigo, origen por defecto)
+  → RepositorioProgramaAcademicoPostgres.CrearAsync  serializa a JSON y hace
+       CALL catedras.sp_guardar_programa_academico(@Codigo, ..., CAST(@Alias AS jsonb))
+  → el SP: INSERT programa + INSERT ... SELECT FROM jsonb_array_elements(p_alias)
+```
+
+- **El JSON se arma en el repositorio, no en el servicio:** la forma
+  `[{"texto_normalizado", "origen"}]` es el contrato del SP, es decir,
+  un detalle del motor; el servicio sigue sin saber qué motor hay
+  (Artículo 3). El servicio solo aplica la regla de negocio: cada alias
+  inicial pertenece al programa que se crea.
+- El SP vive en `db/postgres/migraciones/001_sp_guardar_programa_academico.sql`
+  y se monta en `/docker-entrypoint-initdb.d/` con prefijo `z001_` para
+  correr **después** del script provisto (orden alfabético).
+- `POST /api/AliasPrograma` (agregar un alias DESPUÉS) no cambia: sigue
+  siendo un `INSERT` normal, porque ahí no hay "una sola petición" de
+  maestro + detalle que unir.
+
 ## 5. Docker: sin cambios
 
 La v2 no agrega servicios: sigue siendo `postgres` + `api`
@@ -258,3 +288,8 @@ La v2 no agrega servicios: sigue siendo `postgres` + `api`
 en el mismo contenedor `api`. `front_catedras/` sigue fuera de
 `docker-compose.yml` (se arranca aparte con `python run.py`), como en
 v1 — integrarlo al compose no lo pide ninguna spec todavía.
+
+**Retrofit:** el servicio `postgres` monta además
+`db/postgres/migraciones/001_sp_guardar_programa_academico.sql` como
+`/docker-entrypoint-initdb.d/z001_sp_guardar_programa_academico.sql`
+(§4.8).

@@ -17,7 +17,7 @@ using ApiCatedras.Peticiones;
 public interface IServicioDependencia
 {
     /// <summary>Lista dependencias. 'limite' nulo -> 1000; &lt;= 0 -> ArgumentException.</summary>
-    Task<(List<Dependencia> Datos, int Total)> ListarAsync(int? limite);
+    Task<(List<Dependencia> Datos, int Total)> ListarAsync(int? limite, bool incluirInactivos = false);
 
     /// <summary>Devuelve la dependencia o lanza NoEncontradoExcepcion.</summary>
     Task<Dependencia> ObtenerAsync(string idDependencia);

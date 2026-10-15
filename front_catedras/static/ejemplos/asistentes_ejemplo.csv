@@ -1,0 +1,4 @@
+id_asis;nombres;apellidos;correo_institucional;correo_personal;tipo_documento;documento;tipo_vinculacion;programa;periodo
+CARGA0001;Ana;Prueba Carga;ana.prueba.carga@usbmed.edu.co;;CC;80010001;ESTUDIANTE;M0286;2026-1
+CARGA0002;Luis;Prueba Carga;;luis.prueba.carga@correo.com;CC;80010002;DOCENTE;;
+CARGA0003;;Sin Nombre;sin.nombre@usbmed.edu.co;;CC;80010003;ESTUDIANTE;Programa que no existe;2026-1

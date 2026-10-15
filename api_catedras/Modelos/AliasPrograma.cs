@@ -15,8 +15,8 @@
 //  'IdAlias' y 'CreadoEn' NO llevan 'required': los pone la BD, el cliente
 //  nunca los manda (igual que 'id_encuesta' en la v1).
 //
-//  Es una tabla de SOLO-ANEXO (ADR D12): no tiene PUT ni PATCH. Si un alias
-//  quedó mal escrito, se borra y se crea de nuevo.
+//  (La v2, ADR D12, la trataba como solo-anexo; el RETROFIT criterio 3 le
+//  agregó PUT y PATCH para poder corregir un alias sin borrarlo.)
 // ==========================================================================
 
 namespace ApiCatedras.Modelos;

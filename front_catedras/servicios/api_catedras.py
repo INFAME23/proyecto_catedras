@@ -12,8 +12,23 @@
 #  algo que la plantilla pueda mostrar.
 # ==========================================================================
 
+from urllib.parse import quote
+
 from flask import current_app
 import requests
+
+
+def llave(*partes):
+    """v4 · Arma el "id" de un recurso de LLAVE COMPUESTA en la URL.
+
+    'Ponencia' no tiene una columna 'id': su llave son 3 columnas y la API
+    las recibe como 3 segmentos de ruta (ADR D19):
+        llave(10, 167, 'PONENTE') -> '10/167/PONENTE'
+        obtener('Ponencia', llave(10, 167, 'PONENTE'))
+        -> GET /api/Ponencia/10/167/PONENTE
+    'quote' escapa cada segmento por si trae espacios o '/'.
+    """
+    return '/'.join(quote(str(parte), safe='') for parte in partes)
 
 
 class ErrorApi(Exception):
@@ -56,11 +71,24 @@ def _procesar(respuesta):
     )
 
 
-def listar(recurso, limite=None):
-    """GET /api/{recurso}. Tabla vacía (204) -> lista vacía, no error."""
+def listar(recurso, limite=None, timeout=5, **filtros):
+    """GET /api/{recurso}. Tabla vacía (204) -> lista vacía, no error.
+
+    'timeout' (segundos) es configurable porque el catálogo de cátedras
+    trae las 5502 filas en una sola llamada (ADR D13 de la v2) y puede
+    tardar más que una tabla catálogo pequeña.
+
+    v3: '**filtros' son parámetros de consulta extra que la API entiende,
+    p. ej. listar('Asistente', limite=50, q='garcia', pagina=2) o
+    listar('DocumentoAsistente', fkAsistente=7). Los que vienen en None
+    no se mandan.
+    """
     try:
         parametros = {'limite': limite} if limite else {}
-        respuesta = requests.get(_url(recurso), params=parametros, timeout=5)
+        # '**filtros' recoge los argumentos con nombre que no están en la
+        # firma; aquí se agregan solo los que traen valor.
+        parametros.update({clave: valor for clave, valor in filtros.items() if valor is not None})
+        respuesta = requests.get(_url(recurso), params=parametros, timeout=timeout)
     except requests.RequestException as ex:
         raise ErrorApi(f"No se pudo contactar la API en '{_url(recurso)}'.", detalle=str(ex))
 
@@ -92,6 +120,22 @@ def reemplazar(recurso, id_valor, datos):
     """PUT /api/{recurso}/{id} (reemplazo completo)."""
     try:
         respuesta = requests.put(_url(recurso, id_valor), json=datos, timeout=5)
+    except requests.RequestException as ex:
+        raise ErrorApi(f"No se pudo contactar la API en '{_url(recurso, id_valor)}'.", detalle=str(ex))
+
+    return _procesar(respuesta)
+
+
+def actualizar_parcial(recurso, id_valor, datos):
+    """PATCH /api/{recurso}/{id} (actualización parcial).
+
+    v3: también sirve para las ACCIONES de las tablas de llave compuesta,
+    donde el "id" de la URL es el nombre de la acción:
+      actualizar_parcial('VinculacionAsistente', 'cerrar', {...llave...})
+      -> PATCH /api/VinculacionAsistente/cerrar
+    """
+    try:
+        respuesta = requests.patch(_url(recurso, id_valor), json=datos, timeout=5)
     except requests.RequestException as ex:
         raise ErrorApi(f"No se pudo contactar la API en '{_url(recurso, id_valor)}'.", detalle=str(ex))
 

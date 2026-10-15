@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block titulo %}Lotes de carga · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Lote de carga</li>
+    </ol>
+</nav>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 fw-bold mb-0"><i class="fas fa-layer-group text-primary-custom me-2"></i>Lotes de carga</h1>
+    <a class="btn btn-primary" href="{{ url_for('carga.carga_datos') }}"><i class="fas fa-file-upload me-1"></i>Nueva carga</a>
+</div>
+<p class="text-muted small">Cada ejecución de la carga masiva deja un lote con sus contadores: la evidencia de qué se aceptó y qué no. Un lote no se edita ni se borra.</p>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if lotes %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Id</th><th>Archivo</th><th>Cargado</th><th class="text-end">Leídas</th><th class="text-end">Aceptadas</th><th class="text-end">Rechazadas</th><th>Estado</th><th></th></tr></thead>
+                <tbody>
+                    {% for l in lotes %}
+                    <tr>
+                        <td class="fw-semibold">{{ l.id_lote_carga }}</td>
+                        <td>{{ l.nombre_archivo }}</td>
+                        <td class="small">{{ l.cargado_en[:19]|replace('T', ' ') }}</td>
+                        <td class="text-end">{{ l.filas_leidas }}</td>
+                        <td class="text-end text-success">{{ l.filas_aceptadas }}</td>
+                        <td class="text-end text-danger">{{ l.filas_rechazadas }}</td>
+                        <td><span class="badge {{ 'badge-success' if l.cerrado else 'badge-secondary' }}">{{ 'Cerrado' if l.cerrado else 'Abierto' }}</span></td>
+                        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.lotes_detalle', id_lote_carga=l.id_lote_carga) }}">Ver</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay lotes de carga.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

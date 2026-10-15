@@ -1,7 +1,8 @@
 // ==========================================================================
 //  Servicios/ServicioAliasPrograma.cs  ·  Proyecto Cátedras · Versión 2
 // --------------------------------------------------------------------------
-//  Reglas de negocio de 'AliasPrograma'. Sin método de actualizar.
+//  Reglas de negocio de 'AliasPrograma'. Incluye Reemplazar (PUT) y
+//  Actualizar (PATCH), agregados en el RETROFIT criterio 3.
 //  En CrearAsync el servicio arma el modelo con los valores por defecto,
 //  pide al repositorio el INSERT y completa el modelo con lo que la BD
 //  generó (id_alias y creado_en) antes de devolverlo.
@@ -66,6 +67,39 @@ public class ServicioAliasPrograma : IServicioAliasPrograma
         alias.CreadoEn = creadoEn;
 
         return alias;
+    }
+
+    public async Task<int> ReemplazarAsync(long idAlias, AliasProgramaReemplazo peticion)
+    {
+        var datos = new Dictionary<string, object?>
+        {
+            ["texto_normalizado"] = peticion.TextoNormalizado!,
+            ["fk_programa"] = peticion.FkPrograma!,
+            ["origen"] = peticion.Origen ?? OrigenPorDefecto,   // la columna no admite NULL
+        };
+
+        int filas = await _repositorio.ActualizarAsync(idAlias, datos);
+
+        if (filas == 0)
+            throw new NoEncontradoExcepcion($"No existe el alias '{idAlias}'.");
+
+        return filas;
+    }
+
+    public async Task<int> ActualizarAsync(long idAlias, AliasProgramaActualizar peticion)
+    {
+        var datos = peticion.ACamposEnviados();
+
+        if (datos.Count == 0)
+            throw new ArgumentException(
+                "El cuerpo del PATCH no trae ningún campo para actualizar.");
+
+        int filas = await _repositorio.ActualizarAsync(idAlias, datos);
+
+        if (filas == 0)
+            throw new NoEncontradoExcepcion($"No existe el alias '{idAlias}'.");
+
+        return filas;
     }
 
     public async Task<int> EliminarAsync(long idAlias)

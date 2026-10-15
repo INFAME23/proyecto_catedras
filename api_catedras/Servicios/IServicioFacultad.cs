@@ -17,7 +17,7 @@ using ApiCatedras.Peticiones;
 public interface IServicioFacultad
 {
     /// <summary>Lista facultades. 'limite' nulo -> 1000; &lt;= 0 -> ArgumentException.</summary>
-    Task<(List<Facultad> Datos, int Total)> ListarAsync(int? limite);
+    Task<(List<Facultad> Datos, int Total)> ListarAsync(int? limite, bool incluirInactivos = false);
 
     /// <summary>Devuelve la facultad o lanza NoEncontradoExcepcion.</summary>
     Task<Facultad> ObtenerAsync(string idFacultad);

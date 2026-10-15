@@ -1,0 +1,95 @@
+{# ==========================================================================
+   partials/macros_sesion.html  ·  Front Cátedras · Versión 4
+   --------------------------------------------------------------------------
+   Piezas reutilizables de la v4 (se importan con
+   {% import 'partials/macros_sesion.html' as ms %}):
+     · ms.estado(e)        -> badge de color para el estado de una sesión.
+     · ms.ponentes(...)    -> tabla de ponentes + formulario de asignar/quitar.
+   La usan el detalle público de la sesión y el panel de administración.
+   ========================================================================== #}
+
+{% macro estado(e) -%}
+{%- set clases = {'PROGRAMADA': 'badge-primary', 'ABIERTA': 'badge-success',
+                  'CERRADA': 'badge-secondary', 'MIGRADA': 'badge-warning'} -%}
+<span class="badge {{ clases.get(e, 'badge-secondary') }}">{{ e }}</span>
+{%- endmacro %}
+
+
+{#  ponentes(...)
+    id_sesion   : la sesión (fija: la puso la URL, Regla 2 de la guía IA)
+    ponentes    : filas de GET /api/Ponencia?fkSesion=, con 'asistente' agregado
+    candidatos  : resultado de la búsqueda de personas (llena el <select>)
+    q           : texto buscado
+    roles       : lista cerrada de roles
+    url_buscar  : a dónde va el GET de búsqueda (la misma página)
+    url_asignar : a dónde va el POST de asignar
+    url_quitar  : a dónde va el POST de quitar                                #}
+{% macro ponentes(id_sesion, ponentes, candidatos, q, roles, url_buscar, url_asignar, url_quitar) %}
+<div class="card shadow-sm mb-4" id="ponentes">
+    <div class="card-header fw-bold"><i class="fas fa-chalkboard-teacher me-2"></i>Ponentes y participantes</div>
+    <div class="card-body p-0">
+        {% if ponentes %}
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr><th>Persona</th><th>Código ASIS</th><th>Rol</th><th class="text-end">Quitar</th></tr></thead>
+            <tbody>
+            {% for p in ponentes %}
+            <tr>
+                <td>
+                    {% if p.asistente %}{{ p.asistente.nombres }} {{ p.asistente.apellidos }}{% else %}Asistente {{ p.fk_asistente }}{% endif %}
+                    <span class="text-muted small">(id {{ p.fk_asistente }})</span>
+                </td>
+                <td>{{ p.asistente.id_asis if p.asistente and p.asistente.id_asis else '—' }}</td>
+                <td><span class="badge badge-primary">{{ p.rol }}</span></td>
+                <td class="text-end">
+                    {# ADR D19: la llave completa (sesión + asistente + rol) identifica la fila. #}
+                    <form class="d-inline" method="post" action="{{ url_quitar }}"
+                          onsubmit="return confirm('¿Quitar el rol {{ p.rol }} a esta persona en la sesión {{ id_sesion }}?');">
+                        <input type="hidden" name="fk_asistente" value="{{ p.fk_asistente }}">
+                        <input type="hidden" name="rol" value="{{ p.rol }}">
+                        <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-user-minus"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted text-center py-3 mb-0">Esta sesión todavía no tiene ponentes registrados.</p>
+        {% endif %}
+    </div>
+    <div class="card-footer bg-white" id="asignar">
+        <h2 class="h6 fw-bold mt-2"><i class="fas fa-user-plus me-1"></i>Asignar una persona</h2>
+        {# Paso 1 · buscar (GET a la misma página: la API filtra con ?q=). #}
+        <form class="d-flex gap-2 mb-2" method="get" action="{{ url_buscar }}#asignar">
+            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Buscar por nombre, apellido o código ASIS" autocomplete="off">
+            <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
+        </form>
+        {# Paso 2 · elegir de la lista y el rol (Regla 2: nada se digita). #}
+        {% if candidatos %}
+        <form class="row g-2 align-items-end" method="post" action="{{ url_asignar }}">
+            <div class="col-md-7">
+                <label class="form-label small" for="fk_asistente">Persona ({{ candidatos|length }} resultado{{ '' if candidatos|length == 1 else 's' }})</label>
+                <select class="form-select" id="fk_asistente" name="fk_asistente" required>
+                    {% for a in candidatos %}
+                    <option value="{{ a.id_asistente }}">{{ a.id_asistente }} · {{ a.nombres }} {{ a.apellidos }}{% if a.id_asis %} · {{ a.id_asis }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small" for="rol">Rol</label>
+                <select class="form-select" id="rol" name="rol">
+                    {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-plus me-1"></i>Asignar</button>
+            </div>
+        </form>
+        {% elif q %}
+        <p class="text-muted small mb-2">Nadie coincide con «{{ q }}».</p>
+        {% else %}
+        <p class="text-muted small mb-2">Busca primero a la persona; luego elígela de la lista.</p>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}

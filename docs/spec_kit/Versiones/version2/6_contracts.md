@@ -34,6 +34,28 @@ credenciales, URLs externas ni *feature flags* involucrados).
   `{id}` es texto para las tres primeras (`id_facultad`,
   `id_dependencia`, `codigo`) y numérico para `Catedra` (su PK la genera
   la BD, igual que `Encuesta` en v1).
+- **Retrofit — `POST /api/ProgramaAcademico` acepta alias iniciales**
+  (Guía IA, Regla 1). Body:
+  ```json
+  {
+    "codigo": "Z0001",
+    "nombre": "Programa nuevo",
+    "fk_facultad": "F_ING",
+    "nivel": "PREGRADO",
+    "activo": true,
+    "alias": [
+      { "texto_normalizado": "programa nuevo" },
+      { "texto_normalizado": "prog. nuevo", "origen": "CARGA" }
+    ]
+  }
+  ```
+  `alias` es **opcional** (ausente o `[]` = igual que antes). Respuesta
+  sin cambios: `200 {estado: "creado", mensaje}`. Errores: un alias sin
+  `texto_normalizado` o con más de 200 caracteres → **422**
+  (`campo: "alias[0].texto_normalizado"`); `alias` que no es una lista →
+  **422** (`campo: "alias"`); un `texto_normalizado` que ya existe →
+  **500** (`uq_alias_texto`) y **no se guarda nada**, ni el programa.
+  Si el cliente manda `fk_programa` dentro de un alias, se ignora.
 - `AliasPrograma` expone **4 verbos, no 5**: `GET /api/AliasPrograma`,
   `GET /api/AliasPrograma/{id}`, `POST /api/AliasPrograma`,
   `DELETE /api/AliasPrograma/{id}`. No existen `PUT` ni `PATCH` para
@@ -76,7 +98,16 @@ Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §5.
 
 Sin cambios: [version1/6_contracts.md](../version1/6_contracts.md) §6.
 Las 5 tablas de v2 ya estaban en `script_bdcatedras.sql` desde el
-montaje de la v1 — no hay un script nuevo que montar.
+montaje de la v1. **Retrofit:** se monta además la migración del SP
+maestro-detalle:
+
+| Archivo del repositorio | Ruta en el contenedor `postgres` |
+|---|---|
+| `db/postgres/migraciones/001_sp_guardar_programa_academico.sql` | `/docker-entrypoint-initdb.d/z001_sp_guardar_programa_academico.sql` (`:ro`) |
+
+El prefijo `z001_` hace que corra **después** de `script_bdcatedras.sql`
+(initdb ejecuta en orden alfabético). Igual que el script provisto, solo
+corre con el volumen vacío.
 
 ## 7. Devcontainer
 

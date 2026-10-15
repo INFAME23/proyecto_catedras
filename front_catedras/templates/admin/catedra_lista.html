@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block titulo %}Cátedras · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Cátedra</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 fw-bold mb-0"><i class="fas fa-book-open text-primary-custom me-2"></i>Cátedras</h1>
+    <a class="btn btn-primary" href="{{ url_for('admin.catedras_nueva') }}">
+        <i class="fas fa-plus me-1"></i>Nueva cátedra
+    </a>
+</div>
+
+<form class="d-flex gap-2 mb-3" method="get" action="{{ url_for('admin.catedras_listar') }}">
+    <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Buscar por nombre o código ASIS">
+    {% if ver_inactivas %}<input type="hidden" name="inactivas" value="1">{% endif %}
+    <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
+</form>
+{% if ver_inactivas %}
+<p class="small"><a href="{{ url_for('admin.catedras_listar', q=q) }}"><i class="fas fa-eye-slash me-1"></i>Solo activas</a> · mostrando también las inactivas</p>
+{% else %}
+<p class="small"><a href="{{ url_for('admin.catedras_listar', q=q, inactivas=1) }}"><i class="fas fa-eye me-1"></i>Ver también las inactivas</a></p>
+{% endif %}
+<p class="text-muted small">{{ total }} cátedra{{ '' if total == 1 else 's' }} · página {{ pagina }} de {{ total_paginas }}</p>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if catedras %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Id</th><th>ASIS</th><th>Nombre</th><th>Nombre ASIS</th><th>Tipo</th><th>Dependencia</th><th>Activa</th><th class="text-end">Acciones</th></tr>
+                </thead>
+                <tbody>
+                    {% for c in catedras %}
+                    <tr>
+                        <td class="fw-semibold">{{ c.id_catedra }}</td>
+                        <td>{{ c.id_evento_asis }}</td>
+                        <td>{{ c.nombre }}</td>
+                        <td class="small text-muted">{{ c.nombre_asis }}</td>
+                        <td><span class="badge badge-secondary">{{ c.fk_tipo_evento }}</span></td>
+                        <td>{{ c.fk_dependencia or '—' }}</td>
+                        <td><span class="badge {{ 'badge-success' if c.activo else 'badge-danger' }}">{{ 'Sí' if c.activo else 'No' }}</span></td>
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.sesiones_listar', fk_catedra=c.id_catedra) }}" title="Sesiones (v4)"><i class="fas fa-calendar-check"></i></a>
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.catedras_editar', id_catedra=c.id_catedra) }}"><i class="fas fa-edit"></i></a>
+                            <form class="d-inline" method="post" action="{{ url_for('admin.catedras_eliminar', id_catedra=c.id_catedra) }}"
+                                  onsubmit="return confirm('¿Eliminar la cátedra {{ c.id_catedra }}? También se borrarán sus SESIONES (ON DELETE CASCADE).');">
+                                <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay cátedras que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if total_paginas > 1 %}
+<nav class="mt-3">
+    <ul class="pagination justify-content-center flex-wrap">
+        <li class="page-item {{ 'disabled' if pagina == 1 }}"><a class="page-link" href="{{ url_for('admin.catedras_listar', q=q, pagina=pagina - 1, inactivas=1 if ver_inactivas else None) }}">Anterior</a></li>
+        {% for n in range([1, pagina - 2]|max, [total_paginas, pagina + 2]|min + 1) %}
+        <li class="page-item {{ 'active' if n == pagina }}"><a class="page-link" href="{{ url_for('admin.catedras_listar', q=q, pagina=n, inactivas=1 if ver_inactivas else None) }}">{{ n }}</a></li>
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if pagina == total_paginas }}"><a class="page-link" href="{{ url_for('admin.catedras_listar', q=q, pagina=pagina + 1, inactivas=1 if ver_inactivas else None) }}">Siguiente</a></li>
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

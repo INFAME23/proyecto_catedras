@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nueva sesión' if modo == 'nueva' else 'Editar sesión' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.sesiones_listar', fk_catedra=sesion.fk_catedra) }}">Sesión</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-calendar-check text-primary-custom me-2"></i>{{ 'Nueva sesión' if modo == 'nueva' else 'Editar sesión ' ~ sesion.id_sesion }}</h1>
+<p class="text-muted mb-3">
+    Cátedra {{ sesion.fk_catedra }}{% if catedra %} · {{ catedra.nombre }}{% endif %}
+    <span class="small">(fija: la sesión pertenece a esta cátedra — Regla 2 de la guía IA)</span>
+</p>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.sesiones_nueva', fk_catedra=sesion.fk_catedra) if modo == 'nueva' else url_for('admin.sesiones_editar', id_sesion=sesion.id_sesion) }}">
+
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label" for="numero_reunion">Número de reunión</label>
+                    <input type="number" class="form-control" id="numero_reunion" name="numero_reunion" min="1"
+                           {% if modo == 'editar' %}required{% endif %}
+                           value="{{ sesion.numero_reunion if sesion.numero_reunion else '' }}">
+                    <div class="form-text">
+                        {% if modo == 'nueva' %}Déjalo vacío: la base de datos pone el consecutivo de la cátedra (ADR D20).
+                        {% else %}Obligatorio al editar: la BD solo lo calcula al crear.{% endif %}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="numero_reunion_asis">Número en el ASIS</label>
+                    <input type="number" class="form-control" id="numero_reunion_asis" name="numero_reunion_asis"
+                           value="{{ sesion.numero_reunion_asis if sesion.numero_reunion_asis else '' }}">
+                    <div class="form-text">Opcional (contador propio del ASIS).</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="titulo">Título</label>
+                    <input type="text" class="form-control" id="titulo" name="titulo" maxlength="200" value="{{ sesion.titulo or '' }}">
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label" for="inicio">Inicio (hora de Colombia)</label>
+                    <input type="datetime-local" class="form-control" id="inicio" name="inicio" required value="{{ sesion.inicio|para_input }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="fin">Fin (hora de Colombia)</label>
+                    <input type="datetime-local" class="form-control" id="fin" name="fin" required value="{{ sesion.fin|para_input }}">
+                    <div class="form-text">Debe ser posterior al inicio (lo valida la API: 400).</div>
+                </div>
+
+                {# Regla 2: cada FK sale de un <select> con 'id · nombre'. #}
+                <div class="col-md-4">
+                    <label class="form-label" for="fk_modalidad">Modalidad</label>
+                    <select class="form-select" id="fk_modalidad" name="fk_modalidad" required>
+                        <option value="">-- Selecciona --</option>
+                        {% for m in modalidades %}
+                        <option value="{{ m.id_modalidad }}" {% if sesion.fk_modalidad == m.id_modalidad %}selected{% endif %}>{{ m.id_modalidad }} · {{ m.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="fk_sede">Sede</label>
+                    <select class="form-select" id="fk_sede" name="fk_sede" required>
+                        <option value="">-- Selecciona --</option>
+                        {% for s in sedes %}
+                        <option value="{{ s.id_sede }}" {% if sesion.fk_sede == s.id_sede %}selected{% endif %}>{{ s.id_sede }} · {{ s.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="fk_periodo">Periodo académico</label>
+                    <select class="form-select" id="fk_periodo" name="fk_periodo" required>
+                        <option value="">-- Selecciona --</option>
+                        {% for p in periodos %}
+                        <option value="{{ p.id_periodo }}" {% if sesion.fk_periodo == p.id_periodo %}selected{% endif %}>{{ p.id_periodo }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label" for="lugar">Lugar</label>
+                    <input type="text" class="form-control" id="lugar" name="lugar" maxlength="200" value="{{ sesion.lugar or '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="enlace_virtual">Enlace virtual</label>
+                    <input type="url" class="form-control" id="enlace_virtual" name="enlace_virtual" maxlength="300" value="{{ sesion.enlace_virtual or '' }}">
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label" for="cupo">Cupo</label>
+                    <input type="number" class="form-control" id="cupo" name="cupo" min="1" value="{{ sesion.cupo if sesion.cupo else '' }}">
+                    <div class="form-text">Vacío = sin límite.</div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="estado">Estado</label>
+                    <select class="form-select" id="estado" name="estado">
+                        {% for e in estados %}
+                        <option value="{{ e }}" {% if (sesion.estado or 'PROGRAMADA') == e %}selected{% endif %}>{{ e }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="fk_encuesta">Encuesta al cierre</label>
+                    <select class="form-select" id="fk_encuesta" name="fk_encuesta">
+                        <option value="">— Ninguna —</option>
+                        {% for e in encuestas %}
+                        <option value="{{ e.id_encuesta }}" {% if sesion.fk_encuesta == e.id_encuesta %}selected{% endif %}>{{ e.id_encuesta }} · {{ e.nombre }} (v{{ e.version }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2 mt-3">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.sesiones_listar', fk_catedra=sesion.fk_catedra) }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

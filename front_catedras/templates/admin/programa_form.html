@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nuevo programa' if modo == 'nueva' else 'Editar programa' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.programas_listar') }}">Programa académico</a></li>
+        <li class="breadcrumb-item active">{{ 'Nuevo' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-graduation-cap text-primary-custom me-2"></i>{{ 'Nuevo programa' if modo == 'nueva' else 'Editar programa ' + programa.codigo }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.programas_nuevo') if modo == 'nueva' else url_for('admin.programas_editar', codigo=programa.codigo) }}">
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="codigo">Código</label>
+                <input type="text" class="form-control" id="codigo" name="codigo" maxlength="5" required
+                       value="{{ programa.codigo if programa else '' }}">
+                <div class="form-text">Una letra mayúscula + 3 o 4 letras mayúsculas o dígitos (p. ej. M0286). La API lo valida (422).</div>
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label" for="nombre">Nombre</label>
+                <input type="text" class="form-control" id="nombre" name="nombre" maxlength="150" required
+                       value="{{ programa.nombre if programa else '' }}">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="fk_facultad">Facultad</label>
+                <select class="form-select" id="fk_facultad" name="fk_facultad">
+                    <option value="">— Sin facultad —</option>
+                    {% for f in facultades %}
+                    <option value="{{ f.id_facultad }}" {% if programa and programa.fk_facultad == f.id_facultad %}selected{% endif %}>{{ f.id_facultad }} · {{ f.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="nivel">Nivel</label>
+                <select class="form-select" id="nivel" name="nivel" required>
+                    {% for n in niveles %}
+                    <option value="{{ n }}" {% if (programa.nivel if programa else 'PREGRADO') == n %}selected{% endif %}>{{ n }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="activo" name="activo" {% if programa is none or programa.activo %}checked{% endif %}>
+                <label class="form-check-label" for="activo">Activo</label>
+            </div>
+
+            {# Retrofit V2 (Guía IA, Regla 1): alias iniciales, solo al CREAR.
+               Se guardan en la misma transacción que el programa. Para agregar
+               alias a un programa que ya existe se usa "Alias de programa". #}
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="alias">Alias iniciales <span class="text-muted small">(opcional)</span></label>
+                <textarea class="form-control" id="alias" name="alias" rows="3"
+                          placeholder="ingenieria de datos&#10;ing. datos y software">{% if programa and programa.alias %}{% for a in programa.alias %}{{ a.texto_normalizado }}{% if not loop.last %}&#10;{% endif %}{% endfor %}{% endif %}</textarea>
+                <div class="form-text">Uno por línea. Se guardan junto con el programa: si alguno ya existe, no se crea nada (ni el programa ni los alias).</div>
+            </div>
+            {% endif %}
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.programas_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

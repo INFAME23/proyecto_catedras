@@ -1,5 +1,5 @@
 // ==========================================================================
-//  Program.cs  ·  Proyecto Cátedras · Versión 2
+//  Program.cs  ·  Proyecto Cátedras · Versión 6
 // --------------------------------------------------------------------------
 //  Punto de entrada de la API. Aquí ocurren CUATRO cosas y nada más:
 //    1. Se registran los controladores y se personaliza el 422.
@@ -110,6 +110,8 @@ builder.Services.Configure<ApiBehaviorOptions>(opciones =>
 //   · "$.es_virtual"  (error de tipo, del deserializador) -> "es_virtual"
 //   · "IdSede"        (error de anotación, nombre de propiedad C#) -> "id_sede"
 //   · "$" o vacío     (error a nivel del cuerpo entero) -> "cuerpo"
+//   · "Alias[0].TextoNormalizado" (campo DENTRO de una lista, retrofit V2)
+//                     -> "alias[0].texto_normalizado"
 static string LimpiarNombreCampo(string clave)
 {
     if (string.IsNullOrEmpty(clave) || clave == "$") return "cuerpo";
@@ -117,14 +119,17 @@ static string LimpiarNombreCampo(string clave)
     // Quita el prefijo de ruta JSON ("$.").
     if (clave.StartsWith("$.")) clave = clave[2..];
 
-    // Convierte PascalCase -> snake_case: antes de cada mayúscula (que no
-    // sea la primera ni venga ya de un '_') se mete un guion bajo, y todo
-    // pasa a minúsculas. "IdSede" -> "id_sede"; "es_virtual" no cambia.
+    // Convierte PascalCase -> snake_case: antes de cada mayúscula se mete
+    // un guion bajo, y todo pasa a minúsculas. "IdSede" -> "id_sede";
+    // "es_virtual" no cambia. El guion bajo SOLO va si el carácter anterior
+    // es letra o dígito (char.IsLetterOrDigit): así no se mete uno después
+    // de '_', '.' o ']' — "Alias[0].TextoNormalizado" queda
+    // "alias[0].texto_normalizado" y no "alias[0]._texto_normalizado".
     var resultado = new System.Text.StringBuilder();
     for (int i = 0; i < clave.Length; i++)
     {
         char caracter = clave[i];
-        if (char.IsUpper(caracter) && i > 0 && clave[i - 1] != '_')
+        if (char.IsUpper(caracter) && i > 0 && char.IsLetterOrDigit(clave[i - 1]))
             resultado.Append('_');
         resultado.Append(char.ToLowerInvariant(caracter));
     }
@@ -254,10 +259,199 @@ builder.Services.AddScoped<IRepositorioProgramaAcademico>(
 builder.Services.AddScoped<IServicioProgramaAcademico, ServicioProgramaAcademico>();
 
 // IRepositorioAliasPrograma -> RepositorioAliasProgramaPostgres,
-// IServicioAliasPrograma -> ServicioAliasPrograma (solo-anexo: sin actualizar).
+// IServicioAliasPrograma -> ServicioAliasPrograma (con PUT/PATCH desde el retrofit criterio 3).
 builder.Services.AddScoped<IRepositorioAliasPrograma>(
     _ => new RepositorioAliasProgramaPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioAliasPrograma, ServicioAliasPrograma>();
+
+// IRepositorioCatedra -> RepositorioCatedraPostgres,
+// IServicioCatedra -> ServicioCatedra (catálogo de cátedras).
+builder.Services.AddScoped<IRepositorioCatedra>(
+    _ => new RepositorioCatedraPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioCatedra, ServicioCatedra>();
+
+// ---------------------------- Versión 3 ---------------------------------
+// Personas y carga de asistentes. Mismo patrón: una pareja interfaz ->
+// clase por entidad. Que dos repositorios hagan 'CALL' a un SP (Asistente
+// y LoteCargaAsistente) es un detalle INTERNO suyo: el ensamblador no cambia.
+
+// IRepositorioAsistente -> RepositorioAsistentePostgres (CALL sp_guardar_asistente),
+// IServicioAsistente -> ServicioAsistente (valida id_asis/es_externo y correos).
+builder.Services.AddScoped<IRepositorioAsistente>(
+    _ => new RepositorioAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioAsistente, ServicioAsistente>();
+
+// IRepositorioDocumentoAsistente -> RepositorioDocumentoAsistentePostgres,
+// IServicioDocumentoAsistente -> ServicioDocumentoAsistente.
+builder.Services.AddScoped<IRepositorioDocumentoAsistente>(
+    _ => new RepositorioDocumentoAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioDocumentoAsistente, ServicioDocumentoAsistente>();
+
+// IRepositorioVinculacionAsistente -> RepositorioVinculacionAsistentePostgres,
+// IServicioVinculacionAsistente -> ServicioVinculacionAsistente (llave compuesta, D16).
+builder.Services.AddScoped<IRepositorioVinculacionAsistente>(
+    _ => new RepositorioVinculacionAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioVinculacionAsistente, ServicioVinculacionAsistente>();
+
+// IRepositorioProgramaAsistente -> RepositorioProgramaAsistentePostgres,
+// IServicioProgramaAsistente -> ServicioProgramaAsistente (llave compuesta, D16).
+builder.Services.AddScoped<IRepositorioProgramaAsistente>(
+    _ => new RepositorioProgramaAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioProgramaAsistente, ServicioProgramaAsistente>();
+
+// IRepositorioConsentimientoDatos -> RepositorioConsentimientoDatosPostgres,
+// IServicioConsentimientoDatos -> ServicioConsentimientoDatos (sin editar ni borrar).
+builder.Services.AddScoped<IRepositorioConsentimientoDatos>(
+    _ => new RepositorioConsentimientoDatosPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioConsentimientoDatos, ServicioConsentimientoDatos>();
+
+// IRepositorioLoteCargaAsistente -> RepositorioLoteCargaAsistentePostgres
+// (CALL sp_guardar_lote_carga), IServicioLoteCargaAsistente -> ServicioLoteCargaAsistente.
+builder.Services.AddScoped<IRepositorioLoteCargaAsistente>(
+    _ => new RepositorioLoteCargaAsistentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioLoteCargaAsistente, ServicioLoteCargaAsistente>();
+
+// IRepositorioNovedadCarga -> RepositorioNovedadCargaPostgres (solo lectura),
+// IServicioNovedadCarga -> ServicioNovedadCarga.
+builder.Services.AddScoped<IRepositorioNovedadCarga>(
+    _ => new RepositorioNovedadCargaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioNovedadCarga, ServicioNovedadCarga>();
+
+// ---------------------------- Versión 4 ---------------------------------
+// Sesiones y ponencias. Primera versión desde la v1 sin ningún 'CALL' a un
+// SP: los dos repositorios son INSERT/UPDATE/DELETE sencillos. El
+// ensamblador, otra vez, no cambia de forma: una pareja por entidad.
+
+// IRepositorioSesion -> RepositorioSesionPostgres (el número de reunión lo
+// pone el trigger de la BD, ADR D20), IServicioSesion -> ServicioSesion
+// (valida fin > inicio, RF125).
+builder.Services.AddScoped<IRepositorioSesion>(
+    _ => new RepositorioSesionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioSesion, ServicioSesion>();
+
+// IRepositorioPonencia -> RepositorioPonenciaPostgres (llave compuesta SIN
+// vigencia, ADR D19: sí se borra), IServicioPonencia -> ServicioPonencia.
+builder.Services.AddScoped<IRepositorioPonencia>(
+    _ => new RepositorioPonenciaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioPonencia, ServicioPonencia>();
+
+// ---------------------------- Versión 5 ---------------------------------
+// Usuarios y control de acceso. Hasta aquí era una pareja repositorio +
+// servicio por entidad; en la v5 aparece una DEPENDENCIA ENTRE SERVICIOS DE
+// DATOS: ServicioUsuario recibe DOS repositorios (usuario y rol_por_usuario)
+// porque el login devuelve los roles vigentes (ADR D27). El ensamblador solo
+// tiene que registrar ambos; DI los inyecta por constructor.
+// BCrypt NO se menciona aquí: vive únicamente dentro de ServicioUsuario
+// (ADR D23, RNF13).
+
+// IRepositorioUsuario -> RepositorioUsuarioPostgres, IServicioUsuario ->
+// ServicioUsuario (hashea la clave con BCrypt y resuelve el login).
+builder.Services.AddScoped<IRepositorioUsuario>(
+    _ => new RepositorioUsuarioPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioUsuario, ServicioUsuario>();
+
+// IRepositorioRolPorUsuario -> RepositorioRolPorUsuarioPostgres (llave
+// compuesta CON vigencia, ADR D16: se abre con POST y se cierra con PATCH),
+// IServicioRolPorUsuario -> ServicioRolPorUsuario. Este mismo repositorio
+// también lo consume ServicioUsuario para los roles vigentes del login.
+builder.Services.AddScoped<IRepositorioRolPorUsuario>(
+    _ => new RepositorioRolPorUsuarioPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRolPorUsuario, ServicioRolPorUsuario>();
+
+// IRepositorioEnlaceRegistro -> RepositorioEnlaceRegistroPostgres,
+// IServicioEnlaceRegistro -> ServicioEnlaceRegistro. NO es un CRUD (ADR
+// D24): emitir llama a la función fn_emitir_enlace_api de la BD y revocar
+// es un UPDATE puntual. La ventana (tstzrange) se lee como dos columnas.
+builder.Services.AddScoped<IRepositorioEnlaceRegistro>(
+    _ => new RepositorioEnlaceRegistroPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioEnlaceRegistro, ServicioEnlaceRegistro>();
+
+// IRepositorioClaveAcceso -> RepositorioClaveAccesoPostgres, IServicioClaveAcceso
+// -> ServicioClaveAcceso. Tampoco es un CRUD (ADR D24): "solicitar" y "validar"
+// llaman a fn_solicitar_clave_api / fn_validar_clave_api. Las excepciones de
+// negocio de la BD llegan como NpgsqlException y se responden con 500 (D25).
+builder.Services.AddScoped<IRepositorioClaveAcceso>(
+    _ => new RepositorioClaveAccesoPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioClaveAcceso, ServicioClaveAcceso>();
+
+// IRepositorioRegistroAsistencia -> RepositorioRegistroAsistenciaPostgres,
+// IServicioRegistroAsistencia -> ServicioRegistroAsistencia (valida que el
+// 'origen' del alta manual sea MANUAL o IMPORTADO, ADR D26). Sin UPDATE ni
+// DELETE: un registro de asistencia es un hecho auditable.
+builder.Services.AddScoped<IRepositorioRegistroAsistencia>(
+    _ => new RepositorioRegistroAsistenciaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRegistroAsistencia, ServicioRegistroAsistencia>();
+
+// --------------------------------------------------------------------------
+//  3.6 Versión 6 — Encuestas de calidad (pregunta, opcion_pregunta,
+//      respuesta_encuesta, respuesta_item). Primer SP nuevo desde la v3
+//      (sp_guardar_pregunta, Guía IA Regla 1: pregunta + sus opciones
+//      iniciales en una sola transacción); 'respuesta_encuesta'/
+//      'respuesta_item' reusan fn_responder_encuesta_api, que ya traía el
+//      script provisto desde la v1 (ADR D30). 'RespuestaItem' no tiene
+//      servicio con escritura propia: nace solo dentro de "responder".
+// --------------------------------------------------------------------------
+
+// IRepositorioPregunta -> RepositorioPreguntaPostgres, IServicioPregunta ->
+// ServicioPregunta (valida que 'valor_min'/'valor_max' vengan juntos y que
+// max > min, §4.3). Molde completo de 5 operaciones, igual que la v1.
+builder.Services.AddScoped<IRepositorioPregunta>(
+    _ => new RepositorioPreguntaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioPregunta, ServicioPregunta>();
+
+// IRepositorioOpcionPregunta -> RepositorioOpcionPreguntaPostgres,
+// IServicioOpcionPregunta -> ServicioOpcionPregunta. A diferencia de
+// 'AliasPrograma' (v2), SÍ tiene PUT/PATCH (D33): corregir una etiqueta o
+// reordenar una opción es una edición legítima.
+builder.Services.AddScoped<IRepositorioOpcionPregunta>(
+    _ => new RepositorioOpcionPreguntaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioOpcionPregunta, ServicioOpcionPregunta>();
+
+// IRepositorioRespuestaEncuesta -> RepositorioRespuestaEncuestaPostgres,
+// IServicioRespuestaEncuesta -> ServicioRespuestaEncuesta. NO es un CRUD
+// (ADR D31/D32): "responder" llama a fn_responder_encuesta_api, que además
+// cierra la encuesta en la misma transacción. Sin PUT/PATCH/DELETE: un
+// hecho auditable, igual criterio que RegistroAsistencia (v5).
+builder.Services.AddScoped<IRepositorioRespuestaEncuesta>(
+    _ => new RepositorioRespuestaEncuestaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRespuestaEncuesta, ServicioRespuestaEncuesta>();
+
+// IRepositorioRespuestaItem -> RepositorioRespuestaItemPostgres,
+// IServicioRespuestaItem -> ServicioRespuestaItem. SOLO LECTURA: nace
+// exclusivamente dentro de "responder" (RF176-RF178).
+builder.Services.AddScoped<IRepositorioRespuestaItem>(
+    _ => new RepositorioRespuestaItemPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRespuestaItem, ServicioRespuestaItem>();
+
+// Retrofit criterio 3 — tablas sin código previo: configuración y auditoría.
+// 'Bitacora': lectura + POST/PUT/PATCH/DELETE (log de auditoría: ver el riesgo en BitacoraController).
+builder.Services.AddScoped<IRepositorioParametro>(
+    _ => new RepositorioParametroPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioParametro, ServicioParametro>();
+builder.Services.AddScoped<IRepositorioBitacora>(
+    _ => new RepositorioBitacoraPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioBitacora, ServicioBitacora>();
+
+// --------------------------------------------------------------------------
+//  3.7 Versión 7 (adelantada en el RETROFIT criterio 3, Fase 4) — migración
+//      a ASIS: lote_migracion + detalle_migracion. Nacen YA con el molde de
+//      procedimientos (031/032_sp_*.sql). "Generar" reutiliza
+//      sp_generar_lote_migracion del script provisto (ADR D34).
+// --------------------------------------------------------------------------
+
+// IRepositorioLoteMigracion -> RepositorioLoteMigracionPostgres,
+// IServicioLoteMigracion -> ServicioLoteMigracion. Listar, obtener, generar
+// y PATCH de estado; sin PUT ni DELETE (RF183, RF185).
+builder.Services.AddScoped<IRepositorioLoteMigracion>(
+    _ => new RepositorioLoteMigracionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioLoteMigracion, ServicioLoteMigracion>();
+
+// IRepositorioDetalleMigracion -> RepositorioDetalleMigracionPostgres,
+// IServicioDetalleMigracion -> ServicioDetalleMigracion. Listar, obtener y
+// PATCH de resultado; nace solo al generar su lote (RF189).
+builder.Services.AddScoped<IRepositorioDetalleMigracion>(
+    _ => new RepositorioDetalleMigracionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioDetalleMigracion, ServicioDetalleMigracion>();
 
 // --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
@@ -272,8 +466,8 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Json(new
 {
     mensaje = "API Cátedras en línea.",
-    version = "v2",
-    contratos = "docs/spec_kit/Versiones/version2/6_contracts.md",
+    version = "v6",
+    contratos = "docs/spec_kit/Versiones/version6/6_contracts.md",
 }));
 
 // Conecta las rutas de los controladores ([Route("api/Sede")]...).

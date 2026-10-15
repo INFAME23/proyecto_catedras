@@ -33,7 +33,7 @@ using ApiCatedras.Modelos;
 public interface IRepositorioSede
 {
     /// <summary>Devuelve las sedes ordenadas por código, hasta 'limite' filas.</summary>
-    Task<List<Sede>> ObtenerTodosAsync(int limite);
+    Task<List<Sede>> ObtenerTodosAsync(int limite, bool incluirInactivos = false);
 
     /// <summary>Devuelve la sede con ese código, o null si no existe.</summary>
     Task<Sede?> ObtenerPorIdAsync(string idSede);

@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block titulo %}Enlaces de registro · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Enlace de registro</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-qrcode text-primary-custom me-2"></i>Enlaces de registro</h1>
+{# No es un CRUD (ADR D22/D24): se EMITE y se REVOCA. #}
+<p class="text-muted small">El enlace (o su QR) que se comparte para que los asistentes registren su asistencia en una sesión. Se emite y se revoca; no se edita. Emitir uno nuevo para una sesión <strong>revoca el anterior</strong> (RN-14). Horas en hora de Colombia.</p>
+
+{% if sesion %}
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <h2 class="h6 fw-bold">Emitir un enlace para la sesión {{ sesion.id_sesion }}</h2>
+        <p class="small text-muted mb-2">Reunión {{ sesion.numero_reunion }} de la cátedra {{ sesion.fk_catedra }} · {{ sesion.inicio|fecha_hora }} a {{ sesion.fin|fecha_hora }}</p>
+        <form class="row g-2 align-items-end" method="post" action="{{ url_for('admin.enlaces_emitir') }}">
+            <input type="hidden" name="fk_sesion" value="{{ sesion.id_sesion }}">
+            <div class="col-md-5">
+                <label class="form-label small mb-1" for="minutos_antes">Abre (min antes)</label>
+                <input type="number" min="0" max="1440" class="form-control" id="minutos_antes" name="minutos_antes" placeholder="por defecto">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label small mb-1" for="minutos_despues">Cierra (min después)</label>
+                <input type="number" min="0" max="1440" class="form-control" id="minutos_despues" name="minutos_despues" placeholder="por defecto">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100" type="submit"><i class="fas fa-plus me-1"></i>Emitir</button>
+            </div>
+        </form>
+        <div class="form-text">La ventana se cuenta desde el inicio y el fin de la sesión.</div>
+    </div>
+</div>
+{% else %}
+<p class="small text-muted">Para <strong>emitir</strong> un enlace, entra desde la sesión: botón <i class="fas fa-qrcode"></i> en Administración › <a href="{{ url_for('admin.sesiones_listar') }}">Sesión</a>. Abajo se ven los enlaces ya emitidos.</p>
+{% endif %}
+
+<form class="d-flex gap-2 mb-3" method="get" action="{{ url_for('admin.enlaces_listar') }}">
+    <input class="form-control" type="number" min="1" name="fk_sesion" value="{{ fk_sesion or '' }}" placeholder="Filtrar por id de sesión">
+    <button class="btn btn-outline-primary" type="submit"><i class="fas fa-filter"></i></button>
+    {% if fk_sesion %}<a class="btn btn-outline-secondary" href="{{ url_for('admin.enlaces_listar') }}">Quitar filtro</a>{% endif %}
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if enlaces %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Id</th><th>Sesión</th><th>Estado</th><th>Ventana</th><th>Enlace para compartir</th><th class="text-end">Acciones</th></tr>
+                </thead>
+                <tbody>
+                    {% for e in enlaces %}
+                    <tr>
+                        <td class="fw-semibold">{{ e.id_enlace }}</td>
+                        <td><a href="{{ url_for('admin.enlaces_listar', fk_sesion=e.fk_sesion) }}">{{ e.fk_sesion }}</a></td>
+                        <td>
+                            {% if e.estado == 'Vigente' %}<span class="badge badge-success">Vigente</span>
+                            {% elif e.estado == 'Revocado' %}<span class="badge badge-danger">Revocado</span>
+                            {% else %}<span class="badge badge-warning">{{ e.estado }}</span>{% endif %}
+                        </td>
+                        <td class="small">{{ e.ventana_desde|fecha_hora }}<br>{{ e.ventana_hasta|fecha_hora }}</td>
+                        <td class="small">
+                            {% if e.estado == 'Revocado' %}
+                            <span class="text-muted">— (ya no sirve)</span>
+                            {% else %}
+                            <a href="{{ e.enlace_publico }}" target="_blank" rel="noopener"><code>{{ e.token }}</code></a>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if e.estado != 'Revocado' %}
+                            <form class="d-inline" method="post" action="{{ url_for('admin.enlaces_revocar', id_enlace=e.id_enlace) }}"
+                                  onsubmit="return confirm('¿Revocar el enlace {{ e.id_enlace }}? Nadie podrá registrarse con él.');">
+                                <input type="hidden" name="volver_fk_sesion" value="{{ fk_sesion or '' }}">
+                                <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-ban me-1"></i>Revocar</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay enlaces que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

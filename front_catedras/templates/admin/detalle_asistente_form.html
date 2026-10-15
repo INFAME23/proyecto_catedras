@@ -1,0 +1,129 @@
+{#  Formulario compartido para los DETALLES de un asistente (v3).
+    'tipo' decide qué campos se muestran:
+      documento · documento_editar · vinculacion · programa · consentimiento
+    El 'fk_asistente' NUNCA es un campo: viaja en la URL de la acción
+    (Guía IA, Regla 2: una FK no se digita). Las demás FK son <select>. #}
+{% extends 'base.html' %}
+{% block titulo %}{% set titulos = {
+    'documento': 'Nuevo documento', 'documento_editar': 'Editar documento',
+    'vinculacion': 'Abrir vinculación', 'programa': 'Matricular en un programa',
+    'consentimiento': 'Registrar consentimiento'} %}{{ titulos[tipo] }} · Administración{% endblock %}
+{% block contenido %}
+{% set titulos = {
+    'documento': 'Nuevo documento', 'documento_editar': 'Editar documento',
+    'vinculacion': 'Abrir vinculación', 'programa': 'Matricular en un programa',
+    'consentimiento': 'Registrar consentimiento'} %}
+{% set acciones = {
+    'documento': url_for('admin.documentos_nuevo', id_asistente=id_asistente),
+    'documento_editar': url_for('admin.documentos_editar', id_documento=dato.id_documento) if dato and dato.id_documento else '',
+    'vinculacion': url_for('admin.vinculaciones_nueva', id_asistente=id_asistente),
+    'programa': url_for('admin.programas_asistente_nuevo', id_asistente=id_asistente),
+    'consentimiento': url_for('admin.consentimientos_nuevo', id_asistente=id_asistente)} %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_listar') }}">Asistente</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_detalle', id_asistente=id_asistente) }}">{{ id_asistente }}</a></li>
+        <li class="breadcrumb-item active">{{ titulos[tipo] }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3">{{ titulos[tipo] }} <span class="text-muted h6">· asistente {{ id_asistente }}</span></h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post" action="{{ acciones[tipo] }}">
+
+            {% if tipo in ('documento', 'documento_editar') %}
+            <div class="mb-3">
+                <label class="form-label" for="fk_tipo_documento">Tipo de documento</label>
+                <select class="form-select" id="fk_tipo_documento" name="fk_tipo_documento" required>
+                    {% for t in tipos_documento %}
+                    <option value="{{ t.id_tipo_documento }}" {% if dato and dato.fk_tipo_documento == t.id_tipo_documento %}selected{% endif %}>{{ t.id_tipo_documento }} · {{ t.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="numero">Número</label>
+                <input type="text" class="form-control" id="numero" name="numero" maxlength="20" required
+                       value="{{ dato.numero if dato else '' }}">
+                <div class="form-text">4 a 20 letras, dígitos o guiones.</div>
+            </div>
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="vigente" name="vigente" {% if dato is none or dato.vigente %}checked{% endif %}>
+                <label class="form-check-label" for="vigente">Vigente</label>
+                <div class="form-text">Solo puede haber UN documento vigente por persona: si ya tiene uno, retírale la vigencia primero.</div>
+            </div>
+
+            {% elif tipo == 'vinculacion' %}
+            <div class="mb-3">
+                <label class="form-label" for="fk_tipo_vinculacion">Tipo de vinculación</label>
+                <select class="form-select" id="fk_tipo_vinculacion" name="fk_tipo_vinculacion" required>
+                    {% for t in tipos_vinculacion %}
+                    <option value="{{ t.id_tipo_vinculacion }}" {% if dato and dato.fk_tipo_vinculacion == t.id_tipo_vinculacion %}selected{% endif %}>{{ t.id_tipo_vinculacion }} · {{ t.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="fecha_ini">Desde</label>
+                <input type="date" class="form-control" id="fecha_ini" name="fecha_ini" value="{{ dato.fecha_ini if dato and dato.fecha_ini else '' }}">
+                <div class="form-text">Vacío = hoy. La vinculación nace abierta; se cierra desde la ficha del asistente.</div>
+            </div>
+
+            {% elif tipo == 'programa' %}
+            <div class="mb-3">
+                <label class="form-label" for="fk_programa">Programa</label>
+                <select class="form-select" id="fk_programa" name="fk_programa" required>
+                    {% for p in programas %}
+                    <option value="{{ p.codigo }}" {% if dato and dato.fk_programa == p.codigo %}selected{% endif %}>{{ p.codigo }} · {{ p.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="fk_periodo">Periodo</label>
+                <select class="form-select" id="fk_periodo" name="fk_periodo" required>
+                    {% for p in periodos %}
+                    <option value="{{ p.id_periodo }}" {% if dato and dato.fk_periodo == p.id_periodo %}selected{% endif %}>{{ p.id_periodo }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="estado">Estado</label>
+                <select class="form-select" id="estado" name="estado">
+                    {% for e in estados_programa %}<option value="{{ e }}" {% if dato and dato.estado == e %}selected{% endif %}>{{ e }}</option>{% endfor %}
+                </select>
+            </div>
+
+            {% elif tipo == 'consentimiento' %}
+            <div class="mb-3">
+                <label class="form-label" for="version_politica">Versión de la política</label>
+                <input type="text" class="form-control" id="version_politica" name="version_politica" maxlength="20" required
+                       value="{{ dato.version_politica if dato else 'v1.0' }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="canal">Canal</label>
+                <select class="form-select" id="canal" name="canal">
+                    {% for c in canales %}<option value="{{ c }}" {% if dato and dato.canal == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="ip">IP <span class="text-muted small">(opcional)</span></label>
+                <input type="text" class="form-control" id="ip" name="ip" maxlength="45" value="{{ dato.ip if dato and dato.ip else '' }}">
+                <div class="form-text">Vacío = la IP desde la que se envía este formulario.</div>
+            </div>
+            <div class="alert alert-info py-2 small">Un consentimiento es un hecho legal (Ley 1581): una vez registrado no se edita ni se borra.</div>
+            {% endif %}
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.asistentes_detalle', id_asistente=id_asistente) }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

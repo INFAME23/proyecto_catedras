@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nuevo usuario' if modo == 'nueva' else 'Editar usuario' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.usuarios_listar') }}">Usuario</a></li>
+        <li class="breadcrumb-item active">{{ 'Nuevo' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-user-lock text-primary-custom me-2"></i>{{ 'Nuevo usuario' if modo == 'nueva' else 'Editar usuario ' ~ usr.usuario }}</h1>
+
+{% if modo == 'nueva' %}
+{# Regla 2 (guía IA): con 14.811 personas no cabe un <select> con todas. Paso 1: buscar
+   (GET, la API filtra con ?q=). Paso 2: elegir de los resultados y llenar el formulario. #}
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <h2 class="h6 fw-bold">Paso 1 · Buscar a la persona</h2>
+        <form class="d-flex gap-2" method="get" action="{{ url_for('admin.usuarios_nuevo') }}">
+            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Nombre, apellido o código ASIS" autocomplete="off">
+            <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
+        </form>
+        {% if q and not candidatos %}<p class="text-muted small mt-2 mb-0">Nadie coincide con «{{ q }}».</p>{% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        {% if modo == 'nueva' %}<h2 class="h6 fw-bold">Paso 2 · Datos de la cuenta</h2>{% endif %}
+        <form method="post"
+              action="{{ url_for('admin.usuarios_nuevo') if modo == 'nueva' else url_for('admin.usuarios_editar', id_usuario=usr.id_usuario) }}">
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="fk_asistente">Persona ({{ candidatos|length }} resultado{{ '' if candidatos|length == 1 else 's' }})</label>
+                <select class="form-select" id="fk_asistente" name="fk_asistente" required {{ 'disabled' if not candidatos }}>
+                    {% if not candidatos %}<option value="">— primero busca a la persona —</option>{% endif %}
+                    {% for a in candidatos %}
+                    <option value="{{ a.id_asistente }}" {{ 'selected' if usr and usr.fk_asistente == a.id_asistente }}>{{ a.id_asistente }} · {{ a.nombres }} {{ a.apellidos }}{% if a.id_asis %} · {{ a.id_asis }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Cada persona puede tener una sola cuenta.</div>
+            </div>
+            {% else %}
+            <div class="mb-3">
+                <label class="form-label">Persona</label>
+                <div>
+                    <a href="{{ url_for('admin.asistentes_detalle', id_asistente=usr.fk_asistente) }}">Asistente {{ usr.fk_asistente }}</a>
+                    <span class="text-muted small">(la persona dueña de la cuenta no se cambia)</span>
+                </div>
+                <input type="hidden" name="fk_asistente_actual" value="{{ usr.fk_asistente }}">
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label" for="usuario">Usuario</label>
+                <input type="text" class="form-control" id="usuario" name="usuario" required minlength="4" maxlength="40"
+                       pattern="[a-z0-9._\-]{4,40}" autocomplete="off" value="{{ usr.usuario if usr else '' }}">
+                <div class="form-text">4 a 40 caracteres: minúsculas, dígitos, punto, guion y guion bajo.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="clave">{{ 'Clave' if modo == 'nueva' else 'Clave nueva (opcional)' }}</label>
+                <input type="password" class="form-control" id="clave" name="clave" minlength="8"
+                       autocomplete="new-password" {{ 'required' if modo == 'nueva' }}>
+                <div class="form-text">
+                    Mínimo 8 caracteres.
+                    {% if modo == 'editar' %}Déjala vacía para conservar la clave actual.{% endif %}
+                    La API la guarda como hash; nunca se vuelve a mostrar.
+                </div>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="activo" name="activo"
+                       {{ 'checked' if (usr is none or usr.activo) }}>
+                <label class="form-check-label" for="activo">Activo (puede iniciar sesión)</label>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">
+                    {% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit" {{ 'disabled' if modo == 'nueva' and not candidatos }}><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.usuarios_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
