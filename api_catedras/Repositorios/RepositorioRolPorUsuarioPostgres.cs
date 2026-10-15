@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioRolPorUsuarioPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Los 4 métodos de IRepositorioRolPorUsuario pasan por los procedimientos
-//  de 'db/postgres/migraciones/007_sp_rol_por_usuario.sql' (molde: sede).
+//  de 'db/postgres/migraciones/034_sp_rol_por_usuario.sql' (molde: sede).
 //
 //  La BD tiene además sp_consultar_ / sp_actualizar_ / sp_eliminar_
 //  rol_por_usuario (los 5 verbos del criterio), pero IRepositorioRolPorUsuario

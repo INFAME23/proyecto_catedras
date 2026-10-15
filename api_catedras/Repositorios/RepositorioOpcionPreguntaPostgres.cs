@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioOpcionPreguntaPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Los 5 verbos pasan por los procedimientos de
-//  'db/postgres/migraciones/012_sp_opcion_pregunta.sql'. Es la tabla del
+//  'db/postgres/migraciones/039_sp_opcion_pregunta.sql'. Es la tabla del
 //  lote más parecida a 'sede': CRUD estándar, borrado FÍSICO (no tiene
 //  'activo'). Diferencia: 'id_opcion' lo genera la BD, así que CrearAsync
 //  lo lee de la fila que devuelve el procedimiento.

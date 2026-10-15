@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioPreguntaPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Listar, Consultar, Actualizar y Eliminar pasan por los procedimientos
-//  de 'db/postgres/migraciones/011_sp_pregunta.sql' (molde: sede).
+//  de 'db/postgres/migraciones/038_sp_pregunta.sql' (molde: sede).
 //
 //  CREAR NO CAMBIÓ: sigue siendo UN 'CALL' a 'sp_guardar_pregunta'
 //  (migración 004): maestro + opciones iniciales en una sola transacción

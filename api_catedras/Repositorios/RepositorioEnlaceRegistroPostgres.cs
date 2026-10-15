@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioEnlaceRegistroPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Listar, Consultar y Revocar pasan por los procedimientos de
-//  'db/postgres/migraciones/008_sp_enlace_registro.sql' (molde: sede).
+//  'db/postgres/migraciones/035_sp_enlace_registro.sql' (molde: sede).
 //
 //  EMITIR NO CAMBIÓ: sigue llamando a la función de negocio
 //  fn_emitir_enlace_api (ADR D24), que hace CALL a sp_emitir_enlace. Esa

@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioRegistroAsistenciaPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Los 3 métodos de IRepositorioRegistroAsistencia pasan por los
-//  procedimientos de 'db/postgres/migraciones/010_sp_registro_asistencia.sql'
+//  procedimientos de 'db/postgres/migraciones/037_sp_registro_asistencia.sql'
 //  (molde: sede).
 //
 //  · CREAR manda SOLO fk_sesion, fk_asistente y origen. El trigger
