@@ -1,5 +1,5 @@
 // ==========================================================================
-//  Program.cs  ·  Proyecto Cátedras · Versión 5
+//  Program.cs  ·  Proyecto Cátedras · Versión 6
 // --------------------------------------------------------------------------
 //  Punto de entrada de la API. Aquí ocurren CUATRO cosas y nada más:
 //    1. Se registran los controladores y se personaliza el 422.
@@ -383,6 +383,47 @@ builder.Services.AddScoped<IRepositorioRegistroAsistencia>(
 builder.Services.AddScoped<IServicioRegistroAsistencia, ServicioRegistroAsistencia>();
 
 // --------------------------------------------------------------------------
+//  3.6 Versión 6 — Encuestas de calidad (pregunta, opcion_pregunta,
+//      respuesta_encuesta, respuesta_item). Primer SP nuevo desde la v3
+//      (sp_guardar_pregunta, Guía IA Regla 1: pregunta + sus opciones
+//      iniciales en una sola transacción); 'respuesta_encuesta'/
+//      'respuesta_item' reusan fn_responder_encuesta_api, que ya traía el
+//      script provisto desde la v1 (ADR D30). 'RespuestaItem' no tiene
+//      servicio con escritura propia: nace solo dentro de "responder".
+// --------------------------------------------------------------------------
+
+// IRepositorioPregunta -> RepositorioPreguntaPostgres, IServicioPregunta ->
+// ServicioPregunta (valida que 'valor_min'/'valor_max' vengan juntos y que
+// max > min, §4.3). Molde completo de 5 operaciones, igual que la v1.
+builder.Services.AddScoped<IRepositorioPregunta>(
+    _ => new RepositorioPreguntaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioPregunta, ServicioPregunta>();
+
+// IRepositorioOpcionPregunta -> RepositorioOpcionPreguntaPostgres,
+// IServicioOpcionPregunta -> ServicioOpcionPregunta. A diferencia de
+// 'AliasPrograma' (v2), SÍ tiene PUT/PATCH (D33): corregir una etiqueta o
+// reordenar una opción es una edición legítima.
+builder.Services.AddScoped<IRepositorioOpcionPregunta>(
+    _ => new RepositorioOpcionPreguntaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioOpcionPregunta, ServicioOpcionPregunta>();
+
+// IRepositorioRespuestaEncuesta -> RepositorioRespuestaEncuestaPostgres,
+// IServicioRespuestaEncuesta -> ServicioRespuestaEncuesta. NO es un CRUD
+// (ADR D31/D32): "responder" llama a fn_responder_encuesta_api, que además
+// cierra la encuesta en la misma transacción. Sin PUT/PATCH/DELETE: un
+// hecho auditable, igual criterio que RegistroAsistencia (v5).
+builder.Services.AddScoped<IRepositorioRespuestaEncuesta>(
+    _ => new RepositorioRespuestaEncuestaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRespuestaEncuesta, ServicioRespuestaEncuesta>();
+
+// IRepositorioRespuestaItem -> RepositorioRespuestaItemPostgres,
+// IServicioRespuestaItem -> ServicioRespuestaItem. SOLO LECTURA: nace
+// exclusivamente dentro de "responder" (RF176-RF178).
+builder.Services.AddScoped<IRepositorioRespuestaItem>(
+    _ => new RepositorioRespuestaItemPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRespuestaItem, ServicioRespuestaItem>();
+
+// --------------------------------------------------------------------------
 //  4. Construir la app, exponer Swagger, ruta de diagnóstico y arrancar
 // --------------------------------------------------------------------------
 var app = builder.Build();
@@ -395,8 +436,8 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Json(new
 {
     mensaje = "API Cátedras en línea.",
-    version = "v5",
-    contratos = "docs/spec_kit/Versiones/version5/6_contracts.md",
+    version = "v6",
+    contratos = "docs/spec_kit/Versiones/version6/6_contracts.md",
 }));
 
 // Conecta las rutas de los controladores ([Route("api/Sede")]...).

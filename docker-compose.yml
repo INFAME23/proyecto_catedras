@@ -62,6 +62,14 @@ services:
       # 'z002_' y 'z003_' corren después de 'script_' y de 'z001_'.
       - ./db/postgres/migraciones/002_sp_guardar_asistente.sql:/docker-entrypoint-initdb.d/z002_sp_guardar_asistente.sql:ro
       - ./db/postgres/migraciones/003_sp_guardar_lote_carga.sql:/docker-entrypoint-initdb.d/z003_sp_guardar_lote_carga.sql:ro
+      # V6: el primer SP nuevo desde la v3 (pregunta + sus opciones
+      # iniciales). 'respuesta_encuesta'/'respuesta_item' NO necesitan
+      # migración: usan fn_responder_encuesta_api, que ya trae el script
+      # provisto desde la v1 (ADR D30). 'z004_' corre después de 'z003_'.
+      - ./db/postgres/migraciones/004_sp_guardar_pregunta.sql:/docker-entrypoint-initdb.d/z004_sp_guardar_pregunta.sql:ro
+      # Retrofit criterio 3 (VERSION_2.md §4) — prueba de concepto sobre
+      # 'sede': los 5 verbos por procedimiento. Ver PLAN_RETROFIT_SP.md.
+      - ./db/postgres/migraciones/005_sp_sede_ejemplo.sql:/docker-entrypoint-initdb.d/z005_sp_sede_ejemplo.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.

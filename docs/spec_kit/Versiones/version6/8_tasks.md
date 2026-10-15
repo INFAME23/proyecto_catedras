@@ -15,11 +15,11 @@
 > Guía IA, Regla 1. Ver §4.1 de [3_plan.md](3_plan.md), ADR D30. Va
 > primero porque la Fase 48 depende de que el SP ya exista en la BD.
 
-- [ ] `db/postgres/migraciones/004_sp_guardar_pregunta.sql` —
+- [x] `db/postgres/migraciones/004_sp_guardar_pregunta.sql` —
       `CREATE OR REPLACE PROCEDURE` (re-ejecutable); `INSERT pregunta
       RETURNING id_pregunta` + `INSERT ... SELECT ...
       jsonb_array_elements(p_opciones)` condicional.
-- [ ] `docker-compose.yml` — montar como
+- [x] `docker-compose.yml` — montar como
       `/docker-entrypoint-initdb.d/z004_...sql`.
 
 **Verificación planeada**: aplicar 2 veces sin error; `\df
@@ -32,33 +32,33 @@ orden de `initdb` confirma que corre después de
 > [5_data_model.md](5_data_model.md). Depende de la Fase 47 y de
 > `Encuesta`/`TipoPregunta` (v1, ya construidas).
 
-- [ ] `Modelos/Pregunta.cs`, `OpcionPregunta.cs`.
-- [ ] `Peticiones/Pregunta{Crear,Reemplazo,Actualizar}.cs` — `Orden`
+- [x] `Modelos/Pregunta.cs`, `OpcionPregunta.cs`.
+- [x] `Peticiones/Pregunta{Crear,Reemplazo,Actualizar}.cs` — `Orden`
       con `[Range(1, short.MaxValue)]`; `ValorMin`/`ValorMax` SIN
       cruce validado por anotación (le toca al servicio); `Crear`
       incluye `List<OpcionInicial>? Opciones`.
-- [ ] `Peticiones/OpcionInicial.cs` — sin `fk_pregunta` (§4.1 de
+- [x] `Peticiones/OpcionInicial.cs` — sin `fk_pregunta` (§4.1 de
       [3_plan.md](3_plan.md), mismo criterio que `AliasInicial` de v2).
-- [ ] `Peticiones/OpcionPregunta{Crear,Reemplazo,Actualizar}.cs` —
+- [x] `Peticiones/OpcionPregunta{Crear,Reemplazo,Actualizar}.cs` —
       molde completo de 3 peticiones (D33: a diferencia de
       `AliasProgramaCrear`, esta entidad SÍ tiene `Reemplazo`/
       `Actualizar`).
-- [ ] `Repositorios/IRepositorioPregunta.cs` +
+- [x] `Repositorios/IRepositorioPregunta.cs` +
       `RepositorioPreguntaPostgres.cs` — `CrearAsync` serializa
       `Opciones` y hace `CALL catedras.sp_guardar_pregunta(...,
       CAST(@Opciones AS jsonb))`.
-- [ ] `Repositorios/IRepositorioOpcionPregunta.cs` +
+- [x] `Repositorios/IRepositorioOpcionPregunta.cs` +
       `RepositorioOpcionPreguntaPostgres.cs` — CRUD estándar, 5
       métodos.
-- [ ] `Servicios/IServicioPregunta.cs` + `ServicioPregunta.cs` —
+- [x] `Servicios/IServicioPregunta.cs` + `ServicioPregunta.cs` —
       `CrearAsync`/`ReemplazarAsync`/`ActualizarAsync` validan
       `valor_min`/`valor_max` (§4.3 de [3_plan.md](3_plan.md)); `CrearAsync`
       arma la lista de `OpcionPregunta` a partir de `Opciones`.
-- [ ] `Servicios/IServicioOpcionPregunta.cs` +
+- [x] `Servicios/IServicioOpcionPregunta.cs` +
       `ServicioOpcionPregunta.cs`.
-- [ ] `Controllers/PreguntaController.cs` — 6 endpoints.
-- [ ] `Controllers/OpcionPreguntaController.cs` — 6 endpoints.
-- [ ] `Program.cs` — registrar las 2 parejas nuevas.
+- [x] `Controllers/PreguntaController.cs` — 6 endpoints.
+- [x] `Controllers/OpcionPreguntaController.cs` — 6 endpoints.
+- [x] `Program.cs` — registrar las 2 parejas nuevas.
 
 **Verificación planeada** (contra PostgreSQL real): `POST
 /api/Pregunta` con `opciones` → 200 y las opciones quedan con el
@@ -73,36 +73,36 @@ orden de `initdb` confirma que corre después de
 > construida). **No** depende de ninguna migración nueva — las
 > funciones ya existen.
 
-- [ ] `Modelos/RespuestaEncuesta.cs`, `RespuestaItem.cs`.
-- [ ] `Peticiones/ItemRespuesta.cs` — `Pregunta` obligatorio;
+- [x] `Modelos/RespuestaEncuesta.cs`, `RespuestaItem.cs`.
+- [x] `Peticiones/ItemRespuesta.cs` — `Pregunta` obligatorio;
       `Numero`/`Texto`/`Opcion` opcionales, sin anotación que fuerce
       "exactamente uno" (D9: lo vigila el trigger de la BD al
       responder, no la petición al recibir).
-- [ ] `Peticiones/RespuestaEncuestaResponder.cs` — **única** petición
+- [x] `Peticiones/RespuestaEncuestaResponder.cs` — **única** petición
       de esta entidad: `FkRegistro` obligatorio; `Respuestas:
       List<ItemRespuesta>` con `[MinLength(1)]` (primera muralla
       contra una lista vacía, aunque la BD también la rechazaría —
       doble verificación deliberada, igual criterio que
       `RegistroAsistenciaCrear.Origen` en v5).
-- [ ] `Repositorios/IRepositorioRespuestaEncuesta.cs` +
+- [x] `Repositorios/IRepositorioRespuestaEncuesta.cs` +
       `RepositorioRespuestaEncuestaPostgres.cs` — `ObtenerTodosAsync`,
       `ObtenerPorIdAsync`, `ResponderAsync` (`SELECT * FROM
       fn_responder_encuesta_api(...)`, código exacto en §4.2 de
       [3_plan.md](3_plan.md)). **Sin** `CerrarAsync` en la interfaz
       (D31).
-- [ ] `Repositorios/IRepositorioRespuestaItem.cs` +
+- [x] `Repositorios/IRepositorioRespuestaItem.cs` +
       `RepositorioRespuestaItemPostgres.cs` — solo
       `ObtenerTodosAsync`/`ObtenerPorIdAsync` (sin `CrearAsync`: nace
       dentro del SP).
-- [ ] `Servicios/IServicioRespuestaEncuesta.cs` +
+- [x] `Servicios/IServicioRespuestaEncuesta.cs` +
       `ServicioRespuestaEncuesta.cs` — sin método de "cerrar".
-- [ ] `Servicios/IServicioRespuestaItem.cs` +
+- [x] `Servicios/IServicioRespuestaItem.cs` +
       `ServicioRespuestaItem.cs` — de solo lectura.
-- [ ] `Controllers/RespuestaEncuestaController.cs` — `GET` lista,
+- [x] `Controllers/RespuestaEncuestaController.cs` — `GET` lista,
       `GET/{id}`, `[HttpPost]` (= responder). Sin `PUT`/`PATCH`/
       `DELETE`.
-- [ ] `Controllers/RespuestaItemController.cs` — `GET` lista, `GET/{id}`.
-- [ ] `Program.cs` — registrar las 2 parejas nuevas.
+- [x] `Controllers/RespuestaItemController.cs` — `GET` lista, `GET/{id}`.
+- [x] `Program.cs` — registrar las 2 parejas nuevas.
 
 **Verificación planeada** (contra PostgreSQL real, usando un
 `fk_registro` de ejemplo con `fk_encuesta` asignado y sin respuesta
