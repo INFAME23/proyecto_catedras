@@ -1,11 +1,14 @@
 // ==========================================================================
-//  Repositorios/RepositorioPeriodoAcademicoPostgres.cs  ·  Proyecto Cátedras
+//  Repositorios/RepositorioPeriodoAcademicoPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  Implementación de IRepositorioPeriodoAcademico para PostgreSQL con
-//  Dapper. Las columnas DATE ('fecha_ini'/'fecha_fin') se mapean a
-//  DateOnly gracias al 'ManejadorTipoDateOnly' ya registrado en
-//  Program.cs (el mismo que usa Encuesta) — no hace falta configurar
-//  nada más aquí.
+//  Los 5 verbos pasan por los procedimientos de
+//  'db/postgres/migraciones/018_sp_periodo_academico.sql', con el MISMO
+//  molde de RepositorioSedePostgres.cs: esta clase solo arma el 'CALL',
+//  manda los parámetros y convierte el JSON que devuelve el procedimiento.
+//
+//  'periodo_academico' SÍ tiene 'activo' -> el eliminar es LÓGICO.
+//  'IRepositorioPeriodoAcademico', 'ServicioPeriodoAcademico',
+//  'PeriodoAcademicoController' y las 'Peticiones/' NO cambiaron (SOLID · D).
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
@@ -13,14 +16,12 @@ namespace ApiCatedras.Repositorios;
 using ApiCatedras.Modelos;
 using Dapper;
 using Npgsql;
+using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.periodo_academico' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.periodo_academico' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioPeriodoAcademicoPostgres : IRepositorioPeriodoAcademico
 {
     private readonly string _cadenaConexion;
-
-    private static readonly HashSet<string> ColumnasActualizables =
-        new() { "fecha_ini", "fecha_fin", "activo" };
 
     public RepositorioPeriodoAcademicoPostgres(string cadenaConexion)
     {
@@ -29,72 +30,82 @@ public class RepositorioPeriodoAcademicoPostgres : IRepositorioPeriodoAcademico
 
     public async Task<List<PeriodoAcademico>> ObtenerTodosAsync(int limite)
     {
-        const string sql = @"
-            SELECT id_periodo, fecha_ini, fecha_fin, activo
-            FROM catedras.periodo_academico
-            ORDER BY id_periodo
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_periodo_academico(@limite, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        var filas = await conexion.QueryAsync<PeriodoAcademico>(sql, new { limite });
-        return filas.ToList();
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { limite });
+
+        // Siempre un arreglo ('[]' si no hay filas): json_agg + COALESCE.
+        return JsonSerializer.Deserialize<List<PeriodoAcademico>>(json!) ?? [];
     }
 
     public async Task<PeriodoAcademico?> ObtenerPorIdAsync(string idPeriodo)
     {
-        const string sql = @"
-            SELECT id_periodo, fecha_ini, fecha_fin, activo
-            FROM catedras.periodo_academico
-            WHERE id_periodo = @idPeriodo;";
+        const string sql = "CALL catedras.sp_consultar_periodo_academico(@idPeriodo, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.QuerySingleOrDefaultAsync<PeriodoAcademico>(sql, new { idPeriodo });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idPeriodo });
+
+        // NULL = no existe -> mismo contrato que QuerySingleOrDefaultAsync.
+        return json is null ? null : JsonSerializer.Deserialize<PeriodoAcademico>(json);
     }
 
     public async Task CrearAsync(PeriodoAcademico periodo)
     {
+        // '::date' explícito: Dapper no conoce DateOnly y lo manda como
+        // 'timestamp'. Un INSERT lo convertía solo, pero un CALL resuelve el
+        // procedimiento por TIPOS y 'timestamp -> date' no es implícito:
+        // sin el cast, PostgreSQL responde 42883 (procedure does not exist).
         const string sql = @"
-            INSERT INTO catedras.periodo_academico (id_periodo, fecha_ini, fecha_fin, activo)
-            VALUES (@IdPeriodo, @FechaIni, @FechaFin, @Activo);";
+            CALL catedras.sp_crear_periodo_academico(
+                @IdPeriodo, @FechaIni::date, @FechaFin::date, @Activo, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+
+        // Clave repetida, formato o rango inválido -> NpgsqlException, igual que antes.
         await conexion.ExecuteAsync(sql, periodo);
     }
 
     public async Task<int> ActualizarAsync(string idPeriodo, Dictionary<string, object?> datos)
     {
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_clave", idPeriodo);
-
-        foreach (var (columna, valor) in datos)
-        {
-            if (!ColumnasActualizables.Contains(columna))
-                continue;
-
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor);
-        }
-
-        if (asignaciones.Count == 0)
-            return 0;
-
-        var sql =
-            $"UPDATE catedras.periodo_academico SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_periodo = @id_clave;";
-
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        return await conexion.ExecuteAsync(sql, parametros);
+
+        // 1) Traer la fila actual (el procedimiento reemplaza TODAS las columnas).
+        const string sqlConsultar = "CALL catedras.sp_consultar_periodo_academico(@idPeriodo, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idPeriodo });
+
+        if (actualJson is null)
+            return 0;   // no existe -> ni se intenta el UPDATE
+
+        var actual = JsonSerializer.Deserialize<PeriodoAcademico>(actualJson)!;
+
+        // 2) Mezclar: lo que llegó PISA el valor actual; lo demás se queda.
+        //    Un PATCH que solo mueve 'fecha_fin' se cruza aquí con la
+        //    'fecha_ini' guardada; chk_periodo_fechas sigue vigilando el rango.
+        DateOnly fechaIni = datos.TryGetValue("fecha_ini", out var vIni) ? (DateOnly)vIni! : actual.FechaIni;
+        DateOnly fechaFin = datos.TryGetValue("fecha_fin", out var vFin) ? (DateOnly)vFin! : actual.FechaFin;
+        bool activo = datos.TryGetValue("activo", out var vActivo) ? (bool)vActivo! : actual.Activo;
+
+        // 3) Llamar al procedimiento con el conjunto COMPLETO.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_periodo_academico(
+                @idPeriodo, @fechaIni::date, @fechaFin::date, @activo, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(
+            sqlActualizar, new { idPeriodo, fechaIni, fechaFin, activo });
+
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task<int> EliminarAsync(string idPeriodo)
     {
-        const string sql = "DELETE FROM catedras.periodo_academico WHERE id_periodo = @idPeriodo;";
+        const string sql = "CALL catedras.sp_eliminar_periodo_academico(@idPeriodo, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        // Si el periodo tiene sesiones o matrículas asociadas,
-        // fk_sesion_periodo / fk_progasi_periodo (ON DELETE RESTRICT)
-        // hacen que PostgreSQL lance NpgsqlException.
-        return await conexion.ExecuteAsync(sql, new { idPeriodo });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idPeriodo });
+
+        // {"eliminado": true|false}. SÍ tiene 'activo': borrado LÓGICO.
+        using var documento = JsonDocument.Parse(json!);
+        bool eliminado = documento.RootElement.GetProperty("eliminado").GetBoolean();
+        return eliminado ? 1 : 0;
     }
 }

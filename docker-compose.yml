@@ -86,6 +86,18 @@ services:
       - ./db/postgres/migraciones/012_sp_ponencia.sql:/docker-entrypoint-initdb.d/z012_sp_ponencia.sql:ro
       - ./db/postgres/migraciones/013_sp_parametro.sql:/docker-entrypoint-initdb.d/z013_sp_parametro.sql:ro
       - ./db/postgres/migraciones/014_sp_bitacora.sql:/docker-entrypoint-initdb.d/z014_sp_bitacora.sql:ro
+      # Retrofit criterio 3 · Fase 2 (catálogos simples): los 5 verbos por
+      # procedimiento, mismo molde de 'sede'. Uno por tabla, z015_..z023_
+      # (006-014 ya los usa el lote de arriba).
+      - ./db/postgres/migraciones/015_sp_encuesta.sql:/docker-entrypoint-initdb.d/z015_sp_encuesta.sql:ro
+      - ./db/postgres/migraciones/016_sp_estado_proceso.sql:/docker-entrypoint-initdb.d/z016_sp_estado_proceso.sql:ro
+      - ./db/postgres/migraciones/017_sp_modalidad.sql:/docker-entrypoint-initdb.d/z017_sp_modalidad.sql:ro
+      - ./db/postgres/migraciones/018_sp_periodo_academico.sql:/docker-entrypoint-initdb.d/z018_sp_periodo_academico.sql:ro
+      - ./db/postgres/migraciones/019_sp_rol.sql:/docker-entrypoint-initdb.d/z019_sp_rol.sql:ro
+      - ./db/postgres/migraciones/020_sp_tipo_documento.sql:/docker-entrypoint-initdb.d/z020_sp_tipo_documento.sql:ro
+      - ./db/postgres/migraciones/021_sp_tipo_evento.sql:/docker-entrypoint-initdb.d/z021_sp_tipo_evento.sql:ro
+      - ./db/postgres/migraciones/022_sp_tipo_pregunta.sql:/docker-entrypoint-initdb.d/z022_sp_tipo_pregunta.sql:ro
+      - ./db/postgres/migraciones/023_sp_tipo_vinculacion.sql:/docker-entrypoint-initdb.d/z023_sp_tipo_vinculacion.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.
