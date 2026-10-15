@@ -40,7 +40,9 @@ public class ServicioSesion : IServicioSesion
     }
 
     // RF125: la única regla de esta versión que cruza dos campos.
-    private static void ValidarRango(DateTime inicio, DateTime fin)
+    // 'internal' (antes 'private'): ServicioCatedra la reutiliza para las
+    // sesiones que nacen con la cátedra — la regla vive en UN solo lugar.
+    internal static void ValidarRango(DateTime inicio, DateTime fin)
     {
         if (fin <= inicio)
             throw new ArgumentException(
@@ -100,8 +102,15 @@ public class ServicioSesion : IServicioSesion
             Estado = peticion.Estado ?? "PROGRAMADA",
         };
 
+        // Maestro-detalle (Guía IA, Regla 1): si llegó 'enlace', el repositorio
+        // emite el primer enlace de registro en el MISMO CALL que crea la
+        // sesión ('sp_guardar_sesion'). Ausente -> null -> sesión sin enlace.
+        var enlace = peticion.Enlace is null
+            ? ((int? MinutosAntes, int? MinutosDespues, long? FkUsuario)?)null
+            : (peticion.Enlace.MinutosAntes, peticion.Enlace.MinutosDespues, peticion.Enlace.FkUsuario);
+
         // Lo que devuelve el repositorio ya es lo que la BD decidió.
-        return await _repositorio.CrearAsync(sesion);
+        return await _repositorio.CrearAsync(sesion, enlace);
     }
 
     public async Task<int> ReemplazarAsync(long idSesion, SesionReemplazo peticion)

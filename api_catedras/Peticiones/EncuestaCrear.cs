@@ -42,4 +42,10 @@ public class EncuestaCrear
     /// <summary>¿Está activa? Opcional; si no llega, el servicio usa true.</summary>
     [JsonPropertyName("activa")]
     public bool? Activa { get; set; }
+
+    /// <summary>Maestro-detalle (Guía IA, Regla 1): preguntas iniciales, cada una con
+    /// sus opciones. Opcional: null o [] = encuesta sin preguntas. Todo se guarda
+    /// en una sola transacción ('sp_guardar_encuesta', migración 043).</summary>
+    [JsonPropertyName("preguntas")]
+    public List<PreguntaInicial>? Preguntas { get; set; }
 }

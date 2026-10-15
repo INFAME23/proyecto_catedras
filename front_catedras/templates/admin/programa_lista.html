@@ -32,12 +32,13 @@
                 <tbody>
                     {% for p in programas %}
                     <tr>
-                        <td class="fw-semibold">{{ p.codigo }}</td>
-                        <td>{{ p.nombre }}</td>
+                        <td class="fw-semibold"><a href="{{ url_for('admin.programas_detalle', codigo=p.codigo) }}">{{ p.codigo }}</a></td>
+                        <td><a href="{{ url_for('admin.programas_detalle', codigo=p.codigo) }}">{{ p.nombre }}</a></td>
                         <td>{{ p.fk_facultad or '—' }}</td>
                         <td><span class="badge badge-secondary">{{ p.nivel }}</span></td>
                         <td><span class="badge {{ 'badge-success' if p.activo else 'badge-danger' }}">{{ 'Sí' if p.activo else 'No' }}</span></td>
-                        <td class="text-end">
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.programas_detalle', codigo=p.codigo) }}" title="Ver el programa con sus alias"><i class="fas fa-eye"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.programas_editar', codigo=p.codigo) }}"><i class="fas fa-edit"></i></a>
                             <form class="d-inline" method="post" action="{{ url_for('admin.programas_eliminar', codigo=p.codigo) }}"
                                   onsubmit="return confirm('¿Eliminar el programa {{ p.codigo }}? Si tiene asistentes, la base de datos lo impedirá.');">

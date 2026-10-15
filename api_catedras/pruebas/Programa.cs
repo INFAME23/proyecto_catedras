@@ -2129,6 +2129,105 @@ Afirmar("IRepositorioRespuestaEncuesta: lectura + responder, sin editar ni borra
 Afirmar("IRepositorioRespuestaItem es de solo lectura (nace dentro de responder)",
     MetodosDe(typeof(IRepositorioRespuestaItem)) == "ObtenerPorIdAsync,ObtenerTodosAsync");
 
+// ---- Maestro-detalle en el formulario (Guía IA, Reglas 1 y 4) ------------------
+//  El maestro y sus detalles llegan en UNA petición y el servicio los entrega
+//  JUNTOS al repositorio (un solo CALL: migraciones 042-044). Lo que se
+//  comprueba aquí es la parte del SERVICIO: que arma los detalles, que valida
+//  sus reglas ANTES de tocar el repositorio y que no inventa los ids.
+//  (El todo-o-nada del motor lo prueba
+//   db/postgres/pruebas/prueba_sp_maestro_detalle_formulario.sql.)
+Console.WriteLine("\n== Maestro-detalle en el formulario: cátedra, encuesta y sesión ==\n");
+
+var mdRepoCat = new RepositorioCatedraFalso();
+var mdServCat = new ServicioCatedra(mdRepoCat);
+var mdInicio = new DateTimeOffset(2026, 11, 3, 14, 0, 0, TimeSpan.FromHours(-5));
+SesionInicial MdSesion(DateTimeOffset inicio, DateTimeOffset fin) => new()
+{ Inicio = inicio, Fin = fin, FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-2" };
+
+var (mdIdCat, _) = await mdServCat.CrearAsync(new CatedraCrear
+{
+    IdEventoAsis = "000999101", Nombre = "Con sesiones", FkTipoEvento = "CAAB",
+    Sesiones = [MdSesion(mdInicio, mdInicio.AddHours(2)), MdSesion(mdInicio.AddDays(7), mdInicio.AddDays(7).AddHours(2))],
+});
+Afirmar("Cátedra: las 2 sesiones viajan en la MISMA llamada que la cátedra (Regla 1)",
+    mdIdCat > 0 && mdRepoCat.UltimasSesiones.Count == 2);
+Afirmar("Cátedra: cada sesión va con FkCatedra 0 (lo fija el SP) y NumeroReunion 0 (lo fija el trigger)",
+    mdRepoCat.UltimasSesiones.All(s => s.FkCatedra == 0 && s.NumeroReunion == 0));
+Afirmar("Cátedra: las horas de las sesiones se pasan a UTC (14:00 -05:00 -> 19:00 UTC) y estado PROGRAMADA",
+    mdRepoCat.UltimasSesiones[0].Inicio == new DateTime(2026, 11, 3, 19, 0, 0, DateTimeKind.Utc)
+    && mdRepoCat.UltimasSesiones.All(s => s.Estado == "PROGRAMADA"));
+
+await mdServCat.CrearAsync(new CatedraCrear { IdEventoAsis = "000999102", Nombre = "Sin sesiones", FkTipoEvento = "CAAB" });
+Afirmar("Cátedra: sin 'sesiones' el repositorio recibe una lista vacía (no null)",
+    mdRepoCat.UltimasSesiones.Count == 0);
+
+int mdLlamadasCat = mdRepoCat.LlamadasCrear;
+await AfirmarLanza<ArgumentException>(
+    "Cátedra: una sesión con fin <= inicio -> ArgumentException (400, misma regla RF125 de Sesion)",
+    () => mdServCat.CrearAsync(new CatedraCrear
+    {
+        IdEventoAsis = "000999103", Nombre = "No debe quedar", FkTipoEvento = "CAAB",
+        Sesiones = [MdSesion(mdInicio, mdInicio.AddHours(2)), MdSesion(mdInicio, mdInicio.AddHours(-1))],
+    }));
+Afirmar("...y el repositorio NUNCA se invocó (no queda ni la cátedra)", mdRepoCat.LlamadasCrear == mdLlamadasCat);
+
+var mdRepoEnc = new RepositorioEncuestaFalso();
+var mdServEnc = new ServicioEncuesta(mdRepoEnc);
+long mdIdEnc = await mdServEnc.CrearAsync(new EncuestaCrear
+{
+    Nombre = "Con preguntas",
+    Preguntas =
+    [
+        new PreguntaInicial { Enunciado = "¿Útil?", Orden = 1, FkTipoPregunta = "ESCALA_5", ValorMin = 1, ValorMax = 5, Obligatoria = true },
+        new PreguntaInicial
+        {
+            Enunciado = "¿Cómo se enteró?", Orden = 2, FkTipoPregunta = "OPCION_UNICA",
+            Opciones = [new OpcionInicial { Etiqueta = "Correo", Orden = 1 }, new OpcionInicial { Etiqueta = "Cartelera", Orden = 2 }],
+        },
+    ],
+});
+Afirmar("Encuesta: las 2 preguntas viajan en la MISMA llamada que la encuesta (Regla 1)",
+    mdIdEnc > 0 && mdRepoEnc.UltimasPreguntas.Count == 2);
+Afirmar("Encuesta: segundo nivel — la pregunta de opción única lleva sus 2 opciones",
+    mdRepoEnc.UltimasPreguntas[1].Opciones.Count == 2 && mdRepoEnc.UltimasPreguntas[0].Opciones.Count == 0);
+Afirmar("Encuesta: FkEncuesta y FkPregunta van en 0 (los fija el SP); obligatoria por defecto false",
+    mdRepoEnc.UltimasPreguntas.All(p => p.Pregunta.FkEncuesta == 0 && p.Opciones.All(o => o.FkPregunta == 0))
+    && mdRepoEnc.UltimasPreguntas[0].Pregunta.Obligatoria && !mdRepoEnc.UltimasPreguntas[1].Pregunta.Obligatoria);
+
+int mdLlamadasEnc = mdRepoEnc.LlamadasCrear;
+await AfirmarLanza<ArgumentException>(
+    "Encuesta: una pregunta con valor_min sin valor_max -> ArgumentException (misma regla de Pregunta)",
+    () => mdServEnc.CrearAsync(new EncuestaCrear
+    {
+        Nombre = "No debe quedar",
+        Preguntas = [new PreguntaInicial { Enunciado = "x", Orden = 1, FkTipoPregunta = "ESCALA_5", ValorMin = 1 }],
+    }));
+Afirmar("...y el repositorio NUNCA se invocó (no queda ni la encuesta)", mdRepoEnc.LlamadasCrear == mdLlamadasEnc);
+
+var mdRepoSes = new RepositorioSesionFalso();
+var mdServSes = new ServicioSesion(mdRepoSes);
+SesionCrear MdSesionCrear(EnlaceInicial? enlace) => new()
+{
+    FkCatedra = 5498, Inicio = mdInicio, Fin = mdInicio.AddHours(2),
+    FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-2", Enlace = enlace,
+};
+await mdServSes.CrearAsync(MdSesionCrear(new EnlaceInicial { MinutosAntes = 15, MinutosDespues = 45, FkUsuario = 1 }));
+Afirmar("Sesión: el enlace pedido viaja en la MISMA llamada que la sesión (Regla 1)",
+    mdRepoSes.UltimoEnlace.HasValue && mdRepoSes.UltimoEnlace.Value.MinutosAntes == 15
+    && mdRepoSes.UltimoEnlace.Value.MinutosDespues == 45 && mdRepoSes.UltimoEnlace.Value.FkUsuario == 1);
+await mdServSes.CrearAsync(MdSesionCrear(null));
+Afirmar("Sesión: sin 'enlace' el repositorio recibe null (la sesión nace sin enlace, como antes)",
+    !mdRepoSes.UltimoEnlace.HasValue);
+
+Afirmar("Las peticiones de detalle NO declaran la FK del maestro (la fija el SP)",
+    typeof(SesionInicial).GetProperty("FkCatedra") is null
+    && typeof(PreguntaInicial).GetProperty("FkEncuesta") is null
+    && typeof(EnlaceInicial).GetProperty("FkSesion") is null);
+Afirmar("SesionInicial con fk_sede vacía no es válida (-> 422 antes de llegar al servicio)",
+    !EsValida(new SesionInicial { Inicio = mdInicio, Fin = mdInicio.AddHours(1), FkModalidad = "PRESENCIAL", FkPeriodo = "2026-2" }));
+Afirmar("EnlaceInicial con minutos fuera de 0..1440 no es válido (-> 422)",
+    !EsValida(new EnlaceInicial { MinutosAntes = 2000 }));
+
 // ---- Cuenta de control --------------------------------------------------------
 Console.WriteLine("\n== Cuenta de control: 37 tablas, 37 recursos ==\n");
 Afirmar("La API declara 37 controladores (10+5+7+2+5+4+4 = 37 tablas de bdcatedras)",
@@ -2336,8 +2435,15 @@ class RepositorioEncuestaFalso : IRepositorioEncuesta
     public Task<Encuesta?> ObtenerPorIdAsync(long idEncuesta) =>
         Task.FromResult(_tabla.TryGetValue(idEncuesta, out var encuesta) ? encuesta : null);
 
-    public Task<long> CrearAsync(Encuesta encuesta)
+    // Maestro-detalle (Regla 1): lo que le entregó el servicio, para la prueba.
+    public int LlamadasCrear { get; private set; }
+    public IReadOnlyList<(Pregunta Pregunta, IReadOnlyList<OpcionPregunta> Opciones)> UltimasPreguntas { get; private set; } = [];
+
+    public Task<long> CrearAsync(Encuesta encuesta,
+        IReadOnlyList<(Pregunta Pregunta, IReadOnlyList<OpcionPregunta> Opciones)> preguntasIniciales)
     {
+        LlamadasCrear++;
+        UltimasPreguntas = preguntasIniciales;
         // Simula la violación de uq_encuesta_ver (nombre, version).
         if (_tabla.Values.Any(e => e.Nombre == encuesta.Nombre && e.Version == encuesta.Version))
             throw new InvalidOperationException(
@@ -2877,8 +2983,15 @@ class RepositorioCatedraFalso : IRepositorioCatedra
     public Task<Catedra?> ObtenerPorIdAsync(long idCatedra) =>
         Task.FromResult(_tabla.TryGetValue(idCatedra, out var catedra) ? catedra : null);
 
-    public Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra)
+    // Maestro-detalle (Regla 1): guarda lo que le entregó el servicio para que
+    // la prueba compruebe que las sesiones llegaron JUNTO con la cátedra.
+    public int LlamadasCrear { get; private set; }
+    public IReadOnlyList<Sesion> UltimasSesiones { get; private set; } = [];
+
+    public Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra, IReadOnlyList<Sesion> sesionesIniciales)
     {
+        LlamadasCrear++;
+        UltimasSesiones = sesionesIniciales;
         if (_tabla.Values.Any(c => c.IdEventoAsis == catedra.IdEventoAsis))
             throw new InvalidOperationException("id_evento_asis duplicado (simulado).");
 
@@ -3289,9 +3402,14 @@ class RepositorioSesionFalso : IRepositorioSesion
     public Task<Sesion?> ObtenerPorIdAsync(long idSesion) =>
         Task.FromResult(_tabla.TryGetValue(idSesion, out var sesion) ? sesion : null);
 
-    public Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(Sesion sesion)
+    // Maestro-detalle (Regla 1): el enlace que pidió el servicio (null = ninguno).
+    public (int? MinutosAntes, int? MinutosDespues, long? FkUsuario)? UltimoEnlace { get; private set; }
+
+    public Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(
+        Sesion sesion, (int? MinutosAntes, int? MinutosDespues, long? FkUsuario)? enlaceInicial)
     {
         LlamadasCrear++;
+        UltimoEnlace = enlaceInicial;
         UltimoNumeroRecibido = sesion.NumeroReunion;
 
         if (sesion.NumeroReunion == 0)

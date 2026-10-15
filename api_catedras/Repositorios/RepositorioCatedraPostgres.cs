@@ -72,20 +72,55 @@ public class RepositorioCatedraPostgres : IRepositorioCatedra
         return catedra;
     }
 
-    public async Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra)
+    public async Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra, IReadOnlyList<Sesion> sesionesIniciales)
     {
+        // Maestro-detalle (Guía IA, Regla 1 · migración 042): la cátedra y sus
+        // sesiones en UN solo CALL. 'sp_guardar_catedra' reutiliza
+        // 'sp_crear_catedra' y 'sp_crear_sesion'; sin sesiones (p_sesiones
+        // NULL) hace exactamente lo mismo que antes.
         // No se manda 'NombreAsis' (columna generada) ni 'IdCatedra' (identity).
+        // 'CAST(@Sesiones AS jsonb)': Dapper manda el JSON como TEXTO.
         const string sql = @"
-            CALL catedras.sp_crear_catedra(
-                @IdEventoAsis, @Nombre, @FkTipoEvento, @FkDependencia, @Activo, NULL);";
+            CALL catedras.sp_guardar_catedra(
+                @IdEventoAsis, @Nombre, @FkTipoEvento, @FkDependencia, @Activo,
+                CAST(@Sesiones AS jsonb), NULL);";
+
+        // Las fechas viajan como texto ISO 8601 en UTC ('Z'): el SP las
+        // convierte con '::timestamptz' y el instante es el mismo (ADR D21).
+        string? sesionesJson = sesionesIniciales.Count == 0
+            ? null
+            : JsonSerializer.Serialize(sesionesIniciales.Select(s => new
+            {
+                inicio = DateTime.SpecifyKind(s.Inicio.ToUniversalTime(), DateTimeKind.Utc).ToString("O"),
+                fin = DateTime.SpecifyKind(s.Fin.ToUniversalTime(), DateTimeKind.Utc).ToString("O"),
+                fk_modalidad = s.FkModalidad,
+                fk_sede = s.FkSede,
+                fk_periodo = s.FkPeriodo,
+                numero_reunion = s.NumeroReunion,        // 0 = que lo calcule el trigger
+                numero_reunion_asis = s.NumeroReunionAsis,
+                titulo = s.Titulo,
+                fk_encuesta = s.FkEncuesta,
+                lugar = s.Lugar,
+                enlace_virtual = s.EnlaceVirtual,
+                cupo = s.Cupo,
+                estado = s.Estado,
+            }));
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
         // id_evento_asis mal formado (chk_catedra_asis), tipo de evento o
-        // dependencia inexistentes -> NpgsqlException, igual que antes. El
-        // id y el nombre_asis salen de la fila que devuelve el
-        // procedimiento (antes venían del RETURNING).
-        string? json = await conexion.QuerySingleAsync<string?>(sql, catedra);
+        // dependencia inexistentes, o una sesión inválida -> NpgsqlException
+        // y el motor revierte TODO el CALL. El id y el nombre_asis salen de
+        // la fila que devuelve el procedimiento.
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new
+        {
+            catedra.IdEventoAsis,
+            catedra.Nombre,
+            catedra.FkTipoEvento,
+            catedra.FkDependencia,
+            catedra.Activo,
+            Sesiones = sesionesJson,
+        });
 
         var creada = JsonSerializer.Deserialize<Catedra>(json!)!;
         return (creada.IdCatedra, creada.NombreAsis);

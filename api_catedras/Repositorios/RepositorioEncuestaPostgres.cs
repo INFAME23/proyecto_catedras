@@ -53,23 +53,49 @@ public class RepositorioEncuestaPostgres : IRepositorioEncuesta
         return json is null ? null : JsonSerializer.Deserialize<Encuesta>(json);
     }
 
-    public async Task<long> CrearAsync(Encuesta encuesta)
+    public async Task<long> CrearAsync(Encuesta encuesta,
+        IReadOnlyList<(Pregunta Pregunta, IReadOnlyList<OpcionPregunta> Opciones)> preguntasIniciales)
     {
+        // Maestro-detalle (Guía IA, Regla 1 · migración 043): la encuesta, sus
+        // preguntas y las opciones de cada pregunta en UN solo CALL.
+        // 'sp_guardar_encuesta' reutiliza 'sp_guardar_pregunta' (004) para
+        // cada pregunta. Sin preguntas (p_preguntas NULL) hace lo mismo que
+        // 'sp_crear_encuesta'. El último argumento (NULL) es el INOUT
+        // 'p_id_encuesta': el CALL responde una fila con ese valor.
         // '::date' explícito: Dapper no conoce DateOnly y lo manda como
-        // 'timestamp'. Un INSERT lo convertía solo, pero un CALL resuelve el
-        // procedimiento por TIPOS y 'timestamp -> date' no es implícito:
-        // sin el cast, PostgreSQL responde 42883 (procedure does not exist).
+        // 'timestamp'; un CALL resuelve el procedimiento por TIPOS y
+        // 'timestamp -> date' no es implícito (sin el cast -> 42883).
         const string sql = @"
-            CALL catedras.sp_crear_encuesta(
-                @Nombre, @Version, @VigenteDesde::date, @VigenteHasta::date, @Activa, NULL);";
+            CALL catedras.sp_guardar_encuesta(
+                @Nombre, @Version, @VigenteDesde::date, @VigenteHasta::date, @Activa,
+                CAST(@Preguntas AS jsonb), NULL);";
+
+        string? preguntasJson = preguntasIniciales.Count == 0
+            ? null
+            : JsonSerializer.Serialize(preguntasIniciales.Select(p => new
+            {
+                enunciado = p.Pregunta.Enunciado,
+                orden = p.Pregunta.Orden,
+                fk_tipo_pregunta = p.Pregunta.FkTipoPregunta,
+                obligatoria = p.Pregunta.Obligatoria,
+                valor_min = p.Pregunta.ValorMin,
+                valor_max = p.Pregunta.ValorMax,
+                opciones = p.Opciones.Count == 0
+                    ? null
+                    : p.Opciones.Select(o => new { etiqueta = o.Etiqueta, valor = o.Valor, orden = o.Orden }).ToList(),
+            }));
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        // A diferencia de sede, aquí SÍ se lee el JSON de vuelta: el id lo
-        // puso la BD (IDENTITY) y 'CrearAsync' debe devolverlo, igual que
-        // antes hacía 'RETURNING id_encuesta'.
-        string? json = await conexion.QuerySingleAsync<string?>(sql, encuesta);
-        return JsonSerializer.Deserialize<Encuesta>(json!)!.IdEncuesta;
+        return await conexion.QuerySingleAsync<long>(sql, new
+        {
+            encuesta.Nombre,
+            encuesta.Version,
+            encuesta.VigenteDesde,
+            encuesta.VigenteHasta,
+            encuesta.Activa,
+            Preguntas = preguntasJson,
+        });
     }
 
     public async Task<int> ActualizarAsync(long idEncuesta, Dictionary<string, object?> datos)

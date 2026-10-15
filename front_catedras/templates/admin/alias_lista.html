@@ -33,7 +33,7 @@
                     <tr>
                         <td class="fw-semibold">{{ a.id_alias }}</td>
                         <td>{{ a.texto_normalizado }}</td>
-                        <td><span class="badge badge-secondary">{{ a.fk_programa }}</span></td>
+                        <td><a href="{{ url_for('admin.programas_detalle', codigo=a.fk_programa) }}" title="Ver el programa con sus alias"><span class="badge badge-secondary">{{ a.fk_programa }}</span></a></td>
                         <td>{{ a.origen }}</td>
                         <td class="small">{{ a.creado_en[:16]|replace('T', ' ') }}</td>
                         <td class="text-end">

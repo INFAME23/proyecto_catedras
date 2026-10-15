@@ -40,6 +40,47 @@ estructura académica de la v2 y la arquitectura en capas de la v1.
   la bitácora, `clave` de parámetro en mayúsculas, front dentro de
   `routes/admin.py`.
 
+## Maestro-detalle en el front (después de la v7)
+
+En `/admin`, **al entrar a un maestro aparecen sus detalles**: cada uno
+tiene una pantalla con su ficha y las tablas de sus detalles, y crear o
+editar el maestro lleva directo a ella (Guía IA, Regla 4). Las 10 parejas:
+cátedra → sesiones; sesión → enlaces de registro y registros de
+asistencia; asistente → documentos y consentimientos; encuesta →
+preguntas; pregunta → opciones; registro de asistencia → su respuesta de
+encuesta; respuesta → sus ítems; programa → sus alias. Ejemplos:
+http://localhost:5000/admin/catedras/3975 ·
+http://localhost:5000/admin/encuestas/1 ·
+http://localhost:5000/admin/programas/M0286.
+
+Y en el **formulario** de cada maestro se agregan sus detalles en filas
+("Agregar sesión", "Agregar pregunta", "Agregar alias"…). Al crear, maestro
+y detalles se guardan en **una sola transacción** (Guía IA, Regla 1); para
+eso hay 3 procedimientos nuevos que reutilizan los existentes:
+
+| Migración | Procedimiento | Guarda junto |
+|---|---|---|
+| `042` | `sp_guardar_catedra` | cátedra + sus sesiones (`POST /api/Catedra` acepta `sesiones`) |
+| `043` | `sp_guardar_encuesta` | encuesta + sus preguntas + las opciones de cada una (`POST /api/Encuesta` acepta `preguntas`) |
+| `044` | `sp_guardar_sesion` | sesión + su primer enlace de registro (`POST /api/Sesion` acepta `enlace`) |
+
+Al editar, cada fila nueva se guarda con su propio POST y las que fallan
+vuelven al formulario con el motivo. Detalle completo en
+`docs/spec_kit/guia_ia.md` (Reglas 1 y 4).
+
+> **Volumen de PostgreSQL ya creado:** las migraciones 042-044 solo corren
+> solas con una BD nueva. Si conservas el volumen, aplícalas a mano (son
+> `CREATE OR REPLACE`):
+> `docker compose cp db/postgres/migraciones/042_sp_guardar_catedra.sql postgres:/tmp/m.sql` y
+> `docker compose exec -T postgres psql -U sa -d bdcatedras_postgres_local -f /tmp/m.sql`
+> (igual con 043 y 044). Sin ellas, crear una cátedra, encuesta o sesión
+> responde `42883: procedure ... does not exist`.
+
+Pruebas: `db/postgres/pruebas/prueba_sp_maestro_detalle_formulario.sql`
+(32 casos, incluido el todo-o-nada) y 16 verificaciones nuevas en la
+prueba de capas (`pruebas/Programa.cs`, bloque "Maestro-detalle en el
+formulario").
+
 ## Lo que enseñó la v6 (sigue vigente)
 
 - Lo nuevo que enseña la v6:
@@ -326,6 +367,8 @@ db/postgres/
                                 #  RegistroAsistencia, Pregunta, OpcionPregunta, RespuestaEncuesta,
                                 #  RespuestaItem). Ver PLAN_RETROFIT_SP.md.
   aplicar_migraciones.ps1       # aplica 001-041 a una BD ya creada, sin perder datos (ver arriba)
+                                #  042-044: maestro + detalles desde el formulario (sp_guardar_catedra,
+                                #  sp_guardar_encuesta, sp_guardar_sesion)
 api_catedras/                   # la API .NET (Controllers, Modelos, Peticiones,
                                 #  Servicios, Repositorios, Excepciones, pruebas;
                                 #  pruebas/verificar_v5.ps1, verificar_v7.ps1 y
@@ -335,7 +378,8 @@ front_catedras/                 # el front Flask (routes/carga.py + servicios/ca
 docs/
   GUIA_ESTUDIANTE.md            # guía de arranque (v1)
   spec_kit/1_constitution.md    # reglas permanentes de todas las versiones
-  spec_kit/guia_ia.md           # reglas técnicas transversales (SP, <select> de FK, BCrypt)
+  spec_kit/guia_ia.md           # reglas técnicas transversales (SP, <select> de FK, BCrypt,
+                                #  maestro -> sus detalles en el front)
   spec_kit/Versiones/
     0_mapa_versiones.md         # qué tablas entran en cada versión
     version1/  2_spec .. 8_tasks

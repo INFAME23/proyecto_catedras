@@ -27,9 +27,11 @@ public interface IRepositorioCatedra
     /// <summary>La cátedra con ese id, o null si no existe.</summary>
     Task<Catedra?> ObtenerPorIdAsync(long idCatedra);
 
-    /// <summary>Inserta y devuelve (id_catedra, nombre_asis) calculados por la BD.
-    /// Código ASIS duplicado o FK inexistente -> NpgsqlException (500).</summary>
-    Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra);
+    /// <summary>Inserta la cátedra y sus 'sesionesIniciales' (0 o más) en UNA sola
+    /// transacción (Guía IA, Regla 1: 'sp_guardar_catedra') y devuelve
+    /// (id_catedra, nombre_asis) calculados por la BD. Código ASIS duplicado, FK
+    /// inexistente o una sesión inválida -> NpgsqlException (500) y no queda nada.</summary>
+    Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra, IReadOnlyList<Sesion> sesionesIniciales);
 
     /// <summary>Actualiza las columnas de 'datos'. Devuelve filas afectadas (0 = no existe).</summary>
     Task<int> ActualizarAsync(long idCatedra, Dictionary<string, object?> datos);

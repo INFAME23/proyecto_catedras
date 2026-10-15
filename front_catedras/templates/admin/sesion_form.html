@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
+{% import 'partials/filas_detalle.html' as fd %}
 {% block titulo %}{{ 'Nueva sesión' if modo == 'nueva' else 'Editar sesión' }} · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
         <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
-        <li class="breadcrumb-item"><a href="{{ url_for('admin.sesiones_listar', fk_catedra=sesion.fk_catedra) }}">Sesión</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_detalle', id_catedra=sesion.fk_catedra) }}">Cátedra {{ sesion.fk_catedra }}</a></li>
         <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
     </ol>
 </nav>
@@ -113,6 +114,78 @@
                 </div>
             </div>
 
+            {# ---- Maestro-detalle #2: el enlace de registro, en el MISMO formulario ---- #}
+            <hr class="my-4">
+            <div class="card mb-3" id="enlace">
+                <div class="card-header fw-bold"><i class="fas fa-qrcode me-2"></i>Enlace de registro</div>
+                <div class="card-body">
+                    {% if enlaces_existentes %}
+                    <p class="small mb-2">
+                        {% set vigentes = enlaces_existentes|selectattr('estado', 'ne', 'Revocado')|list %}
+                        Ya tiene {{ enlaces_existentes|length }} enlace{{ '' if enlaces_existentes|length == 1 else 's' }}
+                        ({{ vigentes|length }} sin revocar). Emitir uno nuevo revoca el anterior (RN-14).
+                    </p>
+                    {% endif %}
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="emitir_enlace" name="emitir_enlace" {% if emitir_marcado %}checked{% endif %}>
+                        <label class="form-check-label" for="emitir_enlace">
+                            {{ 'Emitir el enlace / QR de registro junto con la sesión' if modo == 'nueva' else 'Emitir un enlace / QR de registro nuevo' }}
+                        </label>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small mb-1" for="minutos_antes">Abre (min antes)</label>
+                            <input type="number" min="0" max="1440" class="form-control form-control-sm" id="minutos_antes" name="minutos_antes" placeholder="por defecto" value="{{ minutos_antes }}">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small mb-1" for="minutos_despues">Cierra (min después)</label>
+                            <input type="number" min="0" max="1440" class="form-control form-control-sm" id="minutos_despues" name="minutos_despues" placeholder="por defecto" value="{{ minutos_despues }}">
+                        </div>
+                    </div>
+                    <div class="form-text">
+                        {% if modo == 'nueva' %}Se emite en la MISMA operación que crea la sesión: si falla, la sesión tampoco se crea.
+                        {% else %}La ventana se cuenta desde el inicio y el fin de la sesión.{% endif %}
+                    </div>
+                </div>
+            </div>
+
+            {# ---- Maestro-detalle #3: registros de asistencia (solo al editar) ---- #}
+            {% if modo == 'editar' %}
+            {% set existentes %}{% if registros_existentes %}
+                Ya tiene {{ registros_existentes|length }} registro{{ '' if registros_existentes|length == 1 else 's' }} de asistencia
+                (<a href="{{ url_for('admin.sesiones_detalle', id_sesion=sesion.id_sesion) }}#registros">ver</a>).
+                Un registro es de auditoría: no se edita ni se borra.
+            {% endif %}{% endset %}
+            {% call(f) fd.bloque('registros', 'Registrar asistencia', 'fa-clipboard-check', filas_registros, 'Agregar persona',
+                                 ayuda='Busca a la persona por nombre, apellido o código ASIS y elígela. Debe tener una vinculación vigente (RN-07).',
+                                 existentes=existentes) %}
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Buscar persona</span>
+                        <span class="input-group input-group-sm">
+                            <input type="search" class="form-control" data-texto-busqueda name="reg_texto_asistente" autocomplete="off" value="{{ f.texto_asistente if f else '' }}">
+                            <button type="button" class="btn btn-outline-primary" data-buscar-persona="{{ url_for('admin.asistentes_buscar') }}"><i class="fas fa-search"></i></button>
+                        </span></label>
+                </div>
+                <div class="col-md-5">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Persona</span>
+                        <select class="form-select form-select-sm" name="reg_fk_asistente" data-resultados required>
+                            {% if f and f.fk_asistente %}<option value="{{ f.fk_asistente }}" selected>Asistente {{ f.fk_asistente }} (elegido)</option>
+                            {% else %}<option value="">— Busca primero —</option>{% endif %}
+                        </select></label>
+                </div>
+                <div class="col-md-3">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Origen</span>
+                        <select class="form-select form-select-sm" name="reg_origen">
+                            {% for o in ['MANUAL', 'IMPORTADO'] %}<option value="{{ o }}" {% if f and f.origen == o %}selected{% endif %}>{{ o }}</option>{% endfor %}
+                        </select></label>
+                </div>
+            </div>
+            {% endcall %}
+            {% else %}
+            <p class="small text-muted mb-3"><i class="fas fa-info-circle me-1"></i>Los registros de asistencia se agregan cuando la sesión ya existe (al editarla o desde su pantalla).</p>
+            {% endif %}
+
             {% if errores %}
             <div class="alert alert-danger py-2 mt-3">
                 <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
@@ -121,7 +194,7 @@
 
             <div class="d-flex gap-2 mt-3">
                 <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
-                <a class="btn btn-outline-secondary" href="{{ url_for('admin.sesiones_listar', fk_catedra=sesion.fk_catedra) }}">Cancelar</a>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.sesiones_detalle', id_sesion=sesion.id_sesion) if modo == 'editar' else url_for('admin.catedras_detalle', id_catedra=sesion.fk_catedra) }}">Cancelar</a>
             </div>
         </form>
     </div>

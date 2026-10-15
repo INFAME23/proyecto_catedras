@@ -41,7 +41,9 @@ public class ServicioPregunta : IServicioPregunta
 
     // §4.3 de version6/3_plan.md: la única regla de esta versión que cruza
     // dos campos. 'null, null' (ninguno de los dos llegó) también pasa.
-    private static void ValidarRango(short? valorMin, short? valorMax)
+    // 'internal' (antes 'private'): ServicioEncuesta la reutiliza para las
+    // preguntas que nacen con la encuesta — la regla vive en UN solo lugar.
+    internal static void ValidarRango(short? valorMin, short? valorMax)
     {
         if (valorMin is null && valorMax is null)
             return;

@@ -22,9 +22,12 @@ public interface IRepositorioEncuesta
     /// <summary>Devuelve la encuesta con ese id, o null si no existe.</summary>
     Task<Encuesta?> ObtenerPorIdAsync(long idEncuesta);
 
-    /// <summary>Inserta una encuesta nueva y devuelve el 'id_encuesta' que
-    /// generó la BD. (nombre, version) duplicado -> NpgsqlException.</summary>
-    Task<long> CrearAsync(Encuesta encuesta);
+    /// <summary>Inserta una encuesta nueva con sus 'preguntasIniciales' (cada una con
+    /// sus opciones) en UNA sola transacción (Guía IA, Regla 1:
+    /// 'sp_guardar_encuesta') y devuelve el 'id_encuesta' que generó la BD.
+    /// (nombre, version) duplicado o un detalle inválido -> NpgsqlException.</summary>
+    Task<long> CrearAsync(Encuesta encuesta,
+        IReadOnlyList<(Pregunta Pregunta, IReadOnlyList<OpcionPregunta> Opciones)> preguntasIniciales);
 
     /// <summary>
     /// Actualiza las columnas indicadas en 'datos' para la encuesta con ese

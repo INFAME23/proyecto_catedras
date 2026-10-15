@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% import 'partials/filas_detalle.html' as fd %}
 {% block titulo %}{{ 'Nuevo asistente' if modo == 'nueva' else 'Editar asistente' }} · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -70,20 +71,9 @@
                nada. Todas las FK se eligen de un <select> (Regla 2). #}
             {% if modo == 'nueva' %}
             <hr class="my-4">
-            <h2 class="h6 fw-bold mb-1">Detalles iniciales <span class="text-muted small fw-normal">(opcionales)</span></h2>
-            <p class="form-text mt-0 mb-3">Se guardan junto con el asistente: si alguno falla (documento repetido, matrícula duplicada...), no se crea nada.</p>
+            <h2 class="h6 fw-bold mb-1">Vinculación y programa iniciales <span class="text-muted small fw-normal">(opcionales)</span></h2>
+            <p class="form-text mt-0 mb-3">Se guardan junto con el asistente (y con los documentos y el consentimiento de abajo): si alguno falla (matrícula duplicada...), no se crea nada. Después se administran en la ficha.</p>
             <div class="row g-3">
-                <div class="col-md-3">
-                    <label class="form-label" for="doc_tipo">Tipo de documento</label>
-                    <select class="form-select" id="doc_tipo" name="doc_tipo">
-                        <option value="">— Sin documento —</option>
-                        {% for t in tipos_documento %}<option value="{{ t.id_tipo_documento }}">{{ t.id_tipo_documento }} · {{ t.nombre }}</option>{% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label" for="doc_numero">Número de documento</label>
-                    <input type="text" class="form-control" id="doc_numero" name="doc_numero" maxlength="20">
-                </div>
                 <div class="col-md-3">
                     <label class="form-label" for="vinc_tipo">Vinculación</label>
                     <select class="form-select" id="vinc_tipo" name="vinc_tipo">
@@ -110,25 +100,73 @@
                         {% for p in periodos %}<option value="{{ p.id_periodo }}">{{ p.id_periodo }}</option>{% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3"></div>
-                <div class="col-md-3">
-                    <div class="form-check mt-md-4">
-                        <input class="form-check-input" type="checkbox" id="consentimiento" name="consentimiento">
-                        <label class="form-check-label" for="consentimiento">Aceptó la política de datos</label>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label" for="version_politica">Versión de la política</label>
-                    <input type="text" class="form-control" id="version_politica" name="version_politica" maxlength="20" value="v1.0">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label" for="canal">Canal</label>
-                    <select class="form-select" id="canal" name="canal">
-                        {% for c in canales %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
-                    </select>
-                </div>
             </div>
             {% endif %}
+
+            {# ---- Maestro-detalle #4: documentos, en filas (al crear y al editar) ---- #}
+            <hr class="my-4">
+            {% set existentes %}{% if documentos_existentes %}
+                Ya tiene {{ documentos_existentes|length }} documento{{ '' if documentos_existentes|length == 1 else 's' }}:
+                {% for d in documentos_existentes %}{{ d.fk_tipo_documento }} {{ d.numero }}{% if d.vigente %} (vigente){% endif %}{{ ', ' if not loop.last }}{% endfor %}.
+                Se editan o retiran en la <a href="{{ url_for('admin.asistentes_detalle', id_asistente=asistente.id_asistente) }}">ficha</a>.
+            {% endif %}{% endset %}
+            {% call(f) fd.bloque('documentos', 'Documentos de identidad', 'fa-address-card', filas_documentos, 'Agregar documento',
+                                 ayuda=('Se guardan JUNTO con el asistente: si uno falla, no se crea nada.'
+                                        if modo == 'nueva' else
+                                        'Cada documento nuevo se guarda por su cuenta: si uno falla, vuelve aquí con el motivo.')
+                                       ~ ' Solo UNO puede estar vigente por persona (para cambiarlo, primero retira el anterior en la ficha).',
+                                 existentes=existentes) %}
+            <div class="row g-2">
+                <div class="col-md-5">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Tipo</span>
+                        <select class="form-select form-select-sm" name="doc_fk_tipo_documento" required>
+                            <option value="">-- Selecciona --</option>
+                            {% for t in tipos_documento %}<option value="{{ t.id_tipo_documento }}" {% if f and f.fk_tipo_documento == t.id_tipo_documento %}selected{% endif %}>{{ t.id_tipo_documento }} · {{ t.nombre }}</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-md-4">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Número</span>
+                        <input type="text" class="form-control form-control-sm" name="doc_numero" maxlength="20" required value="{{ f.numero if f else '' }}"></label>
+                </div>
+                <div class="col-md-3">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Vigente</span>
+                        <select class="form-select form-select-sm" name="doc_vigente">
+                            <option value="si">Sí</option>
+                            <option value="no" {% if f and f.vigente == 'no' %}selected{% endif %}>No</option>
+                        </select></label>
+                </div>
+            </div>
+            {% endcall %}
+
+            {# ---- Maestro-detalle #5: consentimiento de datos (Ley 1581: solo se registra) ---- #}
+            <div class="card mb-3" id="consentimiento-bloque">
+                <div class="card-header fw-bold"><i class="fas fa-file-signature me-2"></i>Consentimiento de datos</div>
+                <div class="card-body">
+                    {% if consentimientos_existentes %}
+                    <p class="small mb-2">Ya tiene {{ consentimientos_existentes|length }} consentimiento{{ '' if consentimientos_existentes|length == 1 else 's' }} registrado{{ '' if consentimientos_existentes|length == 1 else 's' }}
+                        (último: {{ consentimientos_existentes[-1].version_politica }}, {{ consentimientos_existentes[-1].canal }}). Uno nuevo NO reemplaza los anteriores: es evidencia legal.</p>
+                    {% endif %}
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="consentimiento" name="consentimiento"
+                                       {% if modo == 'nueva' and request.form.get('consentimiento') %}checked{% endif %}>
+                                <label class="form-check-label" for="consentimiento">{{ 'Aceptó la política de datos' if modo == 'nueva' else 'Registrar una nueva aceptación' }}</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1" for="version_politica">Versión de la política</label>
+                            <input type="text" class="form-control form-control-sm" id="version_politica" name="version_politica" maxlength="20" value="{{ request.form.get('version_politica', 'v1.0') }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1" for="canal">Canal</label>
+                            <select class="form-select form-select-sm" id="canal" name="canal">
+                                {% for c in canales %}<option value="{{ c }}" {% if request.form.get('canal') == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             {% if errores %}
             <div class="alert alert-danger py-2 mt-3">

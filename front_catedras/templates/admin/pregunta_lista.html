@@ -36,14 +36,14 @@
                 <tbody>
                     {% for p in preguntas %}
                     <tr>
-                        <td class="fw-semibold">{{ p.id_pregunta }}</td>
-                        <td><a href="{{ url_for('admin.preguntas_listar', fk_encuesta=p.fk_encuesta) }}">{{ p.fk_encuesta }}</a></td>
+                        <td class="fw-semibold"><a href="{{ url_for('admin.preguntas_detalle', id_pregunta=p.id_pregunta) }}">{{ p.id_pregunta }}</a></td>
+                        <td><a href="{{ url_for('admin.encuestas_detalle', id_encuesta=p.fk_encuesta) }}" title="Ver la encuesta con sus preguntas">{{ p.fk_encuesta }}</a></td>
                         <td>{{ p.orden }}</td>
-                        <td>{{ p.enunciado }}</td>
+                        <td><a href="{{ url_for('admin.preguntas_detalle', id_pregunta=p.id_pregunta) }}">{{ p.enunciado }}</a></td>
                         <td><span class="badge badge-secondary">{{ p.fk_tipo_pregunta }}</span></td>
                         <td>{% if p.obligatoria %}<span class="badge badge-primary">Sí</span>{% else %}<span class="text-muted small">No</span>{% endif %}</td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.opciones_listar', fk_pregunta=p.id_pregunta) }}" title="Ver sus opciones"><i class="fas fa-list"></i></a>
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.preguntas_detalle', id_pregunta=p.id_pregunta) }}" title="Ver la pregunta con sus opciones"><i class="fas fa-eye"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.preguntas_editar', id_pregunta=p.id_pregunta) }}"><i class="fas fa-edit"></i></a>
                             <form class="d-inline" method="post" action="{{ url_for('admin.preguntas_eliminar', id_pregunta=p.id_pregunta) }}"
                                   onsubmit="return confirm('¿Eliminar la pregunta {{ p.id_pregunta }}?');">

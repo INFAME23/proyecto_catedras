@@ -1,0 +1,55 @@
+{# ==========================================================================
+   partials/filas_detalle.html  ·  Front Cátedras · Maestro-detalle en el formulario
+   --------------------------------------------------------------------------
+   Bloque de FILAS DE DETALLE dentro del formulario de un maestro (Guía IA,
+   Regla 4): el botón "Agregar" clona una fila vacía (<template>) y cada
+   fila tiene "Quitar". Lo mueve static/main.js; sin JavaScript, las filas
+   que ya trae la página (p. ej. al volver con un error) se siguen enviando.
+
+   Cada campo de una fila se llama '<prefijo>_<campo>' y se repite una vez
+   por fila: Flask lo lee con request.form.getlist(...) (ver '_filas' en
+   routes/admin.py). Por eso NO hay checkboxes dentro de una fila (un
+   checkbox sin marcar no se envía y desalinearía las listas): los sí/no
+   van en un <select>.
+
+   Uso (call block: el contenido de UNA fila, con 'f' = dict o None):
+       {% import 'partials/filas_detalle.html' as fd %}
+       {% call(f) fd.bloque('sesiones', 'Sesiones', 'fa-calendar-check',
+                            filas_sesiones, 'Agregar sesión', ayuda='...') %}
+           <input name="ses_inicio" value="{{ f.inicio if f else '' }}"> ...
+       {% endcall %}
+   ========================================================================== #}
+
+{% macro fila(contenido, numero) -%}
+<div class="border rounded p-2 mb-2 bg-light-subtle" data-fila>
+    <div class="d-flex justify-content-between align-items-center mb-1">
+        <span class="small fw-semibold text-muted">Fila <span data-numero>{{ numero }}</span></span>
+        <button type="button" class="btn btn-sm btn-link text-danger p-0" data-quitar-fila>
+            <i class="fas fa-times me-1"></i>Quitar
+        </button>
+    </div>
+    {{ contenido }}
+</div>
+{%- endmacro %}
+
+{% macro bloque(id, titulo, icono, filas, texto_agregar, ayuda='', existentes=none) -%}
+<div class="card mb-3" id="{{ id }}" data-filas>
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-bold"><i class="fas {{ icono }} me-2"></i>{{ titulo }}</span>
+        <button type="button" class="btn btn-sm btn-outline-primary" data-agregar-fila="{{ id }}">
+            <i class="fas fa-plus me-1"></i>{{ texto_agregar }}
+        </button>
+    </div>
+    <div class="card-body">
+        {% if existentes %}<div class="small mb-2">{{ existentes }}</div>{% endif %}
+        {% if ayuda %}<p class="form-text mt-0">{{ ayuda }}</p>{% endif %}
+        <div data-filas-cuerpo>
+            {% for f in filas %}{{ fila(caller(f), loop.index) }}{% endfor %}
+        </div>
+        <p class="text-muted small mb-0" data-filas-vacio {% if filas %}hidden{% endif %}>
+            Ninguna por ahora. Usa «{{ texto_agregar }}» para agregar.
+        </p>
+        <template>{{ fila(caller(none), '') }}</template>
+    </div>
+</div>
+{%- endmacro %}

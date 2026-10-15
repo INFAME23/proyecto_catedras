@@ -129,6 +129,13 @@ services:
       - ./db/postgres/migraciones/039_sp_opcion_pregunta.sql:/docker-entrypoint-initdb.d/z039_sp_opcion_pregunta.sql:ro
       - ./db/postgres/migraciones/040_sp_respuesta_encuesta.sql:/docker-entrypoint-initdb.d/z040_sp_respuesta_encuesta.sql:ro
       - ./db/postgres/migraciones/041_sp_respuesta_item.sql:/docker-entrypoint-initdb.d/z041_sp_respuesta_item.sql:ro
+      # Maestro-detalle en el formulario (Guía IA, Reglas 1 y 4): el maestro y
+      # sus detalles se guardan en UN solo CALL. Reutilizan procedimientos de
+      # arriba (z004, z010, z011) y sp_emitir_enlace del script, así que van
+      # al final: 'z042_'..'z044_'.
+      - ./db/postgres/migraciones/042_sp_guardar_catedra.sql:/docker-entrypoint-initdb.d/z042_sp_guardar_catedra.sql:ro
+      - ./db/postgres/migraciones/043_sp_guardar_encuesta.sql:/docker-entrypoint-initdb.d/z043_sp_guardar_encuesta.sql:ro
+      - ./db/postgres/migraciones/044_sp_guardar_sesion.sql:/docker-entrypoint-initdb.d/z044_sp_guardar_sesion.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.
