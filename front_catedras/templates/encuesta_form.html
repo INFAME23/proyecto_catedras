@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{# ==========================================================================
+   encuesta_form.html  ·  Front Cátedras · Versión 6
+   Formulario DINÁMICO: un campo por pregunta, según su 'fk_tipo_pregunta'
+   (6_contracts.md §9, Guía IA Regla 2): numérico para ESCALA_5/SI_NO,
+   <textarea> para TEXTO_LIBRE, <select> de OpcionPregunta para OPCION_UNICA.
+   "Responder" es UNA sola operación (ADR D31): o se manda todo, o no
+   queda nada guardado — no existe "guardar borrador".
+   ========================================================================== #}
+{% block titulo %}Responder encuesta · Cátedras USB{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('sesiones.detalle', id_sesion=sesion.id_sesion) }}">Sesión {{ sesion.numero_reunion }}</a></li>
+        <li class="breadcrumb-item active">Responder encuesta</li>
+    </ol>
+</nav>
+
+<div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
+    <h1 class="fw-bold mb-0"><i class="fas fa-clipboard-list me-2"></i>Encuesta de calidad</h1>
+    <p class="text-white-50 mb-0">
+        Sesión {{ sesion.numero_reunion }}. Responde las preguntas marcadas con
+        <span class="text-danger">*</span> (obligatorias); las demás son opcionales.
+        Al enviar, la encuesta queda cerrada: no se puede responder de nuevo.
+    </p>
+</div>
+
+{% if not preguntas %}
+<p class="text-muted">Esta encuesta todavía no tiene preguntas.</p>
+{% else %}
+<form method="post" action="{{ url_for('encuestas.responder', id_sesion=sesion.id_sesion) }}">
+    {% for p in preguntas %}
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <label class="form-label fw-semibold" for="pregunta_{{ p.id_pregunta }}">
+                {{ p.orden }}. {{ p.enunciado }}{% if p.obligatoria %} <span class="text-danger">*</span>{% endif %}
+            </label>
+
+            {% if p.tipo and p.tipo.guarda_opcion %}
+            <select class="form-select" id="pregunta_{{ p.id_pregunta }}" name="pregunta_{{ p.id_pregunta }}"
+                    {% if p.obligatoria %}required{% endif %}>
+                <option value="">-- Selecciona --</option>
+                {% for o in p.opciones %}
+                <option value="{{ o.id_opcion }}">{{ o.etiqueta }}</option>
+                {% endfor %}
+            </select>
+
+            {% elif p.tipo and p.tipo.guarda_texto %}
+            <textarea class="form-control" id="pregunta_{{ p.id_pregunta }}" name="pregunta_{{ p.id_pregunta }}"
+                      rows="2" {% if p.obligatoria %}required{% endif %}></textarea>
+
+            {% else %}
+            <input type="number" class="form-control" id="pregunta_{{ p.id_pregunta }}" name="pregunta_{{ p.id_pregunta }}"
+                   {% if p.valor_min is not none %}min="{{ p.valor_min }}"{% endif %}
+                   {% if p.valor_max is not none %}max="{{ p.valor_max }}"{% endif %}
+                   {% if p.obligatoria %}required{% endif %}>
+            {% if p.valor_min is not none and p.valor_max is not none %}
+            <div class="form-text">Entre {{ p.valor_min }} y {{ p.valor_max }}.</div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="d-flex gap-2">
+        <button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane me-1"></i>Enviar</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('sesiones.detalle', id_sesion=sesion.id_sesion) }}">Cancelar</a>
+    </div>
+</form>
+{% endif %}
+{% endblock %}

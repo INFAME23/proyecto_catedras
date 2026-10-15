@@ -23,6 +23,7 @@
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
 from servicios.api_catedras import ErrorApi, crear, eliminar, listar, llave, obtener
+from routes.encuestas import estado_encuesta_sesion   # v6: ¿se ofrece "responder encuesta"?
 
 sesiones_bp = Blueprint('sesiones', __name__)
 
@@ -109,7 +110,8 @@ def detalle(id_sesion):
         if ex.codigo == 404:
             abort(404)   # sesión inexistente -> página 404 del front
         return render_template('detalle_sesion.html', error=ex, sesion=None, catedra=None,
-                               ponentes=[], candidatos=[], q='', roles=ROLES_PONENCIA), 502
+                               ponentes=[], candidatos=[], q='', roles=ROLES_PONENCIA,
+                               mostrar_encuesta=False, motivo_encuesta=None), 502
 
     error = None
     catedra = None
@@ -121,10 +123,14 @@ def detalle(id_sesion):
         # La sesión se muestra igual; el dato secundario que falló, se avisa.
         error = ex
 
+    # v6: ¿se ofrece el enlace "responder encuesta" (criterio 7)?
+    mostrar_encuesta, motivo_encuesta = estado_encuesta_sesion(sesion)
+
     texto = request.args.get('q', '').strip()
     return render_template('detalle_sesion.html', error=error, sesion=sesion, catedra=catedra,
                            ponentes=ponentes, candidatos=buscar_candidatos(texto), q=texto,
-                           roles=ROLES_PONENCIA)
+                           roles=ROLES_PONENCIA, mostrar_encuesta=mostrar_encuesta,
+                           motivo_encuesta=motivo_encuesta)
 
 
 @sesiones_bp.route('/sesiones/<int:id_sesion>/ponentes', methods=['POST'])

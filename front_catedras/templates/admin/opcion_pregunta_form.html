@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nueva opción' if modo == 'nueva' else 'Editar opción' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.opciones_listar') }}">Opción de pregunta</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-list-ul text-primary-custom me-2"></i>{{ 'Nueva opción' if modo == 'nueva' else 'Editar opción ' + (opcion.id_opcion|string) }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.opciones_nueva') if modo == 'nueva' else url_for('admin.opciones_editar', id_opcion=opcion.id_opcion) }}">
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="fk_pregunta">Pregunta</label>
+                <select class="form-select" id="fk_pregunta" name="fk_pregunta" required>
+                    <option value="">-- Selecciona --</option>
+                    {% for p in preguntas %}
+                    <option value="{{ p.id_pregunta }}" {% if fk_pregunta == p.id_pregunta %}selected{% endif %}>{{ p.id_pregunta }} · {{ p.enunciado }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <div class="mb-3">
+                <label class="form-label">Pregunta</label>
+                <p class="form-control-plaintext">{{ opcion.fk_pregunta }} <span class="text-muted small">(una opción no cambia de pregunta: se borra y se crea otra)</span></p>
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label" for="etiqueta">Etiqueta</label>
+                <input type="text" class="form-control" id="etiqueta" name="etiqueta" maxlength="150" required
+                       value="{{ opcion.etiqueta if opcion else '' }}">
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-sm-6">
+                    <label class="form-label" for="orden">Orden</label>
+                    <input type="number" class="form-control" id="orden" name="orden" min="1" required
+                           value="{{ opcion.orden if opcion else '' }}">
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label" for="valor">Valor (peso numérico, opcional)</label>
+                    <input type="number" class="form-control" id="valor" name="valor"
+                           value="{{ opcion.valor if opcion and opcion.valor is not none else '' }}">
+                    <div class="form-text">Por ejemplo, para promediar respuestas de opción única.</div>
+                </div>
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.opciones_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

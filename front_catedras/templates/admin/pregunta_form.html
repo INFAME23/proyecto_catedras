@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block titulo %}{{ 'Nueva pregunta' if modo == 'nueva' else 'Editar pregunta' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.preguntas_listar') }}">Pregunta</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-question-circle text-primary-custom me-2"></i>{{ 'Nueva pregunta' if modo == 'nueva' else 'Editar pregunta ' + (pregunta.id_pregunta|string) }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.preguntas_nueva') if modo == 'nueva' else url_for('admin.preguntas_editar', id_pregunta=pregunta.id_pregunta) }}">
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="fk_encuesta">Encuesta</label>
+                <select class="form-select" id="fk_encuesta" name="fk_encuesta" required>
+                    <option value="">-- Selecciona --</option>
+                    {% for e in encuestas %}
+                    <option value="{{ e.id_encuesta }}">{{ e.nombre }} (v{{ e.version }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <div class="mb-3">
+                <label class="form-label">Encuesta</label>
+                <p class="form-control-plaintext">{{ pregunta.fk_encuesta }} <span class="text-muted small">(no se cambia una pregunta de encuesta: se borra y se crea otra)</span></p>
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label" for="enunciado">Enunciado</label>
+                <input type="text" class="form-control" id="enunciado" name="enunciado" maxlength="300" required
+                       value="{{ pregunta.enunciado if pregunta else '' }}">
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-sm-4">
+                    <label class="form-label" for="orden">Orden</label>
+                    <input type="number" class="form-control" id="orden" name="orden" min="1" required
+                           value="{{ pregunta.orden if pregunta else '' }}">
+                </div>
+                <div class="col-sm-8">
+                    <label class="form-label" for="fk_tipo_pregunta">Tipo de pregunta</label>
+                    <select class="form-select" id="fk_tipo_pregunta" name="fk_tipo_pregunta" required>
+                        <option value="">-- Selecciona --</option>
+                        {% for t in tipos %}
+                        <option value="{{ t.id_tipo_pregunta }}" {% if pregunta and pregunta.fk_tipo_pregunta == t.id_tipo_pregunta %}selected{% endif %}>{{ t.id_tipo_pregunta }} · {{ t.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="obligatoria" name="obligatoria" {% if pregunta and pregunta.obligatoria %}checked{% endif %}>
+                <label class="form-check-label" for="obligatoria">Obligatoria (hay que responderla para poder cerrar la encuesta)</label>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-sm-6">
+                    <label class="form-label" for="valor_min">Valor mínimo esperado (opcional)</label>
+                    <input type="number" class="form-control" id="valor_min" name="valor_min"
+                           value="{{ pregunta.valor_min if pregunta and pregunta.valor_min is not none else '' }}">
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label" for="valor_max">Valor máximo esperado (opcional)</label>
+                    <input type="number" class="form-control" id="valor_max" name="valor_max"
+                           value="{{ pregunta.valor_max if pregunta and pregunta.valor_max is not none else '' }}">
+                </div>
+                <div class="form-text">Ambos o ninguno. Son declarativos (RF166): la BD los vigila cuando alguien RESPONDE, no al crear la pregunta.</div>
+            </div>
+
+            {% if modo == 'nueva' %}
+            <div class="mb-3">
+                <label class="form-label" for="opciones_iniciales">Opciones iniciales (si el tipo es OPCION_UNICA)</label>
+                <textarea class="form-control" id="opciones_iniciales" name="opciones_iniciales" rows="4"
+                          placeholder="Una opción por línea: &quot;etiqueta&quot; o &quot;etiqueta;valor&quot;&#10;Sí;1&#10;No;0"></textarea>
+                <div class="form-text">
+                    Opcional. El orden de cada opción lo pone la línea en la que va. Se guardan junto con la pregunta,
+                    en una sola operación: si una falla (p. ej. dos líneas iguales), no se crea ni la pregunta.
+                    Para otros tipos de pregunta, deja esto vacío.
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-light border small">
+                <i class="fas fa-info-circle text-primary-custom me-1"></i>
+                Las opciones de esta pregunta se administran aparte: <a href="{{ url_for('admin.opciones_listar', fk_pregunta=pregunta.id_pregunta) }}">verlas / editarlas</a>.
+            </div>
+            {% endif %}
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.preguntas_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

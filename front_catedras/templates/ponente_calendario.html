@@ -2,8 +2,9 @@
 {% import 'partials/macros_sesion.html' as ms %}
 {# ==========================================================================
    ponente_calendario.html  ·  Front Cátedras · Versión 4
-   Calendario del ponente. Sin login hasta la v5: la persona se ELIGE
-   (buscar -> elegir), no se deduce de una sesión autenticada.
+   Calendario del ponente. Con sesión (v5+) se abre el de la persona
+   autenticada; en cualquier caso se puede buscar a otra persona
+   (buscar -> elegir).
    ========================================================================== #}
 {% block titulo %}Calendario del ponente · Cátedras USB{% endblock %}
 {% block contenido %}
@@ -13,7 +14,14 @@
 </div>
 
 <div class="alert alert-info small">
-    <i class="fas fa-info-circle me-1"></i>Hasta la v5 no hay inicio de sesión: busca a la persona y abre su calendario.
+    <i class="fas fa-info-circle me-1"></i>
+    {% if mi_asistente %}
+        {% if asistente and asistente.id_asistente == mi_asistente %}Este es tu calendario ({{ usuario_actual().usuario }}). Para ver el de otra persona, búscala abajo.
+        {% elif asistente %}Estás viendo el calendario de otra persona. <a href="{{ url_for('ponente.inicio') }}">Volver al mío</a>.
+        {% else %}Elige a la persona de la lista, o <a href="{{ url_for('ponente.inicio') }}">vuelve a tu calendario</a>.{% endif %}
+    {% else %}
+        <a href="{{ url_for('auth.login', siguiente=url_for('ponente.inicio')) }}">Inicia sesión</a> para ver tu propio calendario, o busca a una persona y abre el suyo.
+    {% endif %}
 </div>
 
 <form class="d-flex gap-2 mb-3" method="get" action="{{ url_for('ponente.inicio') }}">

@@ -11,6 +11,7 @@ from routes.estudiante import estudiante_bp
 from routes.auth import auth_bp
 from routes.carga import carga_bp   # v3: pantalla de carga de datos
 from routes.sesiones import sesiones_bp   # v4: detalle de sesión y sus ponentes
+from routes.encuestas import encuestas_bp   # v6: responder la encuesta de una sesión
 from servicios import fechas               # v4: filtros de fecha y hora
 
 app = Flask(__name__)
@@ -32,6 +33,7 @@ app.register_blueprint(ponente_bp, url_prefix='/ponente')
 app.register_blueprint(estudiante_bp, url_prefix='/estudiante')
 app.register_blueprint(carga_bp, url_prefix='/')
 app.register_blueprint(sesiones_bp, url_prefix='/')
+app.register_blueprint(encuestas_bp, url_prefix='/')
 
 
 @app.errorhandler(403)

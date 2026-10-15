@@ -4,11 +4,12 @@
 #  CALENDARIO DEL PONENTE (mapa de versiones §4: "V4 · Sesiones, detalle
 #  de sesión y calendario del ponente").
 #
-#  Hasta la v5 NO hay login: el front no sabe "quién soy". Por eso, igual
-#  que el selector de rol de prueba, aquí se ELIGE a la persona: se busca
-#  (la API filtra con '?q=') y se abre su calendario con '?asistente=ID'.
-#  En la v5, con 'usuario' y login real, ese id saldrá de la sesión
-#  autenticada y la búsqueda desaparece.
+#  v4: no había login, así que la persona se ELIGE: se busca (la API filtra
+#  con '?q=') y se abre su calendario con '?asistente=ID'.
+#  v5 en adelante: si hay sesión, el calendario que se abre por defecto es
+#  el de la persona autenticada (su 'fk_asistente'). La búsqueda se
+#  conserva para consultar el de otra persona (la API sigue abierta,
+#  ADR D28-D29: se autentica, no se autoriza).
 #
 #  Es el único lugar del front que usa el filtro 'fkAsistente' de
 #  GET /api/Ponencia (RF127): "¿en qué sesiones participa esta persona?".
@@ -16,6 +17,7 @@
 
 from flask import Blueprint, flash, render_template, request
 
+from auth_helpers import sesion_activa, usuario_actual
 from servicios.api_catedras import ErrorApi, listar, obtener
 from servicios.fechas import ZONA_COLOMBIA, a_local
 from datetime import datetime
@@ -60,6 +62,13 @@ def inicio():
     texto = request.args.get('q', '').strip()
     id_asistente = request.args.get('asistente', type=int)   # None si no llega o no es número
 
+    # v5+: con sesión y sin persona elegida, se abre el calendario propio.
+    # Sin ninguna búsqueda en curso: si el usuario está buscando a otra
+    # persona ('?q='), no se le impone el suyo.
+    mi_asistente = usuario_actual()['fk_asistente'] if sesion_activa() else None
+    if id_asistente is None and not texto and mi_asistente:
+        id_asistente = mi_asistente
+
     personas = []
     if texto:
         try:
@@ -77,4 +86,5 @@ def inicio():
             _avisar(ex)
 
     return render_template('ponente_calendario.html', q=texto, personas=personas,
-                           asistente=asistente, calendario=calendario)
+                           asistente=asistente, calendario=calendario,
+                           mi_asistente=mi_asistente)

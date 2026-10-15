@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block titulo %}Ítems de respuesta · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Ítem de respuesta</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-list-check text-primary-custom me-2"></i>Ítems de respuesta</h1>
+<p class="text-muted small">Solo lectura: cada ítem nace dentro de "responder" una encuesta (RF178). Para verlos agrupados por respuesta, abre una <a href="{{ url_for('admin.respuestas_listar') }}">respuesta de encuesta</a>.</p>
+
+<form class="d-flex gap-2 mb-3" method="get" action="{{ url_for('admin.items_listar') }}">
+    <input class="form-control" type="number" min="1" name="fk_respuesta" value="{{ fk_respuesta or '' }}" placeholder="Filtrar por id de respuesta">
+    <button class="btn btn-outline-primary" type="submit"><i class="fas fa-filter"></i></button>
+    {% if fk_respuesta %}<a class="btn btn-outline-secondary" href="{{ url_for('admin.items_listar') }}">Quitar filtro</a>{% endif %}
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if items %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Id</th><th>Respuesta</th><th>Pregunta</th><th>Número</th><th>Texto</th><th>Opción</th></tr>
+                </thead>
+                <tbody>
+                    {% for i in items %}
+                    <tr>
+                        <td class="fw-semibold">{{ i.id_item }}</td>
+                        <td><a href="{{ url_for('admin.respuestas_detalle', id_respuesta=i.fk_respuesta) }}">{{ i.fk_respuesta }}</a></td>
+                        <td><a href="{{ url_for('admin.items_listar', fk_respuesta=i.fk_respuesta) }}">{{ i.fk_pregunta }}</a></td>
+                        <td>{{ i.valor_numerico if i.valor_numerico is not none else '—' }}</td>
+                        <td>{{ i.valor_texto or '—' }}</td>
+                        <td>{{ i.fk_opcion if i.fk_opcion is not none else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay ítems que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

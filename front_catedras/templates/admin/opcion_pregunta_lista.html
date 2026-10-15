@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block titulo %}Opciones de pregunta · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Opción de pregunta</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 fw-bold mb-0"><i class="fas fa-list-ul text-primary-custom me-2"></i>Opciones de pregunta</h1>
+    <a class="btn btn-primary" href="{{ url_for('admin.opciones_nueva', fk_pregunta=fk_pregunta) }}">
+        <i class="fas fa-plus me-1"></i>Nueva opción
+    </a>
+</div>
+
+<form class="d-flex gap-2 mb-3" method="get" action="{{ url_for('admin.opciones_listar') }}">
+    <input class="form-control" type="number" min="1" name="fk_pregunta" value="{{ fk_pregunta or '' }}" placeholder="Filtrar por id de pregunta">
+    <button class="btn btn-outline-primary" type="submit"><i class="fas fa-filter"></i></button>
+    {% if fk_pregunta %}<a class="btn btn-outline-secondary" href="{{ url_for('admin.opciones_listar') }}">Quitar filtro</a>{% endif %}
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if opciones %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Id</th><th>Pregunta</th><th>Orden</th><th>Etiqueta</th><th>Valor</th><th class="text-end">Acciones</th></tr>
+                </thead>
+                <tbody>
+                    {% for o in opciones %}
+                    <tr>
+                        <td class="fw-semibold">{{ o.id_opcion }}</td>
+                        <td><a href="{{ url_for('admin.opciones_listar', fk_pregunta=o.fk_pregunta) }}">{{ o.fk_pregunta }}</a></td>
+                        <td>{{ o.orden }}</td>
+                        <td>{{ o.etiqueta }}</td>
+                        <td>{{ o.valor if o.valor is not none else '—' }}</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.opciones_editar', id_opcion=o.id_opcion) }}"><i class="fas fa-edit"></i></a>
+                            <form class="d-inline" method="post" action="{{ url_for('admin.opciones_eliminar', id_opcion=o.id_opcion) }}"
+                                  onsubmit="return confirm('¿Eliminar la opción {{ o.id_opcion }}?');">
+                                <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay opciones que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

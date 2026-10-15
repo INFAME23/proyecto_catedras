@@ -1,13 +1,53 @@
-# Proyecto Cátedras — Versión 5
+# Proyecto Cátedras — Versión 6
 
 API REST del sistema de **asistencia a cátedras universitarias**, construida
-por **versiones incrementales**. Esta es la **v5**: **usuarios y login**
-(contraseñas con BCrypt, roles con vigencia) y el **registro de asistencia**
-(enlace o QR por sesión, clave de un solo uso y el registro mismo), sobre las
-sesiones de la v4, las personas de la v3, la estructura académica de la v2 y
-la arquitectura en capas de la v1.
+por **versiones incrementales**. Esta es la **v6: encuestas de calidad**
+(`Pregunta`, `OpcionPregunta`, `RespuestaEncuesta`, `RespuestaItem`), sobre
+el login y registro de asistencia de la v5, las sesiones de la v4, las
+personas de la v3, la estructura académica de la v2 y la arquitectura en
+capas de la v1.
 
-## Qué incluye la v5
+## Qué incluye la v6
+
+- Lo nuevo que enseña la v6:
+  - **Maestro-detalle de nacimiento** (Guía IA, Regla 1 · ADR D30):
+    `POST /api/Pregunta` acepta una lista opcional `opciones` y guarda la
+    pregunta con sus opciones iniciales en una sola transacción
+    (`sp_guardar_pregunta`), igual mecánica que `ProgramaAcademico`/`alias`
+    en v2 pero sin ser retrofit. Si una opción falla (`orden` repetido), no
+    se crea ni la pregunta.
+  - **"Responder" y "cerrar" son una sola operación** (ADR D31): `POST
+    /api/RespuestaEncuesta` llama a `fn_responder_encuesta_api`, que ya
+    existía desde la v1, inserta el maestro y todos los `RespuestaItem` del
+    detalle, y ella misma cierra la encuesta — todo en el mismo `CALL`. No
+    hay un verbo "cerrar" aparte. Falta una pregunta obligatoria, lista
+    vacía, registro sin encuesta asignada o ya respondido → `500`, y no
+    queda nada guardado (ADR D25, mismo bucket que cualquier otro error de
+    PostgreSQL).
+  - **Hecho auditable** (ADR D32, igual criterio que `ConsentimientoDatos`
+    en v3 y `RegistroAsistencia` en v5): `RespuestaEncuesta` no tiene `PUT`,
+    `PATCH` ni `DELETE` — `uq_respuesta_registro` garantiza una sola
+    respuesta por registro, para siempre.
+  - **El tipo de pregunta es DATO, no código** (RN-25): `fk_tipo_pregunta`
+    decide, vía `guarda_numero`/`guarda_texto`/`guarda_opcion` de
+    `TipoPregunta` (v1), en cuál de las tres columnas de `RespuestaItem` se
+    espera la respuesta; la API no lo revalida (D9), lo vigila el trigger
+    `fn_trg_respuesta_item_tipo` al responder.
+- Front (Flask): en el detalle de una sesión con encuesta asignada, un
+  aviso que cambia según el caso (sin sesión invita a iniciar sesión; sin
+  registro de asistencia en esa sesión avisa que solo responde quien
+  asistió; ya respondida lo confirma) y, si corresponde, el enlace
+  **"Responder encuesta"**. El formulario dibuja un campo por pregunta
+  según su tipo real: numérico para `ESCALA_5`/`SI_NO`, `<textarea>` para
+  `TEXTO_LIBRE`, `<select>` de `OpcionPregunta` para `OPCION_UNICA`. En
+  `/admin`, los 4 bloques nuevos: `Pregunta` (con sus opciones iniciales al
+  crear), `OpcionPregunta` (CRUD completo), `RespuestaEncuesta` y
+  `RespuestaItem` (ambas solo lectura).
+- Las **33 tablas** que hoy expone la API: las 29 de las versiones 1-5
+  (listadas abajo) más las 4 de la v6: `Pregunta`, `OpcionPregunta`,
+  `RespuestaEncuesta` y `RespuestaItem` (19 endpoints nuevos).
+
+## Lo que enseñó la v5 (sigue vigente)
 
 - Lo nuevo que enseña la v5:
   - **Contraseñas con BCrypt** (ADR D23, Guía IA Regla 3): la clave llega en
@@ -37,7 +77,7 @@ la arquitectura en capas de la v1.
   (`/registro` y `/registro/<token>`, sin login) y, en `/admin`, los 5
   bloques nuevos (Usuario, Rol por usuario, Enlace de registro, Clave de
   acceso y Registro de asistencia).
-- Las **29 tablas** que hoy expone la API: las 24 de las versiones 1-4
+- Las **29 tablas** que trajo hasta la v5: las 24 de las versiones 1-4
   (listadas abajo) más las 5 de la v5: `Usuario`, `RolPorUsuario`,
   `EnlaceRegistro`, `ClaveAcceso` y `RegistroAsistencia` (21 endpoints
   nuevos).
@@ -63,8 +103,9 @@ la arquitectura en capas de la v1.
   - Sin SP ni migración nueva: ninguna operación de la v4 es maestro-detalle.
 - Front (Flask): calendario de sesiones en el detalle de cada cátedra,
   detalle de sesión con sus ponentes (buscar → elegir → asignar / quitar),
-  **calendario del ponente** (`/ponente/`) y, en `/admin`, el CRUD de
-  `Sesion` y la asignación de `Ponencia`.
+  **calendario del ponente** (`/ponente/`; con sesión iniciada abre el
+  calendario propio, y se puede buscar el de otra persona) y, en `/admin`,
+  el CRUD de `Sesion` y la asignación de `Ponencia`.
 - Las 24 tablas de las versiones 1-4:
   - las 10 sin foreign key de la v1 (`Sede`, `Encuesta`, `EstadoProceso`,
     `Modalidad`, `PeriodoAcademico`, `Rol`, `TipoDocumento`, `TipoEvento`,
@@ -122,21 +163,27 @@ docker compose up -d --build
 |---|---|
 | Diagnóstico | http://localhost:8142/ |
 | Swagger UI | http://localhost:8142/swagger |
-| API (ejemplo v5) | http://localhost:8142/api/RolPorUsuario?fkUsuario=1 |
+| API (ejemplo v6) | http://localhost:8142/api/Pregunta?fkEncuesta=1 |
 | Front · inicio de sesión | http://localhost:5000/login |
 | Front · registro de asistencia (público) | http://localhost:5000/registro |
 | Front · calendario de una cátedra | http://localhost:5000/catedras/3975 |
-| Front · detalle de sesión y ponentes | http://localhost:5000/sesiones/1 |
+| Front · detalle de sesión, ponentes y encuesta | http://localhost:5000/sesiones/1 |
 | Front · calendario del ponente | http://localhost:5000/ponente/ |
 | Front · administración | http://localhost:5000/admin/ |
 | Front · carga de datos | http://localhost:5000/carga_datos |
 | PostgreSQL (herramienta externa) | localhost,15542 · base `bdcatedras_postgres_local` · `sa` / `Construccion123!` |
 
-> **¿Vienes de la v3 con el volumen de PostgreSQL ya creado?** La v4 y la v5
-> no agregan ninguna migración: no hay nada que reaplicar. (Si vienes de la v2
-> o antes, mira `docs/spec_kit/Versiones/version3/7_quickstart.md` §1.)
+> **¿Vienes de un volumen de PostgreSQL ya creado?** Docker solo corre las
+> migraciones (`docker-entrypoint-initdb.d`) la primera vez, con el volumen
+> vacío. Si tu volumen es anterior a `041_sp_respuesta_item.sql`, la API
+> responde `42883: procedure ... does not exist` porque a la BD le faltan
+> procedimientos. Dos salidas: `docker compose down -v && docker compose up
+> -d --build` (pierdes los datos de ejemplo que hayas modificado), o aplicar
+> las migraciones faltantes sin perderlos con
+> `db/postgres/aplicar_migraciones.ps1` (es idempotente: usa `CREATE OR
+> REPLACE`, así que se puede correr aunque algunas ya estén aplicadas).
 
-Prueba de capas (sin PostgreSQL, 29 entidades, 345 verificaciones esperadas). Se
+Prueba de capas (sin PostgreSQL, 33 entidades, 385 verificaciones esperadas). Se
 corre dentro del contenedor de la API (en Windows, el Control de
 aplicaciones puede bloquear la DLL recién compilada):
 
@@ -159,15 +206,62 @@ powershell -ExecutionPolicy Bypass -File .\api_catedras\pruebas\verificar_v5.ps1
 > Las pruebas del quickstart agregan y modifican datos de ejemplo. Para
 > volver al estado original: `docker compose down -v && docker compose up -d --build`.
 
+## Documentación de la v6
+
+La carpeta `docs/spec_kit/Versiones/version6/` describe la versión de
+**encuestas de calidad**: `Pregunta`, `OpcionPregunta`, `RespuestaEncuesta`
+y `RespuestaItem`. Incluye `2_spec.md` (requisitos), `3_plan.md` (plan
+técnico), `4_research.md` (decisiones), `5_data_model.md` (modelo de datos),
+`6_contracts.md` (contratos), `7_quickstart.md` (smoke test), `8_tasks.md`
+(fases 47–53), `ESTADO_V6_Y_CUMPLIMIENTO.md` (estado y discrepancias
+detectadas) y **`guia_ia_v6.md`** (guía para trabajar fase por fase con una IA).
+
+El alta de `Pregunta` (maestro-detalle con sus opciones) usa
+`sp_guardar_pregunta`, de la migración `004_sp_guardar_pregunta.sql`. Los
+otros 4 verbos de `Pregunta` y `OpcionPregunta`, y los de `RespuestaEncuesta`
+y `RespuestaItem`, se agregaron después, junto con el retrofit a
+procedimientos de `Usuario`, `RolPorUsuario`, `EnlaceRegistro`,
+`ClaveAcceso` y `RegistroAsistencia` (v5): son las migraciones
+`033`-`041` (ver
+[`AJUSTES_RETROFIT_SP_LOTE_FASE5.md`](docs/spec_kit/Versiones/AJUSTES_RETROFIT_SP_LOTE_FASE5.md)).
+Si se conserva un volumen PostgreSQL anterior a estas migraciones, hay que
+aplicarlas a mano; ver la nota de "Cómo levantarlo" arriba
+(`aplicar_migraciones.ps1`).
+
+**Estado:** v6 completa (2026-10-15): la prueba de capas (Fase 50) dio
+**385 pasadas, 0 fallidas**; los 33 recursos de la API se verificaron a
+mano contra Docker real (Fase 51); el front (Fase 52: responder encuesta
+con el caso de una pregunta obligatoria sin responder, y los 4 bloques de
+`/admin`) se comprobó a mano. Falta el commit con el tag `v6` (Fase 53 de
+`8_tasks.md`) — ver "Cómo crear el tag" más abajo. Quedan pendientes, para
+cuando se escriba la spec de la v7, las discrepancias que
+`ESTADO_V6_Y_CUMPLIMIENTO.md` documenta contra `VERSION_2.md` y que no son
+de esta versión (la carpeta de "prompts" del §11 y el cierre formal de la
+v1); conviene revisar ese documento y, si sigue vigente, actualizarlo o
+marcarlo como resuelto.
+
+### Cómo crear el tag
+
+```powershell
+git checkout main
+git pull
+git tag -a v6 -m "Versión 6: encuestas de calidad"
+git push origin v6
+```
+
 ## Estructura
 
 ```
 docker-compose.yml              # un comando: postgres + api + front
 db/postgres/
   script_bdcatedras.sql         # la BD completa, PROVISTA (se monta, no se genera)
-  migraciones/                  # SP maestro-detalle PROPIOS (Guía IA, Regla 1):
-                                #  001 programa (v2) · 002 asistente · 003 lote de carga (v3)
-                                #  (v4 y v5: sin migraciones nuevas)
+  migraciones/                  # 001-041: maestro-detalle propios (Guía IA, Regla 1:
+                                #  001 programa, 002 asistente, 003 lote de carga, 004 pregunta)
+                                #  + el retrofit a SP de todas las tablas de la API (005-041;
+                                #  033-041 = Usuario, RolPorUsuario, EnlaceRegistro, ClaveAcceso,
+                                #  RegistroAsistencia, Pregunta, OpcionPregunta, RespuestaEncuesta,
+                                #  RespuestaItem). Ver PLAN_RETROFIT_SP.md.
+  aplicar_migraciones.ps1       # aplica 001-041 a una BD ya creada, sin perder datos (ver arriba)
 api_catedras/                   # la API .NET (Controllers, Modelos, Peticiones,
                                 #  Servicios, Repositorios, Excepciones, pruebas;
                                 #  pruebas/verificar_v5.ps1 = verificación contra Docker)
@@ -182,11 +276,12 @@ docs/
     version1/  2_spec .. 8_tasks
     version2/  2_spec .. 8_tasks
     version3/  2_spec .. 8_tasks
-    version4/  2_spec .. 8_tasks + guia_ia_v4.md (guía para construir/verificar la v4 con IA)
-    version5/  2_spec .. 8_tasks + guia_ia_v5.md (guía para construir/verificar la v5 con IA)
+    version4/  2_spec .. 8_tasks + guia_ia_v4.md
+    version5/  2_spec .. 8_tasks + guia_ia_v5.md
+    version6/  2_spec .. 8_tasks + guia_ia_v6.md + estado/cumplimiento
 ```
 
-## Documentación de la v5
+## Documentación de la v5 (versión anterior)
 
 En `docs/spec_kit/Versiones/version5/`: `2_spec.md` (qué y criterios de
 aceptación, RF132-RF158), `3_plan.md` (cómo), `4_research.md` (decisiones

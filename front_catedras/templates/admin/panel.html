@@ -3,7 +3,7 @@
 {% block contenido %}
 <div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
     <h1 class="fw-bold mb-0"><i class="fas fa-cogs me-2"></i>Administración</h1>
-    <p class="text-white-50 mb-0">Las 29 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2 + 7 de la v3 + 2 de la v4 + 5 de la v5)</p>
+    <p class="text-white-50 mb-0">Las 33 tablas que expone ApiCatedras (10 de la v1 + 5 de la v2 + 7 de la v3 + 2 de la v4 + 5 de la v5 + 4 de la v6)</p>
 </div>
 
 <div class="row g-3">
@@ -299,6 +299,46 @@
                 <i class="fas fa-clipboard-check fa-2x text-primary-custom mb-2"></i>
                 <h6 class="fw-bold mb-1">Registro de asistencia</h6>
                 <p class="text-muted small mb-0">Quién asistió a cada sesión; alta manual.</p>
+            </div>
+        </a>
+    </div>
+</div>
+
+<h2 class="h5 fw-bold mt-5 mb-3"><i class="fas fa-clipboard-list text-primary-custom me-2"></i>Encuestas de calidad <span class="badge badge-primary">v6</span></h2>
+<div class="row g-3">
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.preguntas_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-question-circle fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Pregunta</h6>
+                <p class="text-muted small mb-0">Crear con sus opciones iniciales (si aplica); editar, eliminar.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.opciones_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-list-ul fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Opción de pregunta</h6>
+                <p class="text-muted small mb-0">CRUD completo: corregir etiqueta u orden es una edición válida.</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.respuestas_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-poll fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Respuesta de encuesta</h6>
+                <p class="text-muted small mb-0">Las encuestas ya respondidas, con sus ítems (solo lectura).</p>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.items_listar') }}">
+            <div class="card-body">
+                <i class="fas fa-list-check fa-2x text-primary-custom mb-2"></i>
+                <h6 class="fw-bold mb-1">Ítem de respuesta</h6>
+                <p class="text-muted small mb-0">Cada respuesta individual a una pregunta (solo lectura).</p>
             </div>
         </a>
     </div>

@@ -2195,3 +2195,291 @@ def registros_nuevo():
     except ErrorApi as ex:
         _avisar(ex)        # 400 origen inválido, 500 si el asistente no tiene vinculación vigente (RN-07)
     return redirect(url_for('admin.registros_listar', fk_sesion=fk_sesion))
+
+
+# ==========================================================================
+#  v6 · PREGUNTA  (recurso API: "Pregunta", clave: id_pregunta)
+#  CRUD con 'opciones' iniciales OPCIONALES al crear (Guía IA, Regla 1):
+#  una pregunta de tipo OPCION_UNICA se crea junto con sus opciones, en
+#  una sola transacción (sp_guardar_pregunta) — igual mecánica que el
+#  alias de ProgramaAcademico (v2), pero de nacimiento, no retrofit.
+#  El PUT de editar NO toca 'fk_encuesta' ni las opciones (D33): esas se
+#  administran aparte, en OpcionPregunta.
+# ==========================================================================
+
+def _leer_opciones_iniciales():
+    """Una opción por línea del <textarea> 'opciones_iniciales', formato
+    libre 'etiqueta' o 'etiqueta;valor'. El 'orden' lo pone la posición
+    de la línea (Regla 2: nada que la persona tenga que numerar a mano)."""
+    opciones = []
+    for i, linea in enumerate(request.form.get('opciones_iniciales', '').splitlines(), start=1):
+        linea = linea.strip()
+        if not linea:
+            continue
+        etiqueta, _, valor = linea.partition(';')
+        opcion = {'etiqueta': etiqueta.strip(), 'orden': i}
+        valor = valor.strip()
+        if valor:
+            try:
+                opcion['valor'] = int(valor)
+            except ValueError:
+                pass   # un valor no numérico se ignora; la etiqueta y el orden sí quedan
+        opciones.append(opcion)
+    return opciones
+
+
+def _leer_form_pregunta():
+    datos = {
+        'enunciado': request.form.get('enunciado', '').strip(),
+        'orden': _entero_o_none(request.form.get('orden')),
+        'fk_tipo_pregunta': request.form.get('fk_tipo_pregunta', ''),
+        'obligatoria': request.form.get('obligatoria') == 'on',
+    }
+    valor_min = _entero_o_none(request.form.get('valor_min'))
+    valor_max = _entero_o_none(request.form.get('valor_max'))
+    if valor_min is not None:
+        datos['valor_min'] = valor_min
+    if valor_max is not None:
+        datos['valor_max'] = valor_max
+    return datos
+
+
+def _render_pregunta_form(modo, pregunta, errores):
+    return render_template('admin/pregunta_form.html', modo=modo, pregunta=pregunta, errores=errores,
+                           encuestas=_opciones('Encuesta'), tipos=_opciones('TipoPregunta'))
+
+
+@admin_bp.route('/preguntas')
+def preguntas_listar():
+    fk_encuesta = _entero_o_none(request.args.get('fk_encuesta'))
+    try:
+        preguntas = listar('Pregunta', limite=200, fkEncuesta=fk_encuesta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        preguntas = []
+    return render_template('admin/pregunta_lista.html', preguntas=preguntas, fk_encuesta=fk_encuesta,
+                           encuestas=_opciones('Encuesta'))
+
+
+@admin_bp.route('/preguntas/nueva', methods=['GET', 'POST'])
+def preguntas_nueva():
+    if request.method == 'GET':
+        return _render_pregunta_form('nueva', None, [])
+
+    datos = _leer_form_pregunta()
+    datos['fk_encuesta'] = _entero_o_none(request.form.get('fk_encuesta'))
+    # Retrofit v6 (Guía IA, Regla 1): opciones iniciales, UNA POR LÍNEA, en
+    # el MISMO POST que la pregunta -> sp_guardar_pregunta las guarda
+    # juntas en una sola transacción. Si alguna falla (orden repetido),
+    # NO se crea ni la pregunta (todo o nada).
+    opciones = _leer_opciones_iniciales()
+    if opciones:
+        datos['opciones'] = opciones
+    try:
+        crear('Pregunta', datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return _render_pregunta_form('nueva', datos, ex.errores)
+
+    cantidad = len(opciones)
+    sufijo = f" con {cantidad} opciones" if cantidad else ''
+    flash(f"Pregunta creada{sufijo}.", 'exito')
+    return redirect(url_for('admin.preguntas_listar', fk_encuesta=datos['fk_encuesta']))
+
+
+@admin_bp.route('/preguntas/<int:id_pregunta>/editar', methods=['GET', 'POST'])
+def preguntas_editar(id_pregunta):
+    if request.method == 'GET':
+        try:
+            pregunta = obtener('Pregunta', id_pregunta)
+        except ErrorApi as ex:
+            _avisar(ex)
+            return redirect(url_for('admin.preguntas_listar'))
+        return _render_pregunta_form('editar', pregunta, [])
+
+    datos = _leer_form_pregunta()
+    try:
+        reemplazar('Pregunta', id_pregunta, datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        datos['id_pregunta'] = id_pregunta
+        return _render_pregunta_form('editar', datos, ex.errores)
+
+    flash(f"Pregunta {id_pregunta} actualizada.", 'exito')
+    return redirect(url_for('admin.preguntas_listar'))
+
+
+@admin_bp.route('/preguntas/<int:id_pregunta>/eliminar', methods=['POST'])
+def preguntas_eliminar(id_pregunta):
+    try:
+        eliminar('Pregunta', id_pregunta)
+        flash(f"Pregunta {id_pregunta} eliminada.", 'exito')
+    except ErrorApi as ex:
+        # 500 típico: ya tiene respuestas de ejemplo (respuesta_item,
+        # RESTRICT) — la cascada hacia sus opciones no llega a ejecutarse.
+        _avisar(ex)
+    return redirect(url_for('admin.preguntas_listar'))
+
+
+# ==========================================================================
+#  v6 · OPCIÓN DE PREGUNTA  (recurso API: "OpcionPregunta", clave: id_opcion)
+#  CRUD completo (D33): a diferencia de AliasPrograma/ConsentimientoDatos,
+#  aquí SÍ hace falta editar — corregir la etiqueta o reordenar una
+#  opción es una edición legítima, no "una nueva versión del hecho".
+# ==========================================================================
+
+def _leer_form_opcion():
+    datos = {
+        'etiqueta': request.form.get('etiqueta', '').strip(),
+        'orden': _entero_o_none(request.form.get('orden')),
+    }
+    valor = _entero_o_none(request.form.get('valor'))
+    if valor is not None:
+        datos['valor'] = valor
+    return datos
+
+
+@admin_bp.route('/opciones-pregunta')
+def opciones_listar():
+    fk_pregunta = _entero_o_none(request.args.get('fk_pregunta'))
+    try:
+        opciones = listar('OpcionPregunta', limite=200, fkPregunta=fk_pregunta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        opciones = []
+    return render_template('admin/opcion_pregunta_lista.html', opciones=opciones, fk_pregunta=fk_pregunta)
+
+
+@admin_bp.route('/opciones-pregunta/nueva', methods=['GET', 'POST'])
+def opciones_nueva():
+    if request.method == 'GET':
+        fk_pregunta = _entero_o_none(request.args.get('fk_pregunta'))
+        return render_template('admin/opcion_pregunta_form.html', modo='nueva', opcion=None, errores=[],
+                               fk_pregunta=fk_pregunta, preguntas=_opciones('Pregunta'))
+
+    datos = _leer_form_opcion()
+    datos['fk_pregunta'] = _entero_o_none(request.form.get('fk_pregunta'))
+    try:
+        respuesta = crear('OpcionPregunta', datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return render_template('admin/opcion_pregunta_form.html', modo='nueva', opcion=datos, errores=ex.errores,
+                               fk_pregunta=datos['fk_pregunta'], preguntas=_opciones('Pregunta'))
+
+    flash(f"Opción creada con id {respuesta['id_opcion']}.", 'exito')
+    return redirect(url_for('admin.opciones_listar', fk_pregunta=datos['fk_pregunta']))
+
+
+@admin_bp.route('/opciones-pregunta/<int:id_opcion>/editar', methods=['GET', 'POST'])
+def opciones_editar(id_opcion):
+    if request.method == 'GET':
+        try:
+            opcion = obtener('OpcionPregunta', id_opcion)
+        except ErrorApi as ex:
+            _avisar(ex)
+            return redirect(url_for('admin.opciones_listar'))
+        return render_template('admin/opcion_pregunta_form.html', modo='editar', opcion=opcion, errores=[],
+                               fk_pregunta=None, preguntas=[])
+
+    datos = _leer_form_opcion()
+    try:
+        reemplazar('OpcionPregunta', id_opcion, datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        datos['id_opcion'] = id_opcion
+        return render_template('admin/opcion_pregunta_form.html', modo='editar', opcion=datos, errores=ex.errores,
+                               fk_pregunta=None, preguntas=[])
+
+    flash(f"Opción {id_opcion} actualizada.", 'exito')
+    return redirect(url_for('admin.opciones_listar'))
+
+
+@admin_bp.route('/opciones-pregunta/<int:id_opcion>/eliminar', methods=['POST'])
+def opciones_eliminar(id_opcion):
+    try:
+        eliminar('OpcionPregunta', id_opcion)
+        flash(f"Opción {id_opcion} eliminada.", 'exito')
+    except ErrorApi as ex:
+        # 500 típico: ya fue elegida en alguna respuesta de ejemplo
+        # (respuesta_item.fk_opcion, RESTRICT).
+        _avisar(ex)
+    return redirect(url_for('admin.opciones_listar'))
+
+
+# ==========================================================================
+#  v6 · RESPUESTA DE ENCUESTA  (recurso API: "RespuestaEncuesta")  ·  SOLO LECTURA
+#  Nace cuando un asistente responde su encuesta (front público, fuera de
+#  /admin — ver routes/encuestas.py). Es un hecho auditable (D32, igual
+#  criterio que ConsentimientoDatos en v3 y RegistroAsistencia en v5):
+#  sin editar ni eliminar, ni aquí ni en la API.
+# ==========================================================================
+
+@admin_bp.route('/respuestas-encuesta')
+def respuestas_listar():
+    fk_encuesta = _entero_o_none(request.args.get('fk_encuesta'))
+    try:
+        respuestas = listar('RespuestaEncuesta', limite=200, fkEncuesta=fk_encuesta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        respuestas = []
+    return render_template('admin/respuesta_encuesta_lista.html', respuestas=respuestas,
+                           fk_encuesta=fk_encuesta, encuestas=_opciones('Encuesta'))
+
+
+@admin_bp.route('/respuestas-encuesta/<int:id_respuesta>')
+def respuestas_detalle(id_respuesta):
+    try:
+        respuesta = obtener('RespuestaEncuesta', id_respuesta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.respuestas_listar'))
+
+    items = []
+    try:
+        items = listar('RespuestaItem', fkRespuesta=id_respuesta)
+        # Cada ítem solo trae 'fk_pregunta'/'fk_opcion'; se pide cada una
+        # para mostrar el enunciado y la etiqueta (pocos ítems por
+        # respuesta: una llamada por pregunta es aceptable, igual
+        # criterio que 'ponentes_de' en routes/sesiones.py).
+        cache_preguntas = {}
+        cache_opciones = {}
+        for item in items:
+            fk_pregunta = item['fk_pregunta']
+            if fk_pregunta not in cache_preguntas:
+                try:
+                    cache_preguntas[fk_pregunta] = obtener('Pregunta', fk_pregunta)
+                except ErrorApi:
+                    cache_preguntas[fk_pregunta] = None
+            item['pregunta'] = cache_preguntas[fk_pregunta]
+
+            fk_opcion = item.get('fk_opcion')
+            if fk_opcion:
+                if fk_opcion not in cache_opciones:
+                    try:
+                        cache_opciones[fk_opcion] = obtener('OpcionPregunta', fk_opcion)
+                    except ErrorApi:
+                        cache_opciones[fk_opcion] = None
+                item['opcion'] = cache_opciones[fk_opcion]
+    except ErrorApi as ex:
+        _avisar(ex)
+
+    items.sort(key=lambda i: i['pregunta']['orden'] if i.get('pregunta') else 0)
+    return render_template('admin/respuesta_encuesta_detalle.html', respuesta=respuesta, items=items)
+
+
+# ==========================================================================
+#  v6 · ÍTEM DE RESPUESTA  (recurso API: "RespuestaItem")  ·  SOLO LECTURA
+#  Nace solo dentro de "responder" (RF178); normalmente se consulta desde
+#  el detalle de su RespuestaEncuesta (arriba). Esta lista es el filtro
+#  libre, igual criterio que ClaveAcceso en v5.
+# ==========================================================================
+
+@admin_bp.route('/items-respuesta')
+def items_listar():
+    fk_respuesta = _entero_o_none(request.args.get('fk_respuesta'))
+    try:
+        items = listar('RespuestaItem', limite=200, fkRespuesta=fk_respuesta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        items = []
+    return render_template('admin/respuesta_item_lista.html', items=items, fk_respuesta=fk_respuesta)
