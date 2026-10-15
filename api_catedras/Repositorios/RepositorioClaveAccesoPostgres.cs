@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioClaveAccesoPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Listar y Consultar pasan por los procedimientos de
-//  'db/postgres/migraciones/036_sp_clave_acceso.sql' (molde: sede). El
+//  'db/postgres/migraciones/009_sp_clave_acceso.sql' (molde: sede). El
 //  JSON NO trae 'clave_hash' (RNF12), igual que el SELECT de antes, e
 //  'ip_solicitud' llega ya como texto ("10.0.0.1", host() en el SP).
 //

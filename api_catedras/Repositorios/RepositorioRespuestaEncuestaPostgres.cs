@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioRespuestaEncuestaPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Listar y Consultar pasan por los procedimientos de
-//  'db/postgres/migraciones/040_sp_respuesta_encuesta.sql' (molde: sede).
+//  'db/postgres/migraciones/013_sp_respuesta_encuesta.sql' (molde: sede).
 //
 //  RESPONDER NO CAMBIÓ: sigue llamando a fn_responder_encuesta_api (ADR
 //  D30, D31), que hace CALL a sp_responder_encuesta: maestro + ítems +

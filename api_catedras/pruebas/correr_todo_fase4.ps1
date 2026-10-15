@@ -4,7 +4,7 @@
 #  UN comando para la verificacion completa del lote, desde una BD NUEVA:
 #
 #    0. docker compose down -v ; docker compose up -d --build
-#       (asi corren TODAS las migraciones, 001 a 041, en initdb)
+#       (asi corren TODAS las migraciones, 001 a 032, en initdb)
 #    1. Inventario: cuantos procedimientos del molde quedaron en la BD
 #    2. Pruebas SQL de los procedimientos   (db/postgres/pruebas/prueba_sp_retrofit_fase4.sql)
 #    3. Pruebas de capas                    (dotnet run --project pruebas)  <- incluye la regresion v1

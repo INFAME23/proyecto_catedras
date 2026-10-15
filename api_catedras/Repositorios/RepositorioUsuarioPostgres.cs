@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioUsuarioPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Todos los métodos pasan por los procedimientos de
-//  'db/postgres/migraciones/033_sp_usuario.sql'. Esta clase ya no escribe
+//  'db/postgres/migraciones/006_sp_usuario.sql'. Esta clase ya no escribe
 //  SELECT/INSERT/UPDATE/DELETE: arma el 'CALL', manda los parámetros y
 //  convierte el JSON de 'p_resultado' en objetos C# (molde: sede).
 //

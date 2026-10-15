@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioRespuestaItemPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Solo lectura (igual que antes): Listar y Consultar pasan por los
-//  procedimientos de 'db/postgres/migraciones/041_sp_respuesta_item.sql'.
+//  procedimientos de 'db/postgres/migraciones/014_sp_respuesta_item.sql'.
 //  Los ítems nacen dentro de sp_responder_encuesta (vía
 //  fn_responder_encuesta_api), no desde este repositorio.
 //
