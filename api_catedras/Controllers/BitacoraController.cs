@@ -1,35 +1,39 @@
 // ==========================================================================
-//  Controllers/BitacoraController.cs  ·  Proyecto Cátedras · Retrofit criterio 3
+//  Controllers/BitacoraController.cs  ·  Proyecto Cátedras · Versión 7
 // --------------------------------------------------------------------------
-//  Capa HTTP de 'Bitacora':
+//  Capa HTTP de 'Bitacora' — SOLO LECTURA (RF190-RF191, ADR D36 y D37-A):
 //
 //    GET    /api/Bitacora?nombreTabla=T&limite=N   -> 200 | 204 | 400
 //    GET    /api/Bitacora/{idBitacora}             -> 200 | 404
-//    POST   /api/Bitacora                          -> 200 { estado, mensaje, bitacora } | 422 | 500
-//    PUT    /api/Bitacora/{idBitacora}             -> 200 { filasAfectadas } | 422 | 404 | 500
-//    PATCH  /api/Bitacora/{idBitacora}             -> 200 { filasAfectadas } | 400 | 404 | 500
-//    DELETE /api/Bitacora/{idBitacora}             -> 200 { filasEliminadas } | 404
 //
-//  ⚠️ La bitácora es el LOG DE AUDITORÍA (RN-35): sus filas las escriben los
-//  triggers (trg_bitacora_asistente, trg_bitacora_registro). POST / PUT /
-//  PATCH / DELETE existen a pedido del equipo para que los cinco
-//  procedimientos tengan llamador; dejarlos abiertos permite reescribir o
-//  borrar la auditoría. 'ocurrido_en' y 'usuario_bd' nunca los acepta el
-//  cliente. Conviene protegerlos con autorización antes de producción.
+//  ¿Por qué no hay POST / PUT / PATCH / DELETE? La bitácora es el LOG DE
+//  AUDITORÍA (RN-35): sus filas las escribe la propia BD, con la función
+//  'fn_trg_bitacora' de los triggers 'trg_bitacora_registro' (sobre
+//  registro_asistencia) y 'trg_bitacora_asistente' (sobre asistente). Si la
+//  API dejara crear, editar o borrar entradas, cualquiera podría maquillar
+//  la auditoría y la tabla dejaría de servir para lo que existe.
+//
+//  Los procedimientos sp_crear_/sp_actualizar_/sp_eliminar_bitacora siguen
+//  en la BD (migración 014, criterio 3 del retrofit) pero NO tienen
+//  llamador — mismo criterio que los SP no expuestos de RespuestaEncuesta.
+//
+//  Como la ruta 'api/Bitacora' existe (con GET), ASP.NET Core responde
+//  405 Method Not Allowed a cualquier otro verbo: no hace falta escribir
+//  nada para "rechazarlos".
 // ==========================================================================
 
 namespace ApiCatedras.Controllers;
 
-using ApiCatedras.Excepciones;
-using ApiCatedras.Peticiones;
-using ApiCatedras.Servicios;
-using Microsoft.AspNetCore.Mvc;
-using Npgsql;
+using ApiCatedras.Excepciones;   // NoEncontradoExcepcion -> 404
+using ApiCatedras.Servicios;     // IServicioBitacora (la interfaz, no la clase)
+using Microsoft.AspNetCore.Mvc;  // ControllerBase, [HttpGet], IActionResult...
 
-[ApiController]
-[Route("api/Bitacora")]
+[ApiController]               // valida el modelo y lee [FromQuery] automáticamente
+[Route("api/Bitacora")]       // prefijo de las dos rutas de abajo
 public class BitacoraController : ControllerBase
 {
+    // El controlador solo conoce la INTERFAZ del servicio (Artículo 3):
+    // la clase concreta la decide Program.cs.
     private readonly IServicioBitacora _servicio;
 
     public BitacoraController(IServicioBitacora servicio)
@@ -37,15 +41,22 @@ public class BitacoraController : ControllerBase
         _servicio = servicio;
     }
 
+    // ----------------------------------------------------------------------
+    //  RF190 · GET /api/Bitacora?nombreTabla=T&limite=N
+    //          -> 200 { tabla, limite, total, datos } | 204 | 400
+    //  Sin filtro por usuario (D37-C): 'fk_usuario' es NULL en todas las
+    //  filas porque ningún endpoint propaga el usuario a PostgreSQL.
+    // ----------------------------------------------------------------------
     [HttpGet]
     public async Task<IActionResult> Listar([FromQuery] string? nombreTabla, [FromQuery] int? limite)
     {
         try
         {
+            // El servicio valida el límite y devuelve las filas y cuántas son.
             var (datos, total) = await _servicio.ListarAsync(nombreTabla, limite);
 
             if (total == 0)
-                return NoContent();
+                return NoContent();   // 204: la consulta fue válida, pero vacía
 
             return Ok(new
             {
@@ -57,6 +68,7 @@ public class BitacoraController : ControllerBase
         }
         catch (ArgumentException ex)
         {
+            // 'limite' <= 0 (regla del servicio).
             return Problema(400, "peticion_invalida", "Parámetro de consulta inválido.", ex.Message);
         }
         catch (Exception ex)
@@ -65,7 +77,10 @@ public class BitacoraController : ControllerBase
         }
     }
 
-    [HttpGet("{idBitacora:long}")]
+    // ----------------------------------------------------------------------
+    //  RF191 · GET /api/Bitacora/{idBitacora}   -> 200 | 404
+    // ----------------------------------------------------------------------
+    [HttpGet("{idBitacora:long}")]   // ':long' -> un id no numérico ni siquiera entra aquí
     public async Task<IActionResult> Obtener(long idBitacora)
     {
         try
@@ -83,96 +98,7 @@ public class BitacoraController : ControllerBase
         }
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Crear([FromBody] BitacoraCrear peticion)
-    {
-        try
-        {
-            var entrada = await _servicio.CrearAsync(peticion);
-            return Ok(new
-            {
-                estado = "creado",
-                mensaje = $"Entrada {entrada.IdBitacora} registrada ({entrada.Operacion} en '{entrada.NombreTabla}').",
-                bitacora = entrada,   // con id, ocurrido_en y usuario_bd que puso la BD
-            });
-        }
-        catch (NpgsqlException ex)
-        {
-            // Operación inválida (chk_bitacora_operacion) o usuario inexistente (fk_bitacora_usuario).
-            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return Problema(500, "error_interno", "Error al registrar la entrada de bitácora.", ex.Message);
-        }
-    }
-
-    [HttpPut("{idBitacora:long}")]
-    public async Task<IActionResult> Reemplazar(long idBitacora, [FromBody] BitacoraReemplazo peticion)
-    {
-        try
-        {
-            int filas = await _servicio.ReemplazarAsync(idBitacora, peticion);
-            return Ok(new { filasAfectadas = filas });
-        }
-        catch (NoEncontradoExcepcion ex)
-        {
-            return Problema(404, "no_encontrado", "Entrada de bitácora no encontrada.", ex.Message);
-        }
-        catch (NpgsqlException ex)
-        {
-            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return Problema(500, "error_interno", "Error al reemplazar la entrada de bitácora.", ex.Message);
-        }
-    }
-
-    [HttpPatch("{idBitacora:long}")]
-    public async Task<IActionResult> Actualizar(long idBitacora, [FromBody] BitacoraActualizar peticion)
-    {
-        try
-        {
-            int filas = await _servicio.ActualizarAsync(idBitacora, peticion);
-            return Ok(new { filasAfectadas = filas });
-        }
-        catch (ArgumentException ex)
-        {
-            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
-        }
-        catch (NoEncontradoExcepcion ex)
-        {
-            return Problema(404, "no_encontrado", "Entrada de bitácora no encontrada.", ex.Message);
-        }
-        catch (NpgsqlException ex)
-        {
-            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return Problema(500, "error_interno", "Error al actualizar la entrada de bitácora.", ex.Message);
-        }
-    }
-
-    [HttpDelete("{idBitacora:long}")]
-    public async Task<IActionResult> Eliminar(long idBitacora)
-    {
-        try
-        {
-            int filas = await _servicio.EliminarAsync(idBitacora);
-            return Ok(new { filasEliminadas = filas });
-        }
-        catch (NoEncontradoExcepcion ex)
-        {
-            return Problema(404, "no_encontrado", "Entrada de bitácora no encontrada.", ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return Problema(500, "error_interno", "Error al eliminar la entrada de bitácora.", ex.Message);
-        }
-    }
-
+    // Arma el sobre de error del proyecto: { estado, mensaje, detalle }.
     private ObjectResult Problema(int codigo, string estado, string mensaje, string? detalle)
     {
         return new ObjectResult(new { estado, mensaje, detalle })

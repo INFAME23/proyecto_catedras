@@ -22,7 +22,11 @@
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
+from datetime import datetime, timezone
+
 from servicios.api_catedras import ErrorApi, crear, eliminar, listar, llave, obtener
+from servicios.fechas import a_local
+from auth_helpers import ROL_ADMIN, tiene_rol
 from routes.encuestas import estado_encuesta_sesion   # v6: ¿se ofrece "responder encuesta"?
 
 sesiones_bp = Blueprint('sesiones', __name__)
@@ -102,6 +106,24 @@ def quitar_ponente(id_sesion, formulario):
         _avisar(ex)
 
 
+def puede_migrar(sesion):
+    """v7 · ¿Se ofrece "Generar migración" en el detalle de la sesión?
+    Solo a un ADMIN (la acción vive bajo /admin, D37-E), si la sesión ya
+    terminó y tiene al menos un registro de asistencia. No se revisa aquí
+    si los registros son migrables (con ID de ASIS y programa, no
+    externos): esa regla es de la base de datos, y si no hay ninguno la
+    API lo dice al generar (D9)."""
+    if not tiene_rol(ROL_ADMIN):
+        return False
+    fin = a_local(sesion.get('fin'))
+    if fin is None or fin > datetime.now(timezone.utc):
+        return False
+    try:
+        return bool(listar('RegistroAsistencia', limite=1, fkSesion=sesion['id_sesion']))
+    except ErrorApi:
+        return False   # si no se puede saber, no se ofrece el botón
+
+
 @sesiones_bp.route('/sesiones/<int:id_sesion>')
 def detalle(id_sesion):
     try:
@@ -130,7 +152,7 @@ def detalle(id_sesion):
     return render_template('detalle_sesion.html', error=error, sesion=sesion, catedra=catedra,
                            ponentes=ponentes, candidatos=buscar_candidatos(texto), q=texto,
                            roles=ROLES_PONENCIA, mostrar_encuesta=mostrar_encuesta,
-                           motivo_encuesta=motivo_encuesta)
+                           motivo_encuesta=motivo_encuesta, migracion=puede_migrar(sesion))
 
 
 @sesiones_bp.route('/sesiones/<int:id_sesion>/ponentes', methods=['POST'])

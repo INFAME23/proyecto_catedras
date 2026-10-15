@@ -1,12 +1,13 @@
 # ==========================================================================
 #  routes/admin.py  ·  Front Cátedras
 # --------------------------------------------------------------------------
-#  Panel de administración: las 24 tablas que ya expone ApiCatedras
+#  Panel de administración: las tablas que expone ApiCatedras
 #  (las 10 sin FK de la v1; las 5 de la v2: Facultad, Dependencia,
 #  ProgramaAcademico, AliasPrograma y Catedra; las 7 de la v3: personas
 #  y lotes de carga; las 2 de la v4: Sesion y Ponencia; y las 5 de la v5:
-#  Usuario, RolPorUsuario, EnlaceRegistro, ClaveAcceso y RegistroAsistencia,
-#  al final del archivo). Cada sección usa
+#  Usuario, RolPorUsuario, EnlaceRegistro, ClaveAcceso y RegistroAsistencia;
+#  las 4 de la v6: encuestas; y las 4 de la v7: Parametro, LoteMigracion,
+#  DetalleMigracion y Bitacora, al final del archivo — 37 en total). Cada sección usa
 #  formularios HTML normales (los navegadores no mandan PUT/DELETE, así que
 #  el botón "Guardar" hace POST y esta ruta traduce a PUT/DELETE contra la
 #  API con 'requests').
@@ -2483,3 +2484,292 @@ def items_listar():
         _avisar(ex)
         items = []
     return render_template('admin/respuesta_item_lista.html', items=items, fk_respuesta=fk_respuesta)
+
+
+# ==========================================================================
+#  VERSIÓN 7 · MIGRACIÓN A ASIS, BITÁCORA Y PARÁMETROS
+#  (criterio 8 de version7/2_spec.md; decisión D37-E: todo vive en ESTE
+#  blueprint para heredar la guardia de rol ADMIN del before_request de
+#  arriba — un blueprint nuevo no la tendría).
+#
+#  Cuatro bloques:
+#    · PARÁMETROS        -> CRUD completo, llave de texto ('clave').
+#    · LOTES DE MIGRACIÓN -> lista, detalle con sus filas, PATCH de estado
+#                           y de resultado por fila, y "generar migración"
+#                           de una sesión (POST bajo /admin).
+#    · DETALLE DE MIGRACIÓN -> lista filtrable de las filas de los lotes.
+#    · BITÁCORA          -> SOLO LECTURA (D36): la escriben los triggers.
+#
+#  Criterio 11 de VERSION_2.md: en estas pantallas no aparecen nombres de
+#  verbos HTTP, códigos de estado ni nombres de restricciones de la BD.
+#  Los errores conocidos de la API se traducen a castellano en
+#  '_avisar_v7' (abajo); el resto se muestra con el mensaje de la API.
+# ==========================================================================
+
+TIPOS_DATO = ['TEXTO', 'ENTERO', 'BOOLEANO', 'FECHA', 'DECIMAL']   # refleja chk_parametro_tipo
+RESULTADOS_MIGRACION = ['PENDIENTE', 'ACEPTADO', 'RECHAZADO']       # refleja chk_detalle_resultado
+TABLAS_BITACORA = ['registro_asistencia', 'asistente']              # las dos con trigger de bitácora
+LIMITES_BITACORA = [20, 50, 100, 500]
+
+# Errores de la BD que ya sabemos explicar: (texto que trae la API, mensaje para la persona).
+_TRADUCCIONES_V7 = [
+    ('ux_detmig_aceptado', 'Ese registro de asistencia ya quedó ACEPTADO en otro lote de migración: '
+                           'ASIS no puede aceptar el mismo registro dos veces.'),
+    ('No hay registros migrables', 'La sesión no tiene registros que se puedan migrar a ASIS. Solo se '
+                                   'migran asistentes con ID de ASIS y programa, que no sean externos.'),
+    ('fk_lotemig_estado', 'Ese estado no existe en el catálogo de estados de proceso.'),
+    ('pk_parametro', 'Ya existe un parámetro con esa clave.'),
+    ('fk_parametro_usuario', 'El usuario que modifica no existe.'),
+    ('fk_lotemig_usuario', 'El usuario que genera el lote no existe.'),
+]
+
+
+def _avisar_v7(ex):
+    """Como '_avisar', pero en castellano y sin jerga técnica (criterio 11):
+    errores conocidos -> frase clara; 'sin cambios' -> aviso; red -> la API
+    no responde; cualquier otro -> el mensaje (ya en castellano) de la API."""
+    texto = f"{ex.mensaje} {ex.detalle or ''}"
+    for clave, frase in _TRADUCCIONES_V7:
+        if clave in texto:
+            flash(frase, 'error')
+            return
+    if ex.codigo is None:
+        flash('No se pudo contactar la API de Cátedras. ¿Está levantada?', 'error')
+    elif ex.codigo == 400 and 'ningún campo' in (ex.detalle or ''):
+        flash('No cambiaste ningún dato.', 'error')
+    elif ex.codigo == 422:
+        flash('Revisa los datos del formulario.', 'error')
+    else:
+        flash(ex.mensaje, 'error')
+
+
+def _id_admin_actual():
+    """id_usuario del administrador que tiene la sesión abierta (o None).
+    Se manda como 'fk_usuario' / 'fk_usuario_modifica': es una FK que no se
+    digita ni se elige, la fija la sesión (Regla 2)."""
+    actual = usuario_actual()
+    return actual.get('id_usuario') if actual else None
+
+
+# --------------------------------------------------------------------------
+#  v7 · PARÁMETROS  (recurso API: "Parametro", llave: clave)
+# --------------------------------------------------------------------------
+
+def _leer_form_parametro():
+    """Columnas editables (las mismas en crear y editar; 'clave' va aparte)."""
+    return {
+        'valor': request.form.get('valor', ''),            # puede ser '' a propósito
+        'tipo_dato': request.form.get('tipo_dato', 'TEXTO'),
+        'descripcion': request.form.get('descripcion', '').strip(),
+        'fk_usuario_modifica': _id_admin_actual(),
+    }
+
+
+@admin_bp.route('/parametros')
+def parametros_listar():
+    try:
+        parametros = listar('Parametro')
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        parametros = []
+    return render_template('admin/parametro_lista.html', parametros=parametros)
+
+
+@admin_bp.route('/parametros/nuevo', methods=['GET', 'POST'])
+def parametros_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/parametro_form.html', modo='nuevo', parametro=None,
+                               errores=[], tipos=TIPOS_DATO)
+
+    datos = _leer_form_parametro()
+    datos['clave'] = request.form.get('clave', '').strip().upper()   # la API exige MAYÚSCULAS
+    try:
+        crear('Parametro', datos)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        return render_template('admin/parametro_form.html', modo='nuevo', parametro=datos,
+                               errores=ex.errores, tipos=TIPOS_DATO)
+
+    flash(f"Parámetro '{datos['clave']}' creado.", 'exito')
+    return redirect(url_for('admin.parametros_listar'))
+
+
+@admin_bp.route('/parametros/<clave>/editar', methods=['GET', 'POST'])
+def parametros_editar(clave):
+    if request.method == 'GET':
+        try:
+            parametro = obtener('Parametro', clave)
+        except ErrorApi as ex:
+            _avisar_v7(ex)
+            return redirect(url_for('admin.parametros_listar'))
+        return render_template('admin/parametro_form.html', modo='editar', parametro=parametro,
+                               errores=[], tipos=TIPOS_DATO)
+
+    # Reemplazo completo: el formulario siempre trae los 3 campos. La clave
+    # NO viaja en el cuerpo: es la llave de la ruta (no se edita).
+    datos = _leer_form_parametro()
+    try:
+        reemplazar('Parametro', clave, datos)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        datos['clave'] = clave
+        return render_template('admin/parametro_form.html', modo='editar', parametro=datos,
+                               errores=ex.errores, tipos=TIPOS_DATO)
+
+    flash(f"Parámetro '{clave}' actualizado.", 'exito')
+    return redirect(url_for('admin.parametros_listar'))
+
+
+@admin_bp.route('/parametros/<clave>/eliminar', methods=['POST'])
+def parametros_eliminar(clave):
+    try:
+        eliminar('Parametro', clave)
+        flash(f"Parámetro '{clave}' eliminado. Las funciones que lo leían usan su valor por defecto.", 'exito')
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+    return redirect(url_for('admin.parametros_listar'))
+
+
+# --------------------------------------------------------------------------
+#  v7 · LOTES DE MIGRACIÓN  (recursos API: "LoteMigracion", "DetalleMigracion")
+#  Generar un lote es UNA llamada (POST /api/LoteMigracion): la BD crea el
+#  lote, sus filas y deja la sesión en MIGRADA (RF184). El front NO toca
+#  la sesión por su cuenta.
+# --------------------------------------------------------------------------
+
+def _estados_proceso():
+    """Catálogo de estados para el <select> (Regla 2), con su bandera de final."""
+    return _opciones('EstadoProceso')
+
+
+@admin_bp.route('/lotes-migracion')
+def lotes_migracion_listar():
+    fk_sesion = _entero_o_none(request.args.get('fk_sesion'))
+    try:
+        lotes = listar('LoteMigracion', limite=200, fkSesion=fk_sesion)
+        # Para el <select> del filtro: solo las sesiones que tienen lotes
+        # (no las miles de sesiones del catálogo).
+        sesiones = sorted({l['fk_sesion'] for l in listar('LoteMigracion', limite=1000)})
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        lotes, sesiones = [], []
+    return render_template('admin/lote_migracion_lista.html', lotes=lotes, fk_sesion=fk_sesion,
+                           sesiones=sesiones)
+
+
+@admin_bp.route('/lotes-migracion/<int:id_lote>')
+def lotes_migracion_detalle(id_lote):
+    try:
+        lote = obtener('LoteMigracion', id_lote)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        return redirect(url_for('admin.lotes_migracion_listar'))
+
+    filtro = request.args.get('resultado') or None
+    if filtro not in RESULTADOS_MIGRACION:
+        filtro = None
+    detalles = []
+    conteo = {r: 0 for r in RESULTADOS_MIGRACION}
+    try:
+        detalles = listar('DetalleMigracion', limite=10000, fkLoteMigracion=id_lote)
+        for d in detalles:
+            conteo[d['resultado']] = conteo.get(d['resultado'], 0) + 1
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+    visibles = [d for d in detalles if filtro is None or d['resultado'] == filtro]
+    return render_template('admin/lote_migracion_detalle.html', lote=lote, detalles=visibles,
+                           total_detalles=len(detalles), conteo=conteo, filtro=filtro,
+                           estados=_estados_proceso(), resultados=RESULTADOS_MIGRACION)
+
+
+@admin_bp.route('/lotes-migracion/<int:id_lote>/estado', methods=['POST'])
+def lotes_migracion_estado(id_lote):
+    # Actualización PARCIAL: solo lo que la persona puede cambiar (D35).
+    datos = {'fk_estado_proceso': request.form.get('fk_estado_proceso', '')}
+    observaciones = request.form.get('observaciones', '').strip()
+    if observaciones:
+        datos['observaciones'] = observaciones
+    try:
+        actualizar_parcial('LoteMigracion', id_lote, datos)
+        flash(f"Lote {id_lote}: estado {datos['fk_estado_proceso']} guardado.", 'exito')
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+    return redirect(url_for('admin.lotes_migracion_detalle', id_lote=id_lote))
+
+
+@admin_bp.route('/lotes-migracion/<int:id_lote>/detalle/<int:id_detalle>', methods=['POST'])
+def lotes_migracion_resultado(id_lote, id_detalle):
+    # Simula la respuesta de ASIS para UNA fila (RF188).
+    datos = {'resultado': request.form.get('resultado', '')}
+    mensaje = request.form.get('mensaje', '').strip()
+    if mensaje:
+        datos['mensaje'] = mensaje
+    try:
+        actualizar_parcial('DetalleMigracion', id_detalle, datos)
+        flash(f"Fila {id_detalle}: {datos['resultado']}.", 'exito')
+    except ErrorApi as ex:
+        _avisar_v7(ex)    # p. ej. ese registro ya fue ACEPTADO en otro lote
+    filtro = request.form.get('filtro') or None
+    return redirect(url_for('admin.lotes_migracion_detalle', id_lote=id_lote, resultado=filtro) + f'#fila-{id_detalle}')
+
+
+@admin_bp.route('/sesiones/<int:id_sesion>/migrar', methods=['POST'])
+def sesiones_migrar(id_sesion):
+    """'Generar migración' (botón de detalle_sesion.html). Bajo /admin para
+    heredar la guardia de rol ADMIN (D37-E)."""
+    try:
+        respuesta = crear('LoteMigracion', {'fk_sesion': id_sesion, 'fk_usuario': _id_admin_actual()})
+    except ErrorApi as ex:
+        _avisar_v7(ex)    # p. ej. la sesión no tiene registros migrables
+        return redirect(url_for('sesiones.detalle', id_sesion=id_sesion))
+
+    lote = respuesta['lote']
+    flash(f"Lote {lote['id_lote_migracion']} generado: archivo {lote['nombre_archivo']} con "
+          f"{lote['total_filas']} filas. La sesión quedó marcada como migrada.", 'exito')
+    return redirect(url_for('admin.lotes_migracion_detalle', id_lote=lote['id_lote_migracion']))
+
+
+# --------------------------------------------------------------------------
+#  v7 · DETALLE DE MIGRACIÓN  (recurso API: "DetalleMigracion")
+#  Lista filtrable de las filas de todos los lotes. Se editan desde el
+#  detalle de su lote (arriba), donde se ve el contexto.
+# --------------------------------------------------------------------------
+
+@admin_bp.route('/detalles-migracion')
+def detalles_migracion_listar():
+    fk_lote = _entero_o_none(request.args.get('fk_lote_migracion'))
+    filtro = request.args.get('resultado') or None
+    if filtro not in RESULTADOS_MIGRACION:
+        filtro = None
+    try:
+        detalles = listar('DetalleMigracion', limite=500, fkLoteMigracion=fk_lote)
+        lotes = listar('LoteMigracion', limite=200)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        detalles, lotes = [], []
+    detalles = [d for d in detalles if filtro is None or d['resultado'] == filtro]
+    return render_template('admin/detalle_migracion_lista.html', detalles=detalles, lotes=lotes,
+                           fk_lote=fk_lote, filtro=filtro, resultados=RESULTADOS_MIGRACION)
+
+
+# --------------------------------------------------------------------------
+#  v7 · BITÁCORA  (recurso API: "Bitacora")  ·  SOLO LECTURA (ADR D36)
+#  La llenan los triggers de la BD; ni la API ni el front escriben en ella.
+#  Sin filtro por usuario: 'fk_usuario' es nulo en todas las filas (D37-C).
+# --------------------------------------------------------------------------
+
+@admin_bp.route('/bitacora')
+def bitacora_listar():
+    tabla = request.args.get('tabla') or None
+    if tabla not in TABLAS_BITACORA:
+        tabla = None
+    limite = _entero_o_none(request.args.get('limite'))
+    if limite not in LIMITES_BITACORA:
+        limite = LIMITES_BITACORA[1]
+    try:
+        entradas = listar('Bitacora', limite=limite, nombreTabla=tabla)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        entradas = []
+    return render_template('admin/bitacora_lista.html', entradas=entradas, tabla=tabla, limite=limite,
+                           tablas=TABLAS_BITACORA, limites=LIMITES_BITACORA)

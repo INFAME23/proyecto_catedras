@@ -1,0 +1,17 @@
+{# ==========================================================================
+   admin/_macros_migracion.html  ·  Front Cátedras · Versión 7
+   Badges de color reutilizables para la migración a ASIS:
+     · mm.estado_lote(e)  -> estado de proceso de un lote
+     · mm.resultado(r)    -> resultado de una fila (PENDIENTE/ACEPTADO/RECHAZADO)
+   ========================================================================== #}
+
+{% macro estado_lote(e) -%}
+{%- set clases = {'GENERADO': 'badge-secondary', 'EN_COLA': 'badge-primary', 'EN_CURSO': 'badge-primary',
+                  'CORRECTO': 'badge-success', 'ERROR': 'badge-danger', 'INCORRECTO': 'badge-warning'} -%}
+<span class="badge {{ clases.get(e, 'badge-secondary') }}">{{ e }}</span>
+{%- endmacro %}
+
+{% macro resultado(r) -%}
+{%- set clases = {'PENDIENTE': 'badge-secondary', 'ACEPTADO': 'badge-success', 'RECHAZADO': 'badge-danger'} -%}
+<span class="badge {{ clases.get(r, 'badge-secondary') }}">{{ r }}</span>
+{%- endmacro %}

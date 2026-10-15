@@ -76,6 +76,25 @@
 </div>
 {% endif %}
 
+{# v7 · "Generar migración" (criterio 8 de version7/2_spec.md): solo para un
+   ADMIN, en una sesión que ya terminó y tiene registros ('migracion' lo arma
+   routes/sesiones.py). El POST va a /admin, protegido por rol (D37-E). La
+   sesión pasa a MIGRADA por la base de datos, no por el front (RF184). #}
+{% if migracion %}
+<div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <span class="small">
+        <i class="fas fa-file-export me-1"></i>
+        {% if sesion.estado == 'MIGRADA' %}Esta sesión ya se migró a ASIS. Generar otra vez crea un lote nuevo (para reintentar).
+        {% else %}La sesión terminó y tiene registros de asistencia: ya se puede generar el archivo para ASIS.{% endif %}
+        <a href="{{ url_for('admin.lotes_migracion_listar', fk_sesion=sesion.id_sesion) }}">Ver sus lotes</a>
+    </span>
+    <form method="post" action="{{ url_for('admin.sesiones_migrar', id_sesion=sesion.id_sesion) }}"
+          onsubmit="return confirm('¿Generar el archivo de migración a ASIS de esta sesión? La sesión quedará marcada como migrada.');">
+        <button class="btn btn-sm btn-primary" type="submit"><i class="fas fa-file-export me-1"></i>Generar migración</button>
+    </form>
+</div>
+{% endif %}
+
 {{ ms.ponentes(sesion.id_sesion, ponentes, candidatos, q, roles,
                url_for('sesiones.detalle', id_sesion=sesion.id_sesion),
                url_for('sesiones.asignar', id_sesion=sesion.id_sesion),

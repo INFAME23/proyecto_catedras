@@ -1,13 +1,46 @@
-# Proyecto Cátedras — Versión 6
+# Proyecto Cátedras — Versión 7
 
 API REST del sistema de **asistencia a cátedras universitarias**, construida
-por **versiones incrementales**. Esta es la **v6: encuestas de calidad**
-(`Pregunta`, `OpcionPregunta`, `RespuestaEncuesta`, `RespuestaItem`), sobre
-el login y registro de asistencia de la v5, las sesiones de la v4, las
-personas de la v3, la estructura académica de la v2 y la arquitectura en
-capas de la v1.
+por **versiones incrementales**. Esta es la **v7: migración a ASIS,
+bitácora y parámetros** (`LoteMigracion`, `DetalleMigracion`, `Bitacora`,
+`Parametro`), la última del mapa: con ella la API expone las **37 tablas**
+de `bdcatedras`. Se apoya en las encuestas de la v6, el login y registro de
+asistencia de la v5, las sesiones de la v4, las personas de la v3, la
+estructura académica de la v2 y la arquitectura en capas de la v1.
 
-## Qué incluye la v6
+## Qué incluye la v7
+
+- Lo nuevo que enseña la v7:
+  - **Reutilizar un procedimiento provisto en vez de reescribirlo** (ADR
+    D34): `POST /api/LoteMigracion {"fk_sesion": 5712}` hace `CALL
+    sp_crear_lote_migracion`, que llama a `sp_generar_lote_migracion` (del
+    script de la BD). Ese procedimiento cuenta los registros migrables,
+    arma el nombre del archivo, inserta el lote y sus filas y deja la
+    sesión en `MIGRADA`, todo en el mismo `CALL`. La API no toca `Sesion`.
+  - **Un efecto colateral real sobre otra versión** (RF184): generar un
+    lote cambia `sesion.estado` (v4). Se documenta, no se "arregla".
+  - **Un índice único parcial como regla de negocio**: `ux_detmig_aceptado`
+    impide que un registro de asistencia quede `ACEPTADO` en dos lotes; el
+    segundo intento responde 500 y la API no lo revalida (D9).
+  - **Una entidad cuyo ciclo de vida sigue después de crearse** (D35): un
+    lote nace `GENERADO` y avanza (`EN_COLA`, `EN_CURSO`, `CORRECTO`…) con
+    `PATCH`, según responda ASIS; cada fila tiene su `PATCH` de resultado.
+  - **Por qué una bitácora no se edita** (D36, D37-A): `Bitacora` es de
+    solo lectura en la API; la escriben los triggers `trg_bitacora_registro`
+    y `trg_bitacora_asistente`. Los verbos que no existen responden 405.
+  - `Parametro`: CRUD con llave de texto; `modificado_en` lo pone el
+    procedimiento, no un trigger ni el código C#.
+- Front (Flask), todo bajo `/admin` (protegido por rol `ADMIN`): parámetros
+  (CRUD), lotes de migración (lista, detalle con sus filas, estado del lote
+  y resultado por fila), detalle de migración y bitácora (solo lectura). En
+  el detalle de una sesión terminada con registros, un administrador ve el
+  botón **"Generar migración"**.
+- Decisiones del equipo al revisar el borrador contra el código (ADR D37):
+  JSON en snake_case, bitácora de solo lectura, sin filtro por usuario en
+  la bitácora, `clave` de parámetro en mayúsculas, front dentro de
+  `routes/admin.py`.
+
+## Lo que enseñó la v6 (sigue vigente)
 
 - Lo nuevo que enseña la v6:
   - **Maestro-detalle de nacimiento** (Guía IA, Regla 1 · ADR D30):
@@ -43,8 +76,8 @@ capas de la v1.
   `/admin`, los 4 bloques nuevos: `Pregunta` (con sus opciones iniciales al
   crear), `OpcionPregunta` (CRUD completo), `RespuestaEncuesta` y
   `RespuestaItem` (ambas solo lectura).
-- Las **33 tablas** que hoy expone la API: las 29 de las versiones 1-5
-  (listadas abajo) más las 4 de la v6: `Pregunta`, `OpcionPregunta`,
+- Con la v6 la API llegó a **33 tablas** (hoy son 37 con la v7): las 29
+  de las versiones 1-5 (listadas abajo) más las 4 de la v6: `Pregunta`, `OpcionPregunta`,
   `RespuestaEncuesta` y `RespuestaItem` (19 endpoints nuevos).
 
 ## Lo que enseñó la v5 (sigue vigente)
@@ -163,13 +196,14 @@ docker compose up -d --build
 |---|---|
 | Diagnóstico | http://localhost:8142/ |
 | Swagger UI | http://localhost:8142/swagger |
-| API (ejemplo v6) | http://localhost:8142/api/Pregunta?fkEncuesta=1 |
+| API (ejemplo v7) | http://localhost:8142/api/LoteMigracion?fkSesion=5712 |
 | Front · inicio de sesión | http://localhost:5000/login |
 | Front · registro de asistencia (público) | http://localhost:5000/registro |
 | Front · calendario de una cátedra | http://localhost:5000/catedras/3975 |
 | Front · detalle de sesión, ponentes y encuesta | http://localhost:5000/sesiones/1 |
 | Front · calendario del ponente | http://localhost:5000/ponente/ |
 | Front · administración | http://localhost:5000/admin/ |
+| Front · lotes de migración a ASIS | http://localhost:5000/admin/lotes-migracion |
 | Front · carga de datos | http://localhost:5000/carga_datos |
 | PostgreSQL (herramienta externa) | localhost,15542 · base `bdcatedras_postgres_local` · `sa` / `Construccion123!` |
 
@@ -183,7 +217,18 @@ docker compose up -d --build
 > `db/postgres/aplicar_migraciones.ps1` (es idempotente: usa `CREATE OR
 > REPLACE`, así que se puede correr aunque algunas ya estén aplicadas).
 
-Prueba de capas (sin PostgreSQL, 33 entidades, 385 verificaciones esperadas). Se
+**Verificación completa de la v7 en un comando** (BD nueva, procedimientos,
+prueba de capas, regresión v5 y retrofit, criterios de la v7 y una BD nueva
+al final con la clave del administrador fijada):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\api_catedras\pruebas\correr_todo_v7.ps1
+```
+
+Solo los criterios 1-6 de la v7 (71 casos, sobre una BD recién creada):
+`.\api_catedras\pruebas\verificar_v7.ps1`.
+
+Prueba de capas (sin PostgreSQL, 37 entidades, 452 verificaciones esperadas). Se
 corre dentro del contenedor de la API (en Windows, el Control de
 aplicaciones puede bloquear la DLL recién compilada):
 
@@ -206,7 +251,39 @@ powershell -ExecutionPolicy Bypass -File .\api_catedras\pruebas\verificar_v5.ps1
 > Las pruebas del quickstart agregan y modifican datos de ejemplo. Para
 > volver al estado original: `docker compose down -v && docker compose up -d --build`.
 
-## Documentación de la v6
+## Documentación de la v7
+
+La carpeta `docs/spec_kit/Versiones/version7/` describe la versión de
+**migración a ASIS, bitácora y parámetros**: `2_spec.md` (RF179-RF197 y
+criterios de aceptación), `3_plan.md`, `4_research.md` (decisiones D34-D37),
+`5_data_model.md`, `6_contracts.md`, `7_quickstart.md`, `8_tasks.md` (fases
+54-61, con la evidencia de cada casilla), **`guia_ia_v7.md`** (guía para
+trabajar la v7 con una IA) y `prompts/` (el registro de prompts del §11 de
+`VERSION_2.md`, por fase).
+
+Las capas de las 4 entidades nacieron durante el retrofit a procedimientos
+(migraciones `013`, `014`, `031` y `032`); la v7 las auditó contra el spec,
+cerró la escritura de la bitácora, agregó la validación de `clave`, la
+prueba de capas de las 37 entidades y el front.
+
+**Estado (2026-10-15):** fases 54-61 hechas. Verificado contra PostgreSQL 16
+real y la API real por HTTP: `verificar_v7.ps1` **71/0**, prueba de capas
+**452/0** (37 entidades), regresión `verificar_retrofit_fase4.ps1` **80/0**,
+`verificar_v5.ps1` **63/0**, SQL de procedimientos **160/160**, y el front
+de punta a punta **49/0**. Falta correr `correr_todo_v7.ps1` contra Docker,
+probar el criterio 8 a mano y, si todo pasa, quitar el banner BORRADOR y
+crear el tag `v7` (Fase 61 de `8_tasks.md`).
+
+### Cómo crear el tag
+
+```powershell
+git checkout main
+git pull
+git tag -a v7 -m "Versión 7: migración a ASIS, bitácora y parámetros"
+git push origin v7
+```
+
+## Documentación de la v6 (versión anterior)
 
 La carpeta `docs/spec_kit/Versiones/version6/` describe la versión de
 **encuestas de calidad**: `Pregunta`, `OpcionPregunta`, `RespuestaEncuesta`
@@ -228,26 +305,13 @@ Si se conserva un volumen PostgreSQL anterior a estas migraciones, hay que
 aplicarlas a mano; ver la nota de "Cómo levantarlo" arriba
 (`aplicar_migraciones.ps1`).
 
-**Estado:** v6 completa (2026-10-15): la prueba de capas (Fase 50) dio
-**385 pasadas, 0 fallidas**; los 33 recursos de la API se verificaron a
-mano contra Docker real (Fase 51); el front (Fase 52: responder encuesta
-con el caso de una pregunta obligatoria sin responder, y los 4 bloques de
-`/admin`) se comprobó a mano. Falta el commit con el tag `v6` (Fase 53 de
-`8_tasks.md`) — ver "Cómo crear el tag" más abajo. Quedan pendientes, para
-cuando se escriba la spec de la v7, las discrepancias que
-`ESTADO_V6_Y_CUMPLIMIENTO.md` documenta contra `VERSION_2.md` y que no son
-de esta versión (la carpeta de "prompts" del §11 y el cierre formal de la
-v1); conviene revisar ese documento y, si sigue vigente, actualizarlo o
-marcarlo como resuelto.
-
-### Cómo crear el tag
-
-```powershell
-git checkout main
-git pull
-git tag -a v6 -m "Versión 6: encuestas de calidad"
-git push origin v6
-```
+**Estado:** v6 completa y cerrada con su tag `v6`: prueba de capas
+**385 pasadas, 0 fallidas**; los 33 recursos verificados contra Docker
+real; el front comprobado a mano. Nota de la v7: la prueba de capas de la
+v6 en realidad no cubría `Pregunta`, `OpcionPregunta`, `RespuestaEncuesta`
+ni `RespuestaItem`; la Fase 58 de la v7 las agregó. Siguen abiertas, fuera
+de cualquier versión, las discrepancias de `ESTADO_V6_Y_CUMPLIMIENTO.md`
+(409 en vez de 500, carpeta de prompts de v1-v6, cierre formal de la v1).
 
 ## Estructura
 
@@ -264,7 +328,8 @@ db/postgres/
   aplicar_migraciones.ps1       # aplica 001-041 a una BD ya creada, sin perder datos (ver arriba)
 api_catedras/                   # la API .NET (Controllers, Modelos, Peticiones,
                                 #  Servicios, Repositorios, Excepciones, pruebas;
-                                #  pruebas/verificar_v5.ps1 = verificación contra Docker)
+                                #  pruebas/verificar_v5.ps1, verificar_v7.ps1 y
+                                #  correr_todo_v7.ps1 = verificación contra Docker)
 front_catedras/                 # el front Flask (routes/carga.py + servicios/carga_asistentes.py: carga;
                                 #  routes/auth.py + auth_helpers.py: login; routes/registro.py: autorregistro)
 docs/
@@ -279,6 +344,7 @@ docs/
     version4/  2_spec .. 8_tasks + guia_ia_v4.md
     version5/  2_spec .. 8_tasks + guia_ia_v5.md
     version6/  2_spec .. 8_tasks + guia_ia_v6.md + estado/cumplimiento
+    version7/  2_spec .. 8_tasks + guia_ia_v7.md + prompts/ (última versión)
 ```
 
 ## Documentación de la v5 (versión anterior)

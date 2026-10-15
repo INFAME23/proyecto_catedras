@@ -424,7 +424,8 @@ builder.Services.AddScoped<IRepositorioRespuestaItem>(
 builder.Services.AddScoped<IServicioRespuestaItem, ServicioRespuestaItem>();
 
 // Retrofit criterio 3 — tablas sin código previo: configuración y auditoría.
-// 'Bitacora': lectura + POST/PUT/PATCH/DELETE (log de auditoría: ver el riesgo en BitacoraController).
+// 'Bitacora': SOLO LECTURA (v7, ADR D36/D37-A). La escriben los triggers de
+// la BD; sus SP de escritura existen en la 014 pero la API no los llama.
 builder.Services.AddScoped<IRepositorioParametro>(
     _ => new RepositorioParametroPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioParametro, ServicioParametro>();
@@ -466,8 +467,8 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Json(new
 {
     mensaje = "API Cátedras en línea.",
-    version = "v6",
-    contratos = "docs/spec_kit/Versiones/version6/6_contracts.md",
+    version = "v7",
+    contratos = "docs/spec_kit/Versiones/version7/6_contracts.md",
 }));
 
 // Conecta las rutas de los controladores ([Route("api/Sede")]...).

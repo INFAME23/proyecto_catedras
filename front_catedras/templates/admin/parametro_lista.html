@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{# ==========================================================================
+   admin/parametro_lista.html  ·  Front Cátedras · Versión 7
+   Los parámetros que leen las funciones de la BD (clave, ventana de
+   registro, dominios...). CRUD completo; la clave es la llave (no se edita).
+   ========================================================================== #}
+{% block titulo %}Parámetros · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Parámetros</li>
+    </ol>
+</nav>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <h1 class="h3 fw-bold mb-0"><i class="fas fa-sliders-h text-primary-custom me-2"></i>Parámetros</h1>
+    <a class="btn btn-primary" href="{{ url_for('admin.parametros_nuevo') }}"><i class="fas fa-plus me-1"></i>Nuevo parámetro</a>
+</div>
+<p class="text-muted small">Valores de configuración que usan las funciones de la base de datos. Si se elimina uno, esas funciones usan su valor por defecto. Fechas en hora de Colombia.</p>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if parametros %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Clave</th><th>Valor</th><th>Tipo</th><th>Descripción</th><th>Modificado</th><th class="text-end">Acciones</th></tr>
+                </thead>
+                <tbody>
+                    {% for p in parametros %}
+                    <tr>
+                        <td class="fw-semibold"><code>{{ p.clave }}</code></td>
+                        <td class="text-break">{% if p.valor %}{{ p.valor }}{% else %}<span class="text-muted fst-italic">(vacío)</span>{% endif %}</td>
+                        <td><span class="badge badge-secondary">{{ p.tipo_dato }}</span></td>
+                        <td class="small">{{ p.descripcion }}</td>
+                        <td class="small text-nowrap">{{ p.modificado_en|fecha_hora }}{% if p.fk_usuario_modifica %}<br><span class="text-muted">usuario {{ p.fk_usuario_modifica }}</span>{% endif %}</td>
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.parametros_editar', clave=p.clave) }}" title="Editar"><i class="fas fa-edit"></i></a>
+                            <form class="d-inline" method="post" action="{{ url_for('admin.parametros_eliminar', clave=p.clave) }}"
+                                  onsubmit="return confirm('¿Eliminar el parámetro {{ p.clave }}? Las funciones que lo leen usarán su valor por defecto.');">
+                                <button class="btn btn-sm btn-outline-danger" type="submit" title="Eliminar"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay parámetros que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

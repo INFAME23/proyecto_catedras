@@ -63,6 +63,19 @@ fallidas) y prueba de capas (345 pasadas, 0 fallidas, 29 entidades). Solo
 falta el commit con el tag `v5` (Fase 46 de `version5/8_tasks.md`). Guía:
 [version5/guia_ia_v5.md](version5/guia_ia_v5.md).
 
+### Estado de la V7 (2026-10-15)
+
+Última versión del mapa: la API expone las **37 tablas**. Las capas de
+`lote_migracion`, `detalle_migracion`, `bitacora` y `parametro` nacieron en
+el retrofit a procedimientos (`013`, `014`, `031`, `032`); la v7 revisó su
+borrador contra el código (decisiones en ADR D37: bitácora de solo
+lectura, como dice el Supuesto 3 de abajo), y construyó la prueba de capas
+de las 37 entidades (452 pasadas, 0 fallidas) y el front (`/admin`).
+Verificada contra PostgreSQL real y la API real por HTTP
+(`verificar_v7.ps1`: 71/0). Falta la corrida de
+`pruebas/correr_todo_v7.ps1` contra Docker y el tag `v7` (Fase 61 de
+`version7/8_tasks.md`). Guía: [version7/guia_ia_v7.md](version7/guia_ia_v7.md).
+
 ## 3. Salvedad: la FK circular con `usuario`
 
 `lote_carga_asistente` (V3) y `enlace_registro` (V5) tienen una FK a
