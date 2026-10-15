@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioModalidadPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Los 5 verbos pasan por los procedimientos de
-//  'db/postgres/migraciones/008_sp_modalidad.sql', con el MISMO molde de
+//  'db/postgres/migraciones/017_sp_modalidad.sql', con el MISMO molde de
 //  RepositorioSedePostgres.cs: esta clase solo arma el 'CALL', manda los
 //  parámetros y convierte el JSON que devuelve el procedimiento.
 //

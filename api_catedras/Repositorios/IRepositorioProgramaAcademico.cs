@@ -13,7 +13,7 @@ using ApiCatedras.Modelos;
 public interface IRepositorioProgramaAcademico
 {
     /// <summary>Programas ordenados por código, hasta 'limite' filas.</summary>
-    Task<List<ProgramaAcademico>> ObtenerTodosAsync(int limite);
+    Task<List<ProgramaAcademico>> ObtenerTodosAsync(int limite, bool incluirInactivos = false);
 
     /// <summary>El programa con ese código, o null si no existe.</summary>
     Task<ProgramaAcademico?> ObtenerPorIdAsync(string codigo);

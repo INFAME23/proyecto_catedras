@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioTipoVinculacionPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Los 5 verbos pasan por los procedimientos de
-//  'db/postgres/migraciones/014_sp_tipo_vinculacion.sql', con el MISMO
+//  'db/postgres/migraciones/023_sp_tipo_vinculacion.sql', con el MISMO
 //  molde de RepositorioSedePostgres.cs: esta clase solo arma el 'CALL',
 //  manda los parámetros y convierte el JSON que devuelve el procedimiento.
 //

@@ -1,5 +1,5 @@
 -- ==========================================================================
---  db/postgres/migraciones/014_sp_tipo_vinculacion.sql
+--  db/postgres/migraciones/023_sp_tipo_vinculacion.sql
 --  Proyecto Cátedras · RETROFIT criterio 3 de VERSION_2.md (Fase 2 de
 --  PLAN_RETROFIT_SP.md): los 5 verbos de 'tipo_vinculacion' por procedimiento
 --  almacenado, con el MISMO molde de 005_sp_sede_ejemplo.sql.

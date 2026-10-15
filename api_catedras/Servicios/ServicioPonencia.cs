@@ -68,6 +68,19 @@ public class ServicioPonencia : IServicioPonencia
         return ponencia;
     }
 
+    public async Task<Ponencia> ReemplazarAsync(long fkSesion, long fkAsistente, string rol, PonenciaReemplazo peticion)
+    {
+        string rolNuevo = peticion.Rol!;
+
+        int filas = await _repositorio.ActualizarAsync(fkSesion, fkAsistente, rol, rolNuevo);
+
+        if (filas == 0)
+            throw new NoEncontradoExcepcion(
+                $"El asistente '{fkAsistente}' no tiene el rol '{rol}' en la sesión '{fkSesion}'.");
+
+        return new Ponencia { FkSesion = fkSesion, FkAsistente = fkAsistente, Rol = rolNuevo };
+    }
+
     public async Task<int> EliminarAsync(long fkSesion, long fkAsistente, string rol)
     {
         int filas = await _repositorio.EliminarAsync(fkSesion, fkAsistente, rol);

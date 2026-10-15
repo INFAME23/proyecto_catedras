@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioPeriodoAcademicoPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Los 5 verbos pasan por los procedimientos de
-//  'db/postgres/migraciones/009_sp_periodo_academico.sql', con el MISMO
+//  'db/postgres/migraciones/018_sp_periodo_academico.sql', con el MISMO
 //  molde de RepositorioSedePostgres.cs: esta clase solo arma el 'CALL',
 //  manda los parámetros y convierte el JSON que devuelve el procedimiento.
 //

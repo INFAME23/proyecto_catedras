@@ -54,7 +54,8 @@ def catalogo():
 
     try:
         # UNA sola llamada: las 5502 cátedras.
-        catedras = listar('Catedra', timeout=TIMEOUT_CATALOGO)
+        # incluirInactivos: el catálogo público siempre mostró también las inactivas (con su insignia).
+        catedras = listar('Catedra', timeout=TIMEOUT_CATALOGO, incluirInactivos='true')
         # Tipos de evento (tabla de la v1) para el <select> del filtro.
         tipos_evento = listar('TipoEvento')
     except ErrorApi as ex:

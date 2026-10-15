@@ -1,5 +1,5 @@
 -- ==========================================================================
---  db/postgres/migraciones/008_sp_modalidad.sql
+--  db/postgres/migraciones/017_sp_modalidad.sql
 --  Proyecto Cátedras · RETROFIT criterio 3 de VERSION_2.md (Fase 2 de
 --  PLAN_RETROFIT_SP.md): los 5 verbos de 'modalidad' por procedimiento
 --  almacenado, con el MISMO molde de 005_sp_sede_ejemplo.sql.

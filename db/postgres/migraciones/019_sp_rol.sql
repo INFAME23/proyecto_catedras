@@ -1,5 +1,5 @@
 -- ==========================================================================
---  db/postgres/migraciones/010_sp_rol.sql
+--  db/postgres/migraciones/019_sp_rol.sql
 --  Proyecto Cátedras · RETROFIT criterio 3 de VERSION_2.md (Fase 2 de
 --  PLAN_RETROFIT_SP.md): los 5 verbos de 'rol' por procedimiento
 --  almacenado, con el MISMO molde de 005_sp_sede_ejemplo.sql.

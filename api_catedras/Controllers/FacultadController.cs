@@ -35,11 +35,11 @@ public class FacultadController : ControllerBase
     //  RF62 · GET /api/Facultad?limite=N   -> 200 { tabla, limite, total, datos } | 204
     // ----------------------------------------------------------------------
     [HttpGet]
-    public async Task<IActionResult> Listar([FromQuery] int? limite)
+    public async Task<IActionResult> Listar([FromQuery] int? limite, [FromQuery] bool incluirInactivos = false)
     {
         try
         {
-            var (datos, total) = await _servicio.ListarAsync(limite);
+            var (datos, total) = await _servicio.ListarAsync(limite, incluirInactivos);
 
             if (total == 0)
                 return NoContent();

@@ -1733,7 +1733,7 @@ class RepositorioSedeFalso : IRepositorioSede
         };
     }
 
-    public Task<List<Sede>> ObtenerTodosAsync(int limite) =>
+    public Task<List<Sede>> ObtenerTodosAsync(int limite, bool incluirInactivos = false) =>
         Task.FromResult(_tabla.Values.OrderBy(s => s.IdSede).Take(limite).ToList());
 
     public Task<Sede?> ObtenerPorIdAsync(string idSede) =>
@@ -2226,7 +2226,7 @@ class RepositorioFacultadFalso : IRepositorioFacultad
         _tabla["F_OTRA"] = new Facultad { IdFacultad = "F_OTRA", Nombre = "Otra", FkFacultadPadre = "USB" };
     }
 
-    public Task<List<Facultad>> ObtenerTodosAsync(int limite) =>
+    public Task<List<Facultad>> ObtenerTodosAsync(int limite, bool incluirInactivos = false) =>
         Task.FromResult(_tabla.Values.OrderBy(f => f.IdFacultad).Take(limite).ToList());
 
     public Task<Facultad?> ObtenerPorIdAsync(string idFacultad) =>
@@ -2271,7 +2271,7 @@ class RepositorioDependenciaFalso : IRepositorioDependencia
         _tabla["BIENESTAR"] = new Dependencia { IdDependencia = "BIENESTAR", Nombre = "Bienestar Institucional" };
     }
 
-    public Task<List<Dependencia>> ObtenerTodosAsync(int limite) =>
+    public Task<List<Dependencia>> ObtenerTodosAsync(int limite, bool incluirInactivos = false) =>
         Task.FromResult(_tabla.Values.OrderBy(d => d.IdDependencia).Take(limite).ToList());
 
     public Task<Dependencia?> ObtenerPorIdAsync(string idDependencia) =>
@@ -2314,7 +2314,7 @@ class RepositorioProgramaAcademicoFalso : IRepositorioProgramaAcademico
         _tabla["M0286"] = new ProgramaAcademico { Codigo = "M0286", Nombre = "Ingenieria de Datos y Software", FkFacultad = "F_ING" };
     }
 
-    public Task<List<ProgramaAcademico>> ObtenerTodosAsync(int limite) =>
+    public Task<List<ProgramaAcademico>> ObtenerTodosAsync(int limite, bool incluirInactivos = false) =>
         Task.FromResult(_tabla.Values.OrderBy(p => p.Codigo).Take(limite).ToList());
 
     public Task<ProgramaAcademico?> ObtenerPorIdAsync(string codigo) =>
@@ -2387,6 +2387,16 @@ class RepositorioAliasProgramaFalso : IRepositorioAliasPrograma
         return Task.FromResult((id, ahora));
     }
 
+    public Task<int> ActualizarAsync(long idAlias, Dictionary<string, object?> datos)
+    {
+        if (!_tabla.TryGetValue(idAlias, out var alias))
+            return Task.FromResult(0);
+        if (datos.TryGetValue("texto_normalizado", out var t)) alias.TextoNormalizado = (string)t!;
+        if (datos.TryGetValue("fk_programa", out var f)) alias.FkPrograma = (string)f!;
+        if (datos.TryGetValue("origen", out var o)) alias.Origen = (string)o!;
+        return Task.FromResult(1);
+    }
+
     public Task<int> EliminarAsync(long idAlias) =>
         Task.FromResult(_tabla.Remove(idAlias) ? 1 : 0);
 }
@@ -2419,10 +2429,10 @@ class RepositorioCatedraFalso : IRepositorioCatedra
         _tabla[c.IdCatedra] = c;
     }
 
-    public Task<List<Catedra>> ObtenerTodosAsync(int? limite) =>
+    public Task<List<Catedra>> ObtenerTodosAsync(int? limite, bool incluirInactivos = false) =>
         Task.FromResult(_tabla.Values.OrderBy(c => c.IdCatedra).Take(limite ?? int.MaxValue).ToList());
 
-    public Task<int> ContarAsync() => Task.FromResult(_tabla.Count);
+    public Task<int> ContarAsync(bool incluirInactivos = false) => Task.FromResult(_tabla.Count);
 
     public Task<Catedra?> ObtenerPorIdAsync(long idCatedra) =>
         Task.FromResult(_tabla.TryGetValue(idCatedra, out var catedra) ? catedra : null);
@@ -2919,6 +2929,17 @@ class RepositorioPonenciaFalso : IRepositorioPonencia
             throw new InvalidOperationException("pk_ponencia duplicada (simulado).");
         _tabla.Add(ponencia);
         return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(long fkSesion, long fkAsistente, string rol, string rolNuevo)
+    {
+        var fila = _tabla.FirstOrDefault(p => MismaLlave(p, fkSesion, fkAsistente, rol));
+        if (fila is null)
+            return Task.FromResult(0);
+        if (_tabla.Any(p => MismaLlave(p, fkSesion, fkAsistente, rolNuevo)))
+            throw new InvalidOperationException("pk_ponencia duplicada (simulado).");
+        fila.Rol = rolNuevo;
+        return Task.FromResult(1);
     }
 
     public Task<int> EliminarAsync(long fkSesion, long fkAsistente, string rol) =>

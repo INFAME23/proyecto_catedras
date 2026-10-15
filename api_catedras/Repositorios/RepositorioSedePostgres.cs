@@ -46,14 +46,14 @@ public class RepositorioSedePostgres : IRepositorioSede
         _cadenaConexion = cadenaConexion;
     }
 
-    public async Task<List<Sede>> ObtenerTodosAsync(int limite)
+    public async Task<List<Sede>> ObtenerTodosAsync(int limite, bool incluirInactivos)
     {
         // 'CALL' con un INOUT devuelve UNA fila con ese parámetro:
         // QuerySingleAsync<string?> lee el texto JSON completo.
-        const string sql = "CALL catedras.sp_listar_sede(@limite, NULL);";
+        const string sql = "CALL catedras.sp_listar_sede(@limite, @incluirInactivos, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
-        string? json = await conexion.QuerySingleAsync<string?>(sql, new { limite });
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { limite, incluirInactivos });
 
         // El procedimiento siempre devuelve un arreglo ('[]' si no hay
         // filas, nunca NULL) — json_agg(...) con COALESCE lo garantiza.
@@ -77,7 +77,7 @@ public class RepositorioSedePostgres : IRepositorioSede
     {
         const string sql = @"
             CALL catedras.sp_crear_sede(
-                @IdSede, @Nombre, @Direccion, @EsVirtual, NULL);";
+                @IdSede, @Nombre, @Direccion, @EsVirtual, @Activo, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 

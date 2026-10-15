@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioTipoEventoPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Los 5 verbos pasan por los procedimientos de
-//  'db/postgres/migraciones/012_sp_tipo_evento.sql', con el MISMO molde de
+//  'db/postgres/migraciones/021_sp_tipo_evento.sql', con el MISMO molde de
 //  RepositorioSedePostgres.cs: esta clase solo arma el 'CALL', manda los
 //  parámetros y convierte el JSON que devuelve el procedimiento.
 //

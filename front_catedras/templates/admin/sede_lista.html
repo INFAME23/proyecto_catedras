@@ -15,6 +15,12 @@
     </a>
 </div>
 
+{% if ver_inactivas %}
+<p class="small"><a href="{{ url_for('admin.sedes_listar') }}"><i class="fas fa-eye-slash me-1"></i>Solo activas</a> · mostrando también las inactivas</p>
+{% else %}
+<p class="small"><a href="{{ url_for('admin.sedes_listar', inactivas=1) }}"><i class="fas fa-eye me-1"></i>Ver también las inactivas</a></p>
+{% endif %}
+
 <div class="card shadow-sm">
     <div class="card-body p-0">
         {% if sedes %}

@@ -29,15 +29,15 @@ public class ServicioCatedra : IServicioCatedra
         _repositorio = repositorio;
     }
 
-    public async Task<(List<Catedra> Datos, int Total)> ListarAsync(int? limite)
+    public async Task<(List<Catedra> Datos, int Total)> ListarAsync(int? limite, bool incluirInactivos = false)
     {
         // Si llega, debe ser > 0. Si no llega, null = sin límite.
         if (limite is not null && limite <= 0)
             throw new ArgumentException(
                 "El parámetro 'limite' debe ser un entero mayor que 0.");
 
-        var datos = await _repositorio.ObtenerTodosAsync(limite);
-        int total = await _repositorio.ContarAsync();
+        var datos = await _repositorio.ObtenerTodosAsync(limite, incluirInactivos);
+        int total = await _repositorio.ContarAsync(incluirInactivos);
         return (datos, total);
     }
 

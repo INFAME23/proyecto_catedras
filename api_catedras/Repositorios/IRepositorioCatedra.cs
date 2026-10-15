@@ -19,10 +19,10 @@ using ApiCatedras.Modelos;
 public interface IRepositorioCatedra
 {
     /// <summary>Cátedras ordenadas por id; 'limite' null = todas.</summary>
-    Task<List<Catedra>> ObtenerTodosAsync(int? limite);
+    Task<List<Catedra>> ObtenerTodosAsync(int? limite, bool incluirInactivos = false);
 
     /// <summary>Cuántas filas tiene la tabla en total.</summary>
-    Task<int> ContarAsync();
+    Task<int> ContarAsync(bool incluirInactivos = false);
 
     /// <summary>La cátedra con ese id, o null si no existe.</summary>
     Task<Catedra?> ObtenerPorIdAsync(long idCatedra);

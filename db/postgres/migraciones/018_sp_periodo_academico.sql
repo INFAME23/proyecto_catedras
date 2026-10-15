@@ -1,5 +1,5 @@
 -- ==========================================================================
---  db/postgres/migraciones/009_sp_periodo_academico.sql
+--  db/postgres/migraciones/018_sp_periodo_academico.sql
 --  Proyecto Cátedras · RETROFIT criterio 3 de VERSION_2.md (Fase 2 de
 --  PLAN_RETROFIT_SP.md): los 5 verbos de 'periodo_academico' por procedimiento
 --  almacenado, con el MISMO molde de 005_sp_sede_ejemplo.sql.

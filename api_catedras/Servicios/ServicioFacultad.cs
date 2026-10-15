@@ -49,7 +49,7 @@ public class ServicioFacultad : IServicioFacultad
                 "Una facultad no puede ser su propio padre ('fk_facultad_padre').");
     }
 
-    public async Task<(List<Facultad> Datos, int Total)> ListarAsync(int? limite)
+    public async Task<(List<Facultad> Datos, int Total)> ListarAsync(int? limite, bool incluirInactivos = false)
     {
         // '??' = si 'limite' es null, usa el valor de la derecha.
         int limiteEfectivo = limite ?? LimitePorDefecto;
@@ -58,7 +58,7 @@ public class ServicioFacultad : IServicioFacultad
             throw new ArgumentException(
                 "El parámetro 'limite' debe ser un entero mayor que 0.");
 
-        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo);
+        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo, incluirInactivos);
         return (datos, datos.Count);
     }
 

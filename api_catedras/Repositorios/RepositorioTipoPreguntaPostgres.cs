@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioTipoPreguntaPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Los 5 verbos pasan por los procedimientos de
-//  'db/postgres/migraciones/013_sp_tipo_pregunta.sql', con el MISMO molde
+//  'db/postgres/migraciones/022_sp_tipo_pregunta.sql', con el MISMO molde
 //  de RepositorioSedePostgres.cs: esta clase solo arma el 'CALL', manda
 //  los parámetros y convierte el JSON que devuelve el procedimiento.
 //

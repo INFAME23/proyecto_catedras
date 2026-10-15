@@ -60,7 +60,7 @@ public class ServicioSede : IServicioSede
     // ----------------------------------------------------------------------
     //  LISTAR
     // ----------------------------------------------------------------------
-    public async Task<(List<Sede> Datos, int Total)> ListarAsync(int? limite)
+    public async Task<(List<Sede> Datos, int Total)> ListarAsync(int? limite, bool incluirInactivos = false)
     {
         // [FLUJO 4][SOLID · S] Regla de negocio: si no viene, 1000; si viene,
         // debe ser > 0. Esta decisión NO está en el controlador ni en la BD.
@@ -71,7 +71,7 @@ public class ServicioSede : IServicioSede
                 "El parámetro 'limite' debe ser un entero mayor que 0.");
 
         // [FLUJO 5] Baja a la capa de datos por la interfaz.
-        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo);
+        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo, incluirInactivos);
 
         // 'total' = cuántas filas se devuelven en esta respuesta.
         return (datos, datos.Count);

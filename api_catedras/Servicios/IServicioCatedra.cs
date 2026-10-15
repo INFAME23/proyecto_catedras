@@ -15,7 +15,7 @@ using ApiCatedras.Peticiones;
 public interface IServicioCatedra
 {
     /// <summary>Lista cátedras. 'limite' &lt;= 0 -> ArgumentException.</summary>
-    Task<(List<Catedra> Datos, int Total)> ListarAsync(int? limite);
+    Task<(List<Catedra> Datos, int Total)> ListarAsync(int? limite, bool incluirInactivos = false);
 
     Task<Catedra> ObtenerAsync(long idCatedra);
 

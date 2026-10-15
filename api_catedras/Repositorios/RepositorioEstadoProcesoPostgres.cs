@@ -2,7 +2,7 @@
 //  Repositorios/RepositorioEstadoProcesoPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
 //  Los 5 verbos pasan por los procedimientos de
-//  'db/postgres/migraciones/007_sp_estado_proceso.sql', con el MISMO molde
+//  'db/postgres/migraciones/016_sp_estado_proceso.sql', con el MISMO molde
 //  de RepositorioSedePostgres.cs: esta clase solo arma el 'CALL', manda
 //  los parámetros y convierte el JSON que devuelve el procedimiento.
 //

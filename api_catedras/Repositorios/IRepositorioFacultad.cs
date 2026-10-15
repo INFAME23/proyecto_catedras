@@ -16,7 +16,7 @@ using ApiCatedras.Modelos;
 public interface IRepositorioFacultad
 {
     /// <summary>Devuelve las facultades ordenadas por código, hasta 'limite' filas.</summary>
-    Task<List<Facultad>> ObtenerTodosAsync(int limite);
+    Task<List<Facultad>> ObtenerTodosAsync(int limite, bool incluirInactivos = false);
 
     /// <summary>Devuelve la facultad con ese código, o null si no existe.</summary>
     Task<Facultad?> ObtenerPorIdAsync(string idFacultad);

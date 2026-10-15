@@ -1,5 +1,5 @@
 -- ==========================================================================
---  db/postgres/migraciones/006_sp_encuesta.sql
+--  db/postgres/migraciones/015_sp_encuesta.sql
 --  Proyecto Cátedras · RETROFIT criterio 3 de VERSION_2.md (Fase 2 de
 --  PLAN_RETROFIT_SP.md): los 5 verbos de 'encuesta' por procedimiento
 --  almacenado, con el MISMO molde de 005_sp_sede_ejemplo.sql.

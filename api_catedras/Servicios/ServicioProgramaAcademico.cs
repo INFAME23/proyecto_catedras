@@ -37,7 +37,7 @@ public class ServicioProgramaAcademico : IServicioProgramaAcademico
         _repositorio = repositorio;
     }
 
-    public async Task<(List<ProgramaAcademico> Datos, int Total)> ListarAsync(int? limite)
+    public async Task<(List<ProgramaAcademico> Datos, int Total)> ListarAsync(int? limite, bool incluirInactivos = false)
     {
         int limiteEfectivo = limite ?? LimitePorDefecto;
 
@@ -45,7 +45,7 @@ public class ServicioProgramaAcademico : IServicioProgramaAcademico
             throw new ArgumentException(
                 "El parámetro 'limite' debe ser un entero mayor que 0.");
 
-        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo);
+        var datos = await _repositorio.ObtenerTodosAsync(limiteEfectivo, incluirInactivos);
         return (datos, datos.Count);
     }
 

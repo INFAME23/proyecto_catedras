@@ -1,123 +1,105 @@
 // ==========================================================================
-//  Repositorios/RepositorioDependenciaPostgres.cs  ·  Proyecto Cátedras · v2
+//  Repositorios/RepositorioDependenciaPostgres.cs  ·  Cátedras · RETROFIT criterio 3
 // --------------------------------------------------------------------------
-//  Implementación de IRepositorioDependencia para PostgreSQL con DAPPER.
-//  SQL escrito A MANO, visible y SIEMPRE parametrizado (@parametro). Una
-//  conexión por operación con 'await using'. Mismo molde que
-//  RepositorioSedePostgres (v1).
+//  Los 5 verbos pasan por los procedimientos de
+//  'db/postgres/migraciones/007_sp_dependencia.sql'. Mismo molde que
+//  RepositorioSedePostgres.cs: solo arma el 'CALL', manda los parámetros y
+//  convierte el JSON de vuelta. 'IRepositorioDependencia',
+//  'ServicioDependencia', 'DependenciaController' y 'Peticiones/' NO
+//  cambiaron; el PATCH parcial se mezcla AQUÍ con la fila actual.
 //
-//  NOVEDAD v2 — LAS FK LAS APLICA EL MOTOR, NO ESTE CÓDIGO:
-//   · Un 'fk_dependencia_padre' que no existe -> el INSERT/UPDATE viola la FK
-//     'fk_dependencia_padre' y PostgreSQL lanza NpgsqlException (-> 500). Aquí
-//     NO se hace un SELECT previo para comprobarlo (decisión D9).
-//   · DELETE: las dependencias hijas y las cátedras que apuntaban a la
-//     borrada quedan con su FK en NULL (ON DELETE SET NULL). Lo hace el
-//     motor dentro de la MISMA sentencia (ACID · A).
+//  'dependencia' tiene 'activo': 'EliminarAsync' es LÓGICO y el listado solo
+//  trae las activas.
 // ==========================================================================
 
 namespace ApiCatedras.Repositorios;
 
 using ApiCatedras.Modelos;
-using Dapper;      // QueryAsync, ExecuteAsync, DynamicParameters
-using Npgsql;      // NpgsqlConnection
+using Dapper;
+using Npgsql;
+using System.Text.Json;
 
-/// <summary>Acceso a 'catedras.dependencia' en PostgreSQL mediante Dapper.</summary>
+/// <summary>Acceso a 'catedras.dependencia' en PostgreSQL, vía procedimientos almacenados.</summary>
 public class RepositorioDependenciaPostgres : IRepositorioDependencia
 {
-    // 'readonly': se asigna una vez en el constructor y no cambia más.
     private readonly string _cadenaConexion;
 
-    // [ACID · C] LISTA BLANCA de columnas que un UPDATE puede tocar. La PK
-    // 'id_dependencia' NO está: el código de una dependencia no se cambia.
-    private static readonly HashSet<string> ColumnasActualizables =
-        new() { "nombre", "fk_dependencia_padre", "activo" };
-
-    /// <summary>Recibe la cadena de conexión (la inyecta el ensamblador de Program.cs).</summary>
     public RepositorioDependenciaPostgres(string cadenaConexion)
     {
         _cadenaConexion = cadenaConexion;
     }
 
-    public async Task<List<Dependencia>> ObtenerTodosAsync(int limite)
+    public async Task<List<Dependencia>> ObtenerTodosAsync(int limite, bool incluirInactivos)
     {
-        // 'LIMIT @limite' = Top-N de PostgreSQL, parametrizado.
-        const string sql = @"
-            SELECT id_dependencia, nombre, fk_dependencia_padre, activo
-            FROM catedras.dependencia
-            ORDER BY id_dependencia
-            LIMIT @limite;";
+        const string sql = "CALL catedras.sp_listar_dependencia(@limite, @incluirInactivos, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { limite, incluirInactivos });
 
-        // Dapper mapea cada fila a un Dependencia (fk_dependencia_padre -> FkDependenciaPadre
-        // gracias a MatchNamesWithUnderscores, configurado en Program.cs).
-        var filas = await conexion.QueryAsync<Dependencia>(sql, new { limite });
-        return filas.ToList();
+        return JsonSerializer.Deserialize<List<Dependencia>>(json!) ?? [];
     }
 
     public async Task<Dependencia?> ObtenerPorIdAsync(string idDependencia)
     {
-        const string sql = @"
-            SELECT id_dependencia, nombre, fk_dependencia_padre, activo
-            FROM catedras.dependencia
-            WHERE id_dependencia = @idDependencia;";
+        const string sql = "CALL catedras.sp_consultar_dependencia(@idDependencia, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idDependencia });
 
-        // Una fila, o null si no existe.
-        return await conexion.QuerySingleOrDefaultAsync<Dependencia>(sql, new { idDependencia });
+        return json is null ? null : JsonSerializer.Deserialize<Dependencia>(json);
     }
 
     public async Task CrearAsync(Dependencia dependencia)
     {
         const string sql = @"
-            INSERT INTO catedras.dependencia (id_dependencia, nombre, fk_dependencia_padre, activo)
-            VALUES (@IdDependencia, @Nombre, @FkDependenciaPadre, @Activo);";
+            CALL catedras.sp_crear_dependencia(
+                @IdDependencia, @Nombre, @FkDependenciaPadre, @Activo, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        // Dapper toma cada @Parametro de la propiedad homónima de 'dependencia'.
-        // Duplicado o padre inexistente -> NpgsqlException sube tal cual.
+        // Clave o nombre repetido, padre inexistente o igual a sí misma ->
+        // NpgsqlException, igual que antes.
         await conexion.ExecuteAsync(sql, dependencia);
     }
 
     public async Task<int> ActualizarAsync(string idDependencia, Dictionary<string, object?> datos)
     {
-        // Se arma 'SET col = @col, ...' SOLO con columnas de la lista blanca.
-        var asignaciones = new List<string>();
-        var parametros = new DynamicParameters();
-        parametros.Add("id_clave", idDependencia);
-
-        foreach (var (columna, valor) in datos)
-        {
-            if (!ColumnasActualizables.Contains(columna))
-                continue; // clave no permitida: nunca llega al texto SQL
-
-            asignaciones.Add($"{columna} = @{columna}");
-            parametros.Add(columna, valor); // el VALOR siempre como parámetro
-        }
-
-        if (asignaciones.Count == 0)
-            return 0;
-
-        var sql =
-            $"UPDATE catedras.dependencia SET {string.Join(", ", asignaciones)} " +
-            "WHERE id_dependencia = @id_clave;";
-
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
-        // Filas que cumplieron el WHERE: 0 = esa dependencia no existe.
-        return await conexion.ExecuteAsync(sql, parametros);
+        // 1) Fila actual.
+        const string sqlConsultar = "CALL catedras.sp_consultar_dependencia(@idDependencia, NULL);";
+        string? actualJson = await conexion.QuerySingleAsync<string?>(sqlConsultar, new { idDependencia });
+
+        if (actualJson is null)
+            return 0;
+
+        var actual = JsonSerializer.Deserialize<Dependencia>(actualJson)!;
+
+        // 2) Mezclar: lo que llegó PISA el valor actual.
+        string nombre = datos.TryGetValue("nombre", out var vNombre) ? (string)vNombre! : actual.Nombre;
+        string? fkDependenciaPadre = datos.TryGetValue("fk_dependencia_padre", out var vPadre) ? (string?)vPadre : actual.FkDependenciaPadre;
+        bool activo = datos.TryGetValue("activo", out var vActivo) ? (bool)vActivo! : actual.Activo;
+
+        // 3) Procedimiento con el conjunto COMPLETO.
+        const string sqlActualizar = @"
+            CALL catedras.sp_actualizar_dependencia(
+                @idDependencia, @nombre, @fkDependenciaPadre, @activo, NULL);";
+        string? resultadoJson = await conexion.QuerySingleAsync<string?>(
+            sqlActualizar, new { idDependencia, nombre, fkDependenciaPadre, activo });
+
+        return resultadoJson is null ? 0 : 1;
     }
 
     public async Task<int> EliminarAsync(string idDependencia)
     {
-        const string sql = "DELETE FROM catedras.dependencia WHERE id_dependencia = @idDependencia;";
+        const string sql = "CALL catedras.sp_eliminar_dependencia(@idDependencia, NULL);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { idDependencia });
 
-        // Las FK entrantes son SET NULL: el borrado no falla por tener hijas
-        // o cátedras; el motor les pone el campo en NULL en la misma sentencia.
-        return await conexion.ExecuteAsync(sql, new { idDependencia });
+        // {"eliminado": true|false}; LÓGICO (activo=false).
+        using var documento = JsonDocument.Parse(json!);
+        bool eliminado = documento.RootElement.GetProperty("eliminado").GetBoolean();
+        return eliminado ? 1 : 0;
     }
 }
