@@ -96,6 +96,19 @@ def listar(recurso, limite=None, timeout=5, **filtros):
     return cuerpo['datos'] if cuerpo else []
 
 
+def consultar(ruta, **parametros):
+    """v7.1 · GET /api/{ruta} de una CONSULTA (no un recurso): devuelve el JSON
+    completo, no solo 'datos'. Sirve para /api/Disponibilidad/conflictos y /agenda.
+    Los parámetros en None no se mandan. Error de la API -> ErrorApi."""
+    try:
+        respuesta = requests.get(_url(ruta), params={k: v for k, v in parametros.items() if v is not None},
+                                 timeout=8)
+    except requests.RequestException as ex:
+        raise ErrorApi(f"No se pudo contactar la API en '{_url(ruta)}'.", detalle=str(ex))
+
+    return _procesar(respuesta)
+
+
 def obtener(recurso, id_valor):
     """GET /api/{recurso}/{id}. Inexistente -> ErrorApi(codigo=404)."""
     try:

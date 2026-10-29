@@ -35,9 +35,9 @@
 | RF-S6 | Correo real para el código | front (`servicios/correo.py`, `config.py`, `env.ejemplo`, compose) |
 | RF-S7 | `/admin` con barra lateral colapsable (reemplazada por categorías desplegables, D51) | front (`admin/base_admin.html`, `admin/panel.html`, `estilo.css`) |
 
-Migraciones nuevas (en orden; se montan en el compose como `z045`…`z049`):
+Migraciones nuevas (en orden; se montan en el compose como `z045`…`z050`):
 `045_geolocalizacion_registro` · `046_roles_estudiante_ponente` ·
-`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra`.
+`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra` · `050_disponibilidad_sesiones`.
 
 ## 3. Decisiones (ADR de la v7.1, continúan después de D37)
 
@@ -209,6 +209,31 @@ cambios); se borraron `_sidebar.html`, `_menu_datos.html`, `static/admin_sidebar
 Consecuencia: dentro de una pantalla de `/admin` la navegación es la miga de pan «Administración» (vuelve al
 panel) y el navbar, no un menú lateral permanente.
 Prueba: `front_catedras/pruebas/prueba_panel_admin_v71.py` (14/0) y las 105 plantillas compilan.
+
+**D52 — El ponente ve la disponibilidad de un horario y no puede cruzar dos sesiones.** Al crear una cátedra
+(`/ponente/catedras/nueva`) el ponente tiene **«Ver ocupación de una fecha»** (elige día y, si quiere, sede: se listan
+las sesiones ya programadas, con hora, cátedra, sede y salón) y cada sesión que escribe muestra sola, mientras la
+llena, **«✔ Horario disponible»** o **«✖ NO disponible: se cruza con …»**. Al guardar, el servidor vuelve a comprobarlo y,
+si algo se cruza, **no crea nada** y deja los choques **fijos en la página** (no como flash, que se borra a los 5 s);
+lo escrito vuelve al formulario. Lo mismo al **asignarse a una cátedra existente**: la sesión que se cruza con otra
+suya no se asigna (las libres sí) y el aviso queda fijo. Qué es un choque (lo calcula la BD, migración `050`,
+`sp_sesiones_en_conflicto`): otra sesión que se **traslapa** en el tiempo (terminar a las 16:00 y empezar a las 16:00
+NO cruza) y además **LUGAR** (misma sede **física** y mismo salón; si falta el salón en alguna de las dos se cuenta como
+choque, por prudencia; una sede virtual no tiene salón y no se revisa) o **PONENTE** (esa persona ya participa en la otra
+sesión, en cualquier sede: nadie está en dos a la vez). Entre las sesiones del mismo formulario también se revisa. API: un
+controlador de **solo consulta** (`Disponibilidad`, sin tabla propia; el conteo pasa a 39): `GET
+/api/Disponibilidad/conflictos` y `GET /api/Disponibilidad/agenda`; `sp_agenda_sesiones` es la segunda consulta. Si la
+disponibilidad no se puede consultar, no se crea nada (falla cerrado). Decisiones para confirmar: (1) la regla de
+choque es por **salón + ponente**, no «una sola cátedra a la vez en toda la universidad» (que bloquearía casi todo
+con 5.700 sesiones); si se quiere la otra, es solo cambiar `sp_sesiones_en_conflicto`; (2) solo aplica al **ponente**: el
+administrador sigue creando sin esta revisión; (3) no hay un candado en la BD (dos ponentes guardando a la vez el mismo
+hueco podrían cruzarse): es una verificación de aplicación, no una restricción de la base de datos.
+Pruebas: capas 513/1 (+11; la fallida es la de siempre), `verificar_v71.ps1` 72/0 (+12 de disponibilidad, contra la
+API y PostgreSQL reales, repetible), `front_catedras/pruebas/prueba_ponente_catedras_v71.py` 57/0 y un recorrido del
+front contra la API real (14 casos) más la pantalla en el navegador (consulta por fecha y aviso por sesión).
+
+**Limpiezas pedidas junto a D52.** Se quitó la lista «Mis sesiones» del panel del estudiante (también ya no se
+cargan sus registros para el panel) y el texto «Este front consume ApiCatedras...» de la pantalla de inicio.
 
 ## 4. Cómo se verificó
 

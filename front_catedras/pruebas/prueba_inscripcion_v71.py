@@ -166,5 +166,13 @@ js = open('static/main.js', encoding='utf-8-sig').read()
 v("main.js solo quita solos los mensajes flash ('.alert.alert-dismissible'), no todos los avisos",
   "querySelectorAll('.alert.alert-dismissible')" in js and "querySelectorAll('.alert')" not in js)
 
+# --- pedidos de limpieza: panel sin «Mis sesiones» y portada sin el texto de la API --------------------
+t = cliente(EST).get('/estudiante/').get_data(as_text=True)
+v('El panel del estudiante ya NO tiene «Mis sesiones» (conserva información, Mis cátedras y atajos)',
+  'Mis sesiones' not in t and 'Todavía no te has registrado' not in t and 'Mis cátedras' in t and 'Mi información' in t)
+t = cliente(None).get('/').get_data(as_text=True)
+v('La pantalla de inicio ya NO dice «Este front consume ApiCatedras...» y conserva sus botones',
+  'Este front consume' not in t and 'ApiCatedras' not in t and 'Ver el catálogo de cátedras' in t)
+
 print(f'\n{ok} pasadas, {fall} fallidas')
 sys.exit(1 if fall else 0)

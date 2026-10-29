@@ -2366,12 +2366,53 @@ Afirmar("InscripcionCatedraAccion exige fk_catedra y fk_asistente",
     !EsValida(new InscripcionCatedraAccion()) && !EsValida(new InscripcionCatedraAccion { FkCatedra = 10 })
     && EsValida(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 }));
 
+// ---------------------------------------------------------------------------
+//  v7.1 · D52 · Disponibilidad de horario (solo lectura)
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.1 · Prueba de capas: disponibilidad de horario ==\n");
+var repoDisp71 = new RepositorioDisponibilidadFalso();
+var servicioDisp71 = new ServicioDisponibilidad(repoDisp71);
+var dispIni = new DateTimeOffset(2026, 10, 20, 14, 0, 0, TimeSpan.FromHours(-5));
+
+await AfirmarLanza<ArgumentException>(
+    "Conflictos sin 'fin' lanza ArgumentException (400)",
+    () => servicioDisp71.ConflictosAsync(dispIni, null, "SAN_BENITO", null, null, null));
+await AfirmarLanza<ArgumentException>(
+    "Conflictos con fin <= inicio lanza ArgumentException (400)",
+    () => servicioDisp71.ConflictosAsync(dispIni, dispIni, "SAN_BENITO", null, null, null));
+await AfirmarLanza<ArgumentException>(
+    "Conflictos con un rango de más de 24 h lanza ArgumentException (400)",
+    () => servicioDisp71.ConflictosAsync(dispIni, dispIni.AddHours(25), "SAN_BENITO", null, null, null));
+Afirmar("...y ninguna de esas consultas llegó a la BD", repoDisp71.Consultas == 0);
+
+var hayChoque71 = await servicioDisp71.ConflictosAsync(dispIni, dispIni.AddHours(2), "  SAN_BENITO ", "  ", 7, null);
+Afirmar("Conflictos devuelve lo que decide la BD (aquí 1 choque por LUGAR y PONENTE)",
+    hayChoque71.Count == 1 && hayChoque71[0].Motivos!.Contains("LUGAR") && hayChoque71[0].Motivos!.Contains("PONENTE"));
+Afirmar("...la sede llega sin espacios y un lugar en blanco llega como null (la BD lo trata como «sin lugar»)",
+    repoDisp71.UltimaSede == "SAN_BENITO" && repoDisp71.UltimoLugar is null && repoDisp71.UltimoAsistente == 7);
+var libre71 = await servicioDisp71.ConflictosAsync(dispIni.AddDays(3), dispIni.AddDays(3).AddHours(2), "SAN_BENITO", null, 7, null);
+Afirmar("Un horario sin sesiones que choquen devuelve lista vacía (disponible)", libre71.Count == 0);
+
+await AfirmarLanza<ArgumentException>(
+    "Agenda sin 'desde' lanza ArgumentException (400)",
+    () => servicioDisp71.AgendaAsync(null, dispIni.AddDays(1), null, null));
+await AfirmarLanza<ArgumentException>(
+    "Agenda con un rango de más de 31 días lanza ArgumentException (400)",
+    () => servicioDisp71.AgendaAsync(dispIni, dispIni.AddDays(40), null, null));
+await AfirmarLanza<ArgumentException>(
+    "Agenda con limite 0 lanza ArgumentException (400)",
+    () => servicioDisp71.AgendaAsync(dispIni, dispIni.AddDays(1), null, 0));
+var agenda71 = await servicioDisp71.AgendaAsync(dispIni.Date, dispIni.AddDays(1), null, null);
+Afirmar("Agenda de un día devuelve las sesiones de la BD con el límite por defecto (500)",
+    agenda71.Count == 1 && repoDisp71.UltimoLimite == 500);
+
 // ---- Cuenta de control --------------------------------------------------------
 Console.WriteLine("\n== Cuenta de control: 37 tablas, 37 recursos ==\n");
-// v7.1 · D50 agrega UN recurso: InscripcionCatedra (tabla de la migración 049). 37 del script + 1.
-Afirmar("La API declara 38 controladores (los 37 de bdcatedras + InscripcionCatedra de la v7.1)",
+// v7.1: D50 agrega InscripcionCatedra (tabla de la migración 049) y D52 agrega Disponibilidad (consultas de
+// solo lectura, sin tabla propia). 37 del script + 2.
+Afirmar("La API declara 39 controladores (los 37 de bdcatedras + InscripcionCatedra + Disponibilidad de la v7.1)",
     typeof(ApiCatedras.Controllers.BitacoraController).Assembly.GetTypes()
-        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 38);
+        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 39);
 
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
@@ -4418,5 +4459,48 @@ class RepositorioInscripcionCatedraFalso : IRepositorioInscripcionCatedra
         existente.Estado = "CANCELADA";
         existente.CanceladaEn = DateTime.UtcNow;
         return Task.FromResult("CANCELADA");
+    }
+}
+
+// ==========================================================================
+//  v7.1 · D52 · Repositorio FALSO de 'Disponibilidad'. Guarda los últimos
+//  parámetros recibidos y simula una sola sesión ocupada: la de las 14:00 a
+//  las 16:00 del 20-oct-2026 (hora de Colombia) en SAN_BENITO, donde participa el ponente 7.
+// ==========================================================================
+class RepositorioDisponibilidadFalso : IRepositorioDisponibilidad
+{
+    private static readonly DateTimeOffset Ocupada = new(2026, 10, 20, 14, 0, 0, TimeSpan.FromHours(-5));
+
+    public int Consultas { get; private set; }
+    public string? UltimaSede { get; private set; }
+    public string? UltimoLugar { get; private set; }
+    public long? UltimoAsistente { get; private set; }
+    public int UltimoLimite { get; private set; }
+
+    private static SesionOcupada Sesion(List<string>? motivos) => new()
+    {
+        IdSesion = 1, FkCatedra = 10, NombreCatedra = "Cátedra ocupada", NumeroReunion = 1,
+        Inicio = Ocupada.UtcDateTime, Fin = Ocupada.AddHours(2).UtcDateTime,
+        FkSede = "SAN_BENITO", Lugar = "Aula 101", FkModalidad = "PRESENCIAL", Estado = "PROGRAMADA",
+        Motivos = motivos,
+    };
+
+    public Task<List<SesionOcupada>> ConflictosAsync(
+        DateTimeOffset inicio, DateTimeOffset fin, string? fkSede, string? lugar, long? fkAsistente, long? excluirSesion)
+    {
+        Consultas++;
+        UltimaSede = fkSede;
+        UltimoLugar = lugar;
+        UltimoAsistente = fkAsistente;
+        bool traslapa = inicio < Ocupada.AddHours(2) && fin > Ocupada;
+        return Task.FromResult(traslapa ? new List<SesionOcupada> { Sesion(["LUGAR", "PONENTE"]) } : new List<SesionOcupada>());
+    }
+
+    public Task<List<SesionOcupada>> AgendaAsync(DateTimeOffset desde, DateTimeOffset hasta, string? fkSede, int limite)
+    {
+        Consultas++;
+        UltimoLimite = limite;
+        bool toca = desde < Ocupada.AddHours(2) && hasta > Ocupada;
+        return Task.FromResult(toca ? new List<SesionOcupada> { Sesion(null) } : new List<SesionOcupada>());
     }
 }
