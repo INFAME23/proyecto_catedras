@@ -45,6 +45,33 @@
 
             <dt class="col-sm-4">Registrada</dt>
             <dd class="col-sm-8">{{ catedra.creado_en[:10] }}</dd>
+
+            {# v7.1 · D50 · Inscripción: parte FIJA de la ficha (no un aviso). 'inscrita': True / False / None (no se pudo saber). #}
+            <dt class="col-sm-4">Inscripción</dt>
+            <dd class="col-sm-8" id="inscripcion">
+                {% if es_estudiante and inscrita is not none %}
+                    {% if inscrita %}
+                    <span class="badge badge-success me-2"><i class="fas fa-check me-1"></i>Estás inscrito</span>
+                    <form class="d-inline" method="post" action="{{ url_for('estudiante.cancelar_inscripcion', id_catedra=catedra.id_catedra) }}"
+                          onsubmit="return confirm('¿Cancelar tu inscripción en esta cátedra?');">
+                        <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-user-minus me-1"></i>Cancelar inscripción</button>
+                    </form>
+                    <div class="form-text">Aparece en «Mis cátedras» de tu panel.</div>
+                    {% elif catedra.activo %}
+                    <form class="d-inline" method="post" action="{{ url_for('estudiante.inscribirse', id_catedra=catedra.id_catedra) }}">
+                        <button class="btn btn-sm btn-primary" type="submit"><i class="fas fa-user-plus me-1"></i>Inscribirme</button>
+                    </form>
+                    <div class="form-text">Es opcional: no hace falta para registrar tu asistencia a una sesión.</div>
+                    {% else %}
+                    <span class="text-muted">Esta cátedra está inactiva: no admite inscripciones.</span>
+                    {% endif %}
+                {% elif sesion_activa() %}
+                    <span class="text-muted">Solo los estudiantes se inscriben a las cátedras.</span>
+                {% else %}
+                    <a href="{{ url_for('auth.login', siguiente=url_for('catedras.detalle', id_catedra=catedra.id_catedra)) }}">Inicia sesión como estudiante</a>
+                    <span class="text-muted">para inscribirte.</span>
+                {% endif %}
+            </dd>
         </dl>
     </div>
 </div>

@@ -1,0 +1,156 @@
+{% extends 'base.html' %}
+{% import 'partials/macros_sesion.html' as ms %}
+{# ==========================================================================
+   estudiante_panel.html  ·  Front Cátedras · Subversión v7.1 (RF-S2)
+   Panel del estudiante: su información (solo lectura), las sesiones a las que
+   se registró y los atajos para registrar asistencia y cambiar la clave.
+   ========================================================================== #}
+{% block titulo %}Mi panel · Cátedras USB{% endblock %}
+{% block contenido %}
+<div class="bg-secondary-custom text-white p-4 rounded-3 mb-4">
+    <h1 class="fw-bold mb-0"><i class="fas fa-user-graduate me-2"></i>Mi panel de estudiante</h1>
+    <p class="text-white-50 mb-0">
+        {% if asistente %}{{ asistente.nombres }} {{ asistente.apellidos }}{% else %}{{ usuario_actual().usuario }}{% endif %}
+    </p>
+</div>
+
+<div class="row g-3 mb-4">
+    {# ---------- 1. Mi información ---------- #}
+    <div class="col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-header fw-bold"><i class="fas fa-id-card me-2"></i>Mi información</div>
+            <div class="card-body">
+                {% if asistente %}
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-4">Nombre</dt>
+                    <dd class="col-sm-8">{{ asistente.nombres }} {{ asistente.apellidos }}</dd>
+                    <dt class="col-sm-4">Código</dt>
+                    <dd class="col-sm-8">{{ asistente.id_asis or '—' }}</dd>
+                    <dt class="col-sm-4">Correo institucional</dt>
+                    <dd class="col-sm-8">{{ asistente.correo_institucional or '—' }}</dd>
+                    <dt class="col-sm-4">Correo personal</dt>
+                    <dd class="col-sm-8">{{ asistente.correo_personal or '—' }}</dd>
+                    <dt class="col-sm-4">Programa</dt>
+                    <dd class="col-sm-8">
+                        {% for p in programas %}
+                        <div>
+                            {{ p.nombre }} <span class="text-muted">· {{ p.fk_programa }} · {{ p.fk_periodo }}</span>
+                            <span class="badge badge-{{ 'primary' if p.estado == 'ACTIVO' else 'secondary' }}">{{ p.estado }}</span>
+                        </div>
+                        {% else %}—{% endfor %}
+                    </dd>
+                    <dt class="col-sm-4">Vinculación</dt>
+                    <dd class="col-sm-8">
+                        {% for v in vinculaciones %}
+                        <div>
+                            {{ v.nombre }}
+                            <span class="text-muted">· desde {{ v.fecha_ini }}{% if v.fecha_fin %} hasta {{ v.fecha_fin }}{% endif %}</span>
+                            {% if not v.fecha_fin %}<span class="badge badge-primary">VIGENTE</span>{% endif %}
+                        </div>
+                        {% else %}—{% endfor %}
+                    </dd>
+                </dl>
+                <p class="form-text mt-3 mb-0">
+                    Estos datos los administra la oficina de Cátedras. Si algo está mal, avísales: aquí no se editan.
+                </p>
+                {% else %}
+                <p class="text-muted mb-0">No se pudo cargar tu información.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {# ---------- 3 y 4. Atajos ---------- #}
+    <div class="col-lg-5">
+        <div class="card shadow-sm mb-3">
+            <div class="card-header fw-bold"><i class="fas fa-clipboard-check me-2"></i>Registrar mi asistencia</div>
+            <div class="card-body">
+                <p class="small text-muted">Pega el enlace del QR o del correo de la sesión. No necesitas cerrar sesión.</p>
+                {# /registro es público: con o sin cuenta el flujo es el mismo (y pide la ubicación, RF-S1). #}
+                <form method="post" action="{{ url_for('registro.inicio') }}" class="d-flex gap-2">
+                    <input class="form-control" type="text" name="enlace" required autocomplete="off"
+                           placeholder="Enlace o código de la sesión" aria-label="Enlace o código de la sesión">
+                    <button class="btn btn-primary" type="submit"><i class="fas fa-arrow-right"></i></button>
+                </form>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-header fw-bold"><i class="fas fa-key me-2"></i>Mi cuenta</div>
+            <div class="card-body">
+                <p class="small text-muted mb-2">Usuario: <strong>{{ usuario_actual().usuario }}</strong></p>
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('perfil.cambiar_clave') }}">
+                    <i class="fas fa-lock me-1"></i>Cambiar mi clave
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ---------- v7.1 · D50 · Mis cátedras (inscripciones activas) ---------- #}
+<div class="card shadow-sm mb-4">
+    <div class="card-header fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="fas fa-user-graduate me-2"></i>Mis cátedras <span class="badge badge-secondary ms-1">{{ inscripciones|length }}</span></span>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('catedras.catalogo') }}"><i class="fas fa-search me-1"></i>Buscar cátedras para inscribirme</a>
+    </div>
+    <div class="card-body p-0">
+        {% if inscripciones %}
+        <ul class="list-group list-group-flush">
+            {% for i in inscripciones %}
+            <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span>
+                    <a href="{{ url_for('catedras.detalle', id_catedra=i.fk_catedra) }}">{{ i.nombre_catedra }}</a>
+                    <span class="text-muted small">· {{ i.id_evento_asis }} · desde {{ i.inscrita_en|fecha_hora('%Y-%m-%d') }}</span>
+                </span>
+                <form method="post" action="{{ url_for('estudiante.cancelar_inscripcion', id_catedra=i.fk_catedra) }}"
+                      onsubmit="return confirm('¿Cancelar tu inscripción en esta cátedra?');">
+                    <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-user-minus me-1"></i>Cancelar</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted text-center py-3 mb-0">Todavía no estás inscrito en ninguna cátedra. Abre una del <a href="{{ url_for('catedras.catalogo') }}">catálogo</a> y usa «Inscribirme».</p>
+        {% endif %}
+    </div>
+</div>
+
+{# ---------- 2. Mis sesiones ---------- #}
+<div class="card shadow-sm">
+    <div class="card-header fw-bold">
+        <i class="fas fa-calendar-check me-2"></i>Mis sesiones
+        <span class="badge badge-secondary ms-1">{{ sesiones|length }}</span>
+    </div>
+    <div class="card-body p-0">
+        {% if sesiones %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Fecha</th><th>Cátedra</th><th>Reunión</th><th>Estado</th><th>Me registré</th><th>Ubicación</th><th></th></tr>
+                </thead>
+                <tbody>
+                {% for fila in sesiones %}
+                <tr>
+                    <td>{{ fila.sesion.inicio|fecha_hora('%Y-%m-%d') }}<div class="small text-muted">{{ fila.sesion.inicio|fecha_hora('%H:%M') }} – {{ fila.sesion.fin|fecha_hora('%H:%M') }}</div></td>
+                    <td><a href="{{ url_for('catedras.detalle', id_catedra=fila.catedra.id_catedra) }}">{{ fila.catedra.nombre }}</a></td>
+                    <td>{{ fila.sesion.numero_reunion }}</td>
+                    <td>{{ ms.estado(fila.sesion.estado) }}</td>
+                    <td class="small">{{ fila.registro.registrado_en|fecha_hora }}<div class="text-muted">{{ fila.registro.origen }}</div></td>
+                    <td class="small">
+                        {% if fila.registro.latitud is not none and fila.registro.longitud is not none %}
+                        <a href="https://maps.google.com/?q={{ fila.registro.latitud }},{{ fila.registro.longitud }}" target="_blank" rel="noopener noreferrer">
+                            <i class="fas fa-map-marker-alt me-1"></i>{{ '%.5f'|format(fila.registro.latitud) }}, {{ '%.5f'|format(fila.registro.longitud) }}
+                        </a>
+                        {% else %}<span class="text-muted">—</span>{% endif %}
+                    </td>
+                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('sesiones.detalle', id_sesion=fila.sesion.id_sesion) }}" title="Ver la sesión"><i class="fas fa-eye"></i></a></td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">Todavía no te has registrado en ninguna sesión.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

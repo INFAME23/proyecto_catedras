@@ -21,6 +21,7 @@
 
 from flask import Blueprint, render_template, request
 
+from auth_helpers import ROL_ADMIN, rol_requerido
 from servicios.api_catedras import ErrorApi, crear, listar
 from servicios.carga_asistentes import (ErrorArchivo, construir_asistente, contenido_crudo,
                                         indice_de_programas, leer_filas, motivo_de)
@@ -28,7 +29,9 @@ from servicios.carga_asistentes import (ErrorArchivo, construir_asistente, conte
 carga_bp = Blueprint('carga', __name__)
 
 
+# v7.1: cargar personas masivamente es de ADMIN (antes era público).
 @carga_bp.route('/carga_datos', methods=['GET', 'POST'])
+@rol_requerido(ROL_ADMIN)
 def carga_datos():
     if request.method == 'GET':
         return render_template('carga_datos.html', resultado=None, error=None)

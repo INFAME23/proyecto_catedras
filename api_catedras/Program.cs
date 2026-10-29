@@ -348,7 +348,16 @@ builder.Services.AddScoped<IServicioPonencia, ServicioPonencia>();
 // ServicioUsuario (hashea la clave con BCrypt y resuelve el login).
 builder.Services.AddScoped<IRepositorioUsuario>(
     _ => new RepositorioUsuarioPostgres(cadenaConexion));
+// v7.1: ServicioUsuario recibe además el repositorio de los códigos de
+// recuperación de clave (RF-S5/RF-S6); DI lo inyecta por constructor.
+builder.Services.AddScoped<IRepositorioCodigoRecuperacion>(
+    _ => new RepositorioCodigoRecuperacionPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioUsuario, ServicioUsuario>();
+
+// v7.1 · D50: inscripción de una persona a una cátedra.
+builder.Services.AddScoped<IRepositorioInscripcionCatedra>(
+    _ => new RepositorioInscripcionCatedraPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioInscripcionCatedra, ServicioInscripcionCatedra>();
 
 // IRepositorioRolPorUsuario -> RepositorioRolPorUsuarioPostgres (llave
 // compuesta CON vigencia, ADR D16: se abre con POST y se cierra con PATCH),

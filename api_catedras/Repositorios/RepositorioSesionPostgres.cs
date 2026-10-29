@@ -66,13 +66,26 @@ public class RepositorioSesionPostgres : IRepositorioSesion
         return sesion;
     }
 
-    public async Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(Sesion sesion)
+    public async Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(
+        Sesion sesion, (int? MinutosAntes, int? MinutosDespues, long? FkUsuario)? enlaceInicial)
     {
+        // Maestro-detalle (Guía IA, Regla 1 · migración 044): 'sp_guardar_sesion'
+        // reutiliza 'sp_crear_sesion' y, si llega 'p_enlace', 'sp_emitir_enlace'
+        // (del script), en el MISMO CALL. Sin enlace (NULL) hace lo mismo que antes.
         const string sql = @"
-            CALL catedras.sp_crear_sesion(
+            CALL catedras.sp_guardar_sesion(
                 @FkCatedra, @Inicio, @Fin, @FkModalidad, @FkSede, @FkPeriodo,
                 @NumeroReunion, @NumeroReunionAsis, @Titulo, @FkEncuesta,
-                @Lugar, @EnlaceVirtual, @Cupo, @Estado, NULL);";
+                @Lugar, @EnlaceVirtual, @Cupo, @Estado, CAST(@Enlace AS jsonb), NULL);";
+
+        string? enlaceJson = enlaceInicial is null
+            ? null
+            : JsonSerializer.Serialize(new
+            {
+                minutos_antes = enlaceInicial.Value.MinutosAntes,
+                minutos_despues = enlaceInicial.Value.MinutosDespues,
+                fk_usuario = enlaceInicial.Value.FkUsuario,
+            });
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
@@ -94,6 +107,7 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             sesion.EnlaceVirtual,
             sesion.Cupo,
             sesion.Estado,
+            Enlace = enlaceJson,
         });
 
         var creada = JsonSerializer.Deserialize<Sesion>(json!)!;

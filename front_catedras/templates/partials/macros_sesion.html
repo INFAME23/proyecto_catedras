@@ -23,14 +23,16 @@
     roles       : lista cerrada de roles
     url_buscar  : a dónde va el GET de búsqueda (la misma página)
     url_asignar : a dónde va el POST de asignar
-    url_quitar  : a dónde va el POST de quitar                                #}
-{% macro ponentes(id_sesion, ponentes, candidatos, q, roles, url_buscar, url_asignar, url_quitar) %}
+    url_quitar  : a dónde va el POST de quitar
+    puede_editar: v7.1 · solo un ADMIN ve (y puede usar) asignar y quitar; los demás
+                  ven la lista de solo lectura                                #}
+{% macro ponentes(id_sesion, ponentes, candidatos, q, roles, url_buscar, url_asignar, url_quitar, puede_editar=False) %}
 <div class="card shadow-sm mb-4" id="ponentes">
     <div class="card-header fw-bold"><i class="fas fa-chalkboard-teacher me-2"></i>Ponentes y participantes</div>
     <div class="card-body p-0">
         {% if ponentes %}
         <table class="table align-middle mb-0">
-            <thead class="table-light"><tr><th>Persona</th><th>Código ASIS</th><th>Rol</th><th class="text-end">Quitar</th></tr></thead>
+            <thead class="table-light"><tr><th>Persona</th><th>Código ASIS</th><th>Rol</th>{% if puede_editar %}<th class="text-end">Quitar</th>{% endif %}</tr></thead>
             <tbody>
             {% for p in ponentes %}
             <tr>
@@ -40,6 +42,7 @@
                 </td>
                 <td>{{ p.asistente.id_asis if p.asistente and p.asistente.id_asis else '—' }}</td>
                 <td><span class="badge badge-primary">{{ p.rol }}</span></td>
+                {% if puede_editar %}
                 <td class="text-end">
                     {# ADR D19: la llave completa (sesión + asistente + rol) identifica la fila. #}
                     <form class="d-inline" method="post" action="{{ url_quitar }}"
@@ -49,6 +52,7 @@
                         <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-user-minus"></i></button>
                     </form>
                 </td>
+                {% endif %}
             </tr>
             {% endfor %}
             </tbody>
@@ -57,6 +61,7 @@
         <p class="text-muted text-center py-3 mb-0">Esta sesión todavía no tiene ponentes registrados.</p>
         {% endif %}
     </div>
+    {% if puede_editar %}
     <div class="card-footer bg-white" id="asignar">
         <h2 class="h6 fw-bold mt-2"><i class="fas fa-user-plus me-1"></i>Asignar una persona</h2>
         {# Paso 1 · buscar (GET a la misma página: la API filtra con ?q=). #}
@@ -91,5 +96,6 @@
         <p class="text-muted small mb-2">Busca primero a la persona; luego elígela de la lista.</p>
         {% endif %}
     </div>
+    {% endif %}
 </div>
 {% endmacro %}

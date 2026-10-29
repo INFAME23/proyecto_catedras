@@ -76,6 +76,16 @@ Verificada contra PostgreSQL real y la API real por HTTP
 `pruebas/correr_todo_v7.ps1` contra Docker y el tag `v7` (Fase 61 de
 `version7/8_tasks.md`). Guía: [version7/guia_ia_v7.md](version7/guia_ia_v7.md).
 
+### Subversión v7.1 (2026-10-29)
+
+Mantenimiento sobre V5–V7, **no es una V8** ni agrega recursos al mapa
+(37 tablas, 37 controladores): geolocalización obligatoria al autorregistrar
+la asistencia, panel de estudiante, cuentas de estudiante y ponente,
+cambio y recuperación de clave por correo, y `/admin` con categorías desplegables.
+Requisitos `RF-S1`…`RF-S7`, decisiones D38–D51 y pendientes:
+[version7_1/v7_1_subversion.md](version7_1/v7_1_subversion.md). Agrega las
+migraciones `045`–`049`, una tabla de apoyo (`codigo_recuperacion`, sin CRUD) y UN recurso nuevo de la API (`InscripcionCatedra`, tabla `inscripcion_catedra`): el mapa pasa de 37 a 38 controladores.
+
 ## 3. Salvedad: la FK circular con `usuario`
 
 `lote_carga_asistente` (V3) y `enlace_registro` (V5) tienen una FK a

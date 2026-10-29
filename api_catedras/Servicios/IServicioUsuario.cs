@@ -30,4 +30,19 @@ public interface IServicioUsuario
     /// inactivo o la clave no coincide (las tres causas se tratan IGUAL, ADR D27);
     /// si son válidas, devuelve el usuario y sus roles vigentes.</summary>
     Task<(Usuario Usuario, List<string> Roles)?> LoginAsync(UsuarioLogin peticion);
+
+    /// <summary>RF-S5 (v7.1). Cambia la clave sabiendo la actual. Devuelve false si la cuenta
+    /// está inactiva o 'clave_actual' no coincide (misma respuesta, ADR D27); true si cambió.
+    /// Usuario inexistente -> NoEncontradoExcepcion; clave nueva igual a la actual -> ArgumentException.</summary>
+    Task<bool> CambiarClaveAsync(long idUsuario, UsuarioCambiarClave peticion);
+
+    /// <summary>RF-S5/RF-S6 (v7.1). Pide un código de recuperación. Null si no hay una cuenta
+    /// activa con ese usuario o correo (el controlador responde igual que si la hubiera).
+    /// 'ip' mal escrita -> ArgumentException.</summary>
+    Task<(long IdCodigo, string Codigo, string EnviadoA, string Usuario)?> SolicitarRecuperacionAsync(
+        RecuperacionSolicitar peticion);
+
+    /// <summary>RF-S5/RF-S6 (v7.1). Valida el código y cambia la clave (hash BCrypt calculado aquí).
+    /// Código incorrecto/usado/vencido/agotado -> CodigoRecuperacionInvalidoExcepcion (400).</summary>
+    Task RestablecerClaveAsync(RecuperacionRestablecer peticion);
 }

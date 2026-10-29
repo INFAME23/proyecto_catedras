@@ -1,0 +1,73 @@
+{% extends 'admin/base_admin.html' %}
+{# Maestro-detalle #6: ENCUESTA -> sus PREGUNTAS ('orden' es único dentro
+   de la encuesta: uq_pregunta_ord). Cada pregunta, a su vez, es maestro
+   de sus opciones (#7): el ojo lleva a esa pantalla. #}
+{% block titulo %}Encuesta {{ encuesta.id_encuesta }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.encuestas_listar') }}">Encuesta</a></li>
+        <li class="breadcrumb-item active">{{ encuesta.id_encuesta }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div>
+        <h1 class="h3 fw-bold mb-1"><i class="fas fa-clipboard-list text-primary-custom me-2"></i>{{ encuesta.nombre }} <span class="badge badge-secondary">v{{ encuesta.version }}</span></h1>
+        <p class="text-muted mb-0 small">
+            Id {{ encuesta.id_encuesta }} · Vigente desde {{ encuesta.vigente_desde }} hasta {{ encuesta.vigente_hasta or '—' }}
+            · <span class="badge {{ 'badge-success' if encuesta.activa else 'badge-danger' }}">{{ 'Activa' if encuesta.activa else 'Inactiva' }}</span>
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.encuestas_editar', id_encuesta=encuesta.id_encuesta) }}"><i class="fas fa-edit me-1"></i>Editar</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin.respuestas_listar', fk_encuesta=encuesta.id_encuesta) }}"><i class="fas fa-poll me-1"></i>Respuestas</a>
+        <form method="post" action="{{ url_for('admin.encuestas_eliminar', id_encuesta=encuesta.id_encuesta) }}"
+              onsubmit="return confirm('¿Eliminar la encuesta {{ encuesta.id_encuesta }}?');">
+            <button class="btn btn-outline-danger" type="submit"><i class="fas fa-trash me-1"></i>Eliminar</button>
+        </form>
+    </div>
+</div>
+
+{# ---------------- Detalle: preguntas ---------------- #}
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="fas fa-question-circle me-2"></i>Preguntas <span class="badge badge-secondary ms-1">{{ preguntas|length }}</span></span>
+        <a class="btn btn-sm btn-primary" href="{{ url_for('admin.preguntas_nueva', fk_encuesta=encuesta.id_encuesta) }}"><i class="fas fa-plus me-1"></i>Nueva pregunta</a>
+    </div>
+    <div class="card-body p-0">
+        {% if preguntas %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Orden</th><th>Enunciado</th><th>Tipo</th><th>Obligatoria</th><th>Opciones</th><th class="text-end">Acciones</th></tr>
+                </thead>
+                <tbody>
+                    {% for p in preguntas %}
+                    <tr>
+                        <td class="fw-semibold">{{ p.orden }}</td>
+                        <td><a href="{{ url_for('admin.preguntas_detalle', id_pregunta=p.id_pregunta) }}">{{ p.enunciado }}</a></td>
+                        <td><span class="badge badge-secondary">{{ p.fk_tipo_pregunta }}</span></td>
+                        <td>{% if p.obligatoria %}<span class="badge badge-primary">Sí</span>{% else %}<span class="text-muted small">No</span>{% endif %}</td>
+                        <td>{{ p.cantidad_opciones or '—' }}</td>
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.preguntas_detalle', id_pregunta=p.id_pregunta) }}" title="Ver la pregunta con sus opciones"><i class="fas fa-eye"></i></a>
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.preguntas_editar', id_pregunta=p.id_pregunta) }}" title="Editar"><i class="fas fa-edit"></i></a>
+                            <form class="d-inline" method="post" action="{{ url_for('admin.preguntas_eliminar', id_pregunta=p.id_pregunta) }}"
+                                  onsubmit="return confirm('¿Eliminar la pregunta {{ p.id_pregunta }}? Sus opciones se borran con ella; si ya tiene respuestas, la base de datos no lo permitirá.');">
+                                <input type="hidden" name="volver" value="{{ request.path }}">
+                                <button class="btn btn-sm btn-outline-danger" type="submit" title="Eliminar"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">Esta encuesta todavía no tiene preguntas.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

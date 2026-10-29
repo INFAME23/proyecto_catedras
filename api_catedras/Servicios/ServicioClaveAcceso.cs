@@ -11,6 +11,7 @@
 //  datos que viajan como texto:
 //   · 'token' debe ser un uuid  -> si no, 400
 //   · 'ip' (si viene) debe ser una IP válida -> si no, 400
+//   · 'latitud' y 'longitud' (RF-S1, v7.1) deben venir en 'validar' -> si no, 400
 //
 //  Las excepciones de negocio de la BD (D25) NO se capturan aquí: suben como
 //  NpgsqlException y el controlador las responde con 500.
@@ -84,7 +85,15 @@ public class ServicioClaveAcceso : IServicioClaveAcceso
     {
         string? ip = ValidarIp(peticion.Ip);
 
+        // Latitud y longitud son obligatorias (RF-S1). El 422 de la petición ya
+        // las exige; el servicio no asume que viene de ese camino (lo llama
+        // también la prueba de capas) y lo vuelve a comprobar.
+        if (peticion.Latitud is null || peticion.Longitud is null)
+            throw new ArgumentException(
+                "Los campos 'latitud' y 'longitud' son obligatorios para registrar la asistencia.");
+
         return await _repositorio.ValidarAsync(
-            peticion.IdClave!.Value, peticion.Clave!, ip, peticion.UserAgent);
+            peticion.IdClave!.Value, peticion.Clave!,
+            peticion.Latitud.Value, peticion.Longitud.Value, ip, peticion.UserAgent);
     }
 }

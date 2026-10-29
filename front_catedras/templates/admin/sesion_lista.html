@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
 {% import 'partials/macros_sesion.html' as ms %}
 {% block titulo %}Sesiones · Administración{% endblock %}
 {% block contenido %}
@@ -7,8 +7,8 @@
         <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
         {% if fk_catedra %}
         <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_listar') }}">Cátedra</a></li>
-        <li class="breadcrumb-item"><a href="{{ url_for('admin.sesiones_listar') }}">Sesión</a></li>
-        <li class="breadcrumb-item active">{{ fk_catedra }}</li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_detalle', id_catedra=fk_catedra) }}">{{ fk_catedra }}</a></li>
+        <li class="breadcrumb-item active">Sesiones</li>
         {% else %}
         <li class="breadcrumb-item active">Sesión</li>
         {% endif %}
@@ -51,8 +51,8 @@
                 <tbody>
                     {% for s in sesiones %}
                     <tr>
-                        <td class="fw-semibold">{{ s.id_sesion }}</td>
-                        <td><a href="{{ url_for('admin.sesiones_listar', fk_catedra=s.fk_catedra) }}">{{ s.fk_catedra }}</a></td>
+                        <td class="fw-semibold"><a href="{{ url_for('admin.sesiones_detalle', id_sesion=s.id_sesion) }}">{{ s.id_sesion }}</a></td>
+                        <td><a href="{{ url_for('admin.catedras_detalle', id_catedra=s.fk_catedra) }}" title="Ver la cátedra con sus sesiones">{{ s.fk_catedra }}</a></td>
                         <td>{{ s.numero_reunion }}</td>
                         <td class="small">{{ s.inicio|fecha_hora }}</td>
                         <td class="small">{{ s.fin|fecha_hora }}</td>
@@ -61,6 +61,7 @@
                         <td>{{ s.fk_periodo }}</td>
                         <td>{{ ms.estado(s.estado) }}</td>
                         <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.sesiones_detalle', id_sesion=s.id_sesion) }}" title="Ver la sesión con sus enlaces y asistencias"><i class="fas fa-eye"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.ponencias_listar', fk_sesion=s.id_sesion) }}" title="Ponentes"><i class="fas fa-chalkboard-teacher"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.enlaces_listar', fk_sesion=s.id_sesion) }}" title="Enlace de registro (QR)"><i class="fas fa-qrcode"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.registros_listar', fk_sesion=s.id_sesion) }}#manual" title="Registros de asistencia"><i class="fas fa-clipboard-check"></i></a>

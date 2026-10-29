@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
 {% block titulo %}Respuestas de encuesta · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -31,8 +31,8 @@
                 <tbody>
                     {% for r in respuestas %}
                     <tr>
-                        <td class="fw-semibold">{{ r.id_respuesta }}</td>
-                        <td>{{ r.fk_registro }}</td>
+                        <td class="fw-semibold"><a href="{{ url_for('admin.respuestas_detalle', id_respuesta=r.id_respuesta) }}">{{ r.id_respuesta }}</a></td>
+                        <td><a href="{{ url_for('admin.registros_detalle', id_registro=r.fk_registro) }}" title="Ver el registro de asistencia">{{ r.fk_registro }}</a></td>
                         <td><a href="{{ url_for('admin.respuestas_listar', fk_encuesta=r.fk_encuesta) }}">{{ r.fk_encuesta }}</a></td>
                         <td class="small">{{ r.respondida_en|fecha_hora }}</td>
                         <td>{% if r.completa %}<span class="badge badge-success">Sí</span>{% else %}<span class="badge badge-secondary">No</span>{% endif %}</td>

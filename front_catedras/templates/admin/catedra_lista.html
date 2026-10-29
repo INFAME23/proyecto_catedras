@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
 {% block titulo %}Cátedras · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -38,15 +38,15 @@
                 <tbody>
                     {% for c in catedras %}
                     <tr>
-                        <td class="fw-semibold">{{ c.id_catedra }}</td>
+                        <td class="fw-semibold"><a href="{{ url_for('admin.catedras_detalle', id_catedra=c.id_catedra) }}">{{ c.id_catedra }}</a></td>
                         <td>{{ c.id_evento_asis }}</td>
-                        <td>{{ c.nombre }}</td>
+                        <td><a href="{{ url_for('admin.catedras_detalle', id_catedra=c.id_catedra) }}">{{ c.nombre }}</a></td>
                         <td class="small text-muted">{{ c.nombre_asis }}</td>
                         <td><span class="badge badge-secondary">{{ c.fk_tipo_evento }}</span></td>
                         <td>{{ c.fk_dependencia or '—' }}</td>
                         <td><span class="badge {{ 'badge-success' if c.activo else 'badge-danger' }}">{{ 'Sí' if c.activo else 'No' }}</span></td>
                         <td class="text-end text-nowrap">
-                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.sesiones_listar', fk_catedra=c.id_catedra) }}" title="Sesiones (v4)"><i class="fas fa-calendar-check"></i></a>
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.catedras_detalle', id_catedra=c.id_catedra) }}" title="Ver la cátedra con sus sesiones"><i class="fas fa-eye"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.catedras_editar', id_catedra=c.id_catedra) }}"><i class="fas fa-edit"></i></a>
                             <form class="d-inline" method="post" action="{{ url_for('admin.catedras_eliminar', id_catedra=c.id_catedra) }}"
                                   onsubmit="return confirm('¿Eliminar la cátedra {{ c.id_catedra }}? También se borrarán sus SESIONES (ON DELETE CASCADE).');">

@@ -1,4 +1,5 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
+{% import 'partials/filas_detalle.html' as fd %}
 {% block titulo %}{{ 'Nueva encuesta' if modo == 'nueva' else 'Editar encuesta' }} · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -48,6 +49,53 @@
                 <label class="form-check-label" for="activa">Activa</label>
             </div>
 
+            {# ---- Maestro-detalle #6 (y #7): las preguntas, cada una con sus opciones ---- #}
+            <hr class="my-4">
+            {% set existentes %}{% if preguntas_existentes %}
+                Ya tiene {{ preguntas_existentes|length }} pregunta{{ '' if preguntas_existentes|length == 1 else 's' }}:
+                {% for p in preguntas_existentes %}<a href="{{ url_for('admin.preguntas_detalle', id_pregunta=p.id_pregunta) }}">{{ p.orden }}. {{ p.enunciado|truncate(40) }}</a>{{ ' · ' if not loop.last }}{% endfor %}.
+                Las nuevas van después de la última.
+            {% endif %}{% endset %}
+            {% call(f) fd.bloque('preguntas', 'Preguntas', 'fa-question-circle', filas_preguntas, 'Agregar pregunta',
+                                 ayuda=('Se guardan JUNTO con la encuesta (y las opciones de cada pregunta), en una sola operación: si una falla, no se crea nada.'
+                                        if modo == 'nueva' else
+                                        'Cada pregunta nueva se guarda por su cuenta, con sus opciones: si una falla, vuelve aquí con el motivo.')
+                                       ~ ' El orden lo pone la posición de la fila.',
+                                 existentes=existentes) %}
+            <div class="row g-2">
+                <div class="col-md-8">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Enunciado</span>
+                        <input type="text" class="form-control form-control-sm" name="pre_enunciado" maxlength="300" required value="{{ f.enunciado if f else '' }}"></label>
+                </div>
+                <div class="col-md-4">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Tipo</span>
+                        <select class="form-select form-select-sm" name="pre_fk_tipo_pregunta" required>
+                            <option value="">-- Selecciona --</option>
+                            {% for t in tipos %}<option value="{{ t.id_tipo_pregunta }}" {% if f and f.fk_tipo_pregunta == t.id_tipo_pregunta %}selected{% endif %}>{{ t.id_tipo_pregunta }} · {{ t.nombre }}</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-4 col-md-2">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Obligatoria</span>
+                        <select class="form-select form-select-sm" name="pre_obligatoria">
+                            <option value="no">No</option>
+                            <option value="si" {% if f and f.obligatoria == 'si' %}selected{% endif %}>Sí</option>
+                        </select></label>
+                </div>
+                <div class="col-4 col-md-2">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Mínimo</span>
+                        <input type="number" class="form-control form-control-sm" name="pre_valor_min" value="{{ f.valor_min if f else '' }}"></label>
+                </div>
+                <div class="col-4 col-md-2">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Máximo</span>
+                        <input type="number" class="form-control form-control-sm" name="pre_valor_max" value="{{ f.valor_max if f else '' }}"></label>
+                </div>
+                <div class="col-md-6">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Opciones <span class="text-muted">(si es OPCION_UNICA: una por línea, «etiqueta» o «etiqueta;valor»)</span></span>
+                        <textarea class="form-control form-control-sm" name="pre_opciones" rows="2" placeholder="Sí;1&#10;No;0">{{ f.opciones if f else '' }}</textarea></label>
+                </div>
+            </div>
+            {% endcall %}
+
             {% if errores %}
             <div class="alert alert-danger py-2">
                 <ul class="mb-0 small">
@@ -58,7 +106,7 @@
 
             <div class="d-flex gap-2">
                 <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
-                <a class="btn btn-outline-secondary" href="{{ url_for('admin.encuestas_listar') }}">Cancelar</a>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.encuestas_detalle', id_encuesta=encuesta.id_encuesta) if modo == 'editar' else url_for('admin.encuestas_listar') }}">Cancelar</a>
             </div>
         </form>
     </div>

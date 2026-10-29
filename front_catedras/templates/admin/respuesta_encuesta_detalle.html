@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
 {% block titulo %}Respuesta {{ respuesta.id_respuesta if respuesta else '' }} · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -15,9 +15,10 @@
         <h1 class="h4 fw-bold mb-3"><i class="fas fa-poll text-primary-custom me-2"></i>Respuesta {{ respuesta.id_respuesta }}</h1>
         <dl class="row mb-0">
             <dt class="col-sm-3">Registro de asistencia</dt>
-            <dd class="col-sm-9">{{ respuesta.fk_registro }}</dd>
+            <dd class="col-sm-9"><a href="{{ url_for('admin.registros_detalle', id_registro=respuesta.fk_registro) }}">{{ respuesta.fk_registro }}</a></dd>
             <dt class="col-sm-3">Encuesta</dt>
-            <dd class="col-sm-9"><a href="{{ url_for('admin.respuestas_listar', fk_encuesta=respuesta.fk_encuesta) }}">{{ respuesta.fk_encuesta }}</a></dd>
+            <dd class="col-sm-9"><a href="{{ url_for('admin.encuestas_detalle', id_encuesta=respuesta.fk_encuesta) }}">{{ respuesta.fk_encuesta }}</a>
+                · <a class="small" href="{{ url_for('admin.respuestas_listar', fk_encuesta=respuesta.fk_encuesta) }}">otras respuestas de esta encuesta</a></dd>
             <dt class="col-sm-3">Respondida</dt>
             <dd class="col-sm-9">{{ respuesta.respondida_en|fecha_hora }} <span class="text-muted small">(hora de Colombia)</span></dd>
             <dt class="col-sm-3">Completa</dt>

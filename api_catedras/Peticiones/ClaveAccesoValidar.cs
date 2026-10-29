@@ -8,6 +8,9 @@
 //    si no coincide, la BD la rechaza y no conviene dar pistas de su forma.
 //  · ip (texto, el servicio la valida con IPAddress.TryParse -> 400) y
 //    user_agent: opcionales.
+//  · latitud y longitud (RF-S1, v7.1): OBLIGATORIAS. El navegador las entrega
+//    al autorregistrarse; faltantes o fuera de rango -> 422. La API no confía
+//    en que el front las haya exigido: las exige también (y la BD, otra vez).
 // ==========================================================================
 
 namespace ApiCatedras.Peticiones;
@@ -37,4 +40,16 @@ public class ClaveAccesoValidar
     [StringLength(300, ErrorMessage = "El campo 'user_agent' admite hasta 300 caracteres.")]
     [JsonPropertyName("user_agent")]
     public string? UserAgent { get; set; }
+
+    /// <summary>Grados, -90..90. Obligatoria (RF-S1).</summary>
+    [Required(ErrorMessage = "El campo 'latitud' es obligatorio.")]
+    [Range(-90, 90, ErrorMessage = "El campo 'latitud' debe estar entre -90 y 90.")]
+    [JsonPropertyName("latitud")]
+    public decimal? Latitud { get; set; }
+
+    /// <summary>Grados, -180..180. Obligatoria (RF-S1).</summary>
+    [Required(ErrorMessage = "El campo 'longitud' es obligatorio.")]
+    [Range(-180, 180, ErrorMessage = "El campo 'longitud' debe estar entre -180 y 180.")]
+    [JsonPropertyName("longitud")]
+    public decimal? Longitud { get; set; }
 }

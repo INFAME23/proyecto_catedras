@@ -82,8 +82,48 @@ public class ServicioEncuesta : IServicioEncuesta
             Activa = activa,
         };
 
+        // Maestro-detalle (Guía IA, Regla 1): preguntas iniciales, cada una con
+        // sus opciones (dos niveles). Viajan JUNTO con la encuesta al
+        // repositorio: un solo CALL a 'sp_guardar_encuesta'. El rango
+        // valor_min/valor_max se valida AQUÍ con la misma regla de
+        // ServicioPregunta (400 antes de tocar la BD). 'FkEncuesta' y
+        // 'FkPregunta' van en 0: los ids reales los fija el SP.
+        var preguntasIniciales = new List<(Pregunta Pregunta, IReadOnlyList<OpcionPregunta> Opciones)>();
+        foreach (var (p, i) in (peticion.Preguntas ?? []).Select((elemento, posicion) => (elemento, posicion)))
+        {
+            try
+            {
+                ServicioPregunta.ValidarRango(p.ValorMin, p.ValorMax);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new ArgumentException($"Pregunta {i + 1}: {ex.Message}");
+            }
+
+            var pregunta = new Pregunta
+            {
+                FkEncuesta = 0,
+                Enunciado = p.Enunciado!,
+                Orden = p.Orden!.Value,
+                FkTipoPregunta = p.FkTipoPregunta!,
+                Obligatoria = p.Obligatoria ?? false,
+                ValorMin = p.ValorMin,
+                ValorMax = p.ValorMax,
+            };
+            var opciones = (p.Opciones ?? [])
+                .Select(o => new OpcionPregunta
+                {
+                    FkPregunta = 0,
+                    Etiqueta = o.Etiqueta!,
+                    Valor = o.Valor,
+                    Orden = o.Orden!.Value,
+                })
+                .ToList();
+            preguntasIniciales.Add((pregunta, opciones));
+        }
+
         // [FLUJO 5] El repositorio inserta y devuelve el id que generó la BD.
-        return await _repositorio.CrearAsync(encuesta);
+        return await _repositorio.CrearAsync(encuesta, preguntasIniciales);
     }
 
     public async Task<int> ReemplazarAsync(long idEncuesta, EncuestaReemplazo peticion)

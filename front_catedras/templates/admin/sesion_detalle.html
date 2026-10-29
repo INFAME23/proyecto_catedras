@@ -1,0 +1,177 @@
+{% extends 'admin/base_admin.html' %}
+{% import 'partials/macros_sesion.html' as ms %}
+{% import 'partials/macros_geo.html' as geo %}
+{# Maestro-detalle #2 y #3: SESIÓN -> sus ENLACES DE REGISTRO y sus
+   REGISTROS DE ASISTENCIA. Todo lo que se hace aquí (emitir, revocar,
+   registrar a mano) regresa a esta misma pantalla con 'volver'. #}
+{% block titulo %}Sesión {{ sesion.id_sesion }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_listar') }}">Cátedra</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_detalle', id_catedra=sesion.fk_catedra) }}">{{ sesion.fk_catedra }}</a></li>
+        <li class="breadcrumb-item active">Sesión {{ sesion.id_sesion }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div>
+        <h1 class="h3 fw-bold mb-1"><i class="fas fa-calendar-check text-primary-custom me-2"></i>Reunión {{ sesion.numero_reunion }}{% if sesion.titulo %} · {{ sesion.titulo }}{% endif %}</h1>
+        <p class="mb-1">
+            <a href="{{ url_for('admin.catedras_detalle', id_catedra=sesion.fk_catedra) }}">{{ catedra.nombre if catedra else 'Cátedra ' ~ sesion.fk_catedra }}</a>
+            {% if catedra %}<span class="badge badge-secondary">{{ catedra.id_evento_asis }}</span>{% endif %}
+        </p>
+        <p class="text-muted mb-0 small">
+            Id {{ sesion.id_sesion }} · {{ sesion.inicio|fecha_hora }} a {{ sesion.fin|fecha_hora }}
+            · {{ sesion.fk_modalidad }} · Sede {{ sesion.fk_sede }} · Periodo {{ sesion.fk_periodo }}
+            · {{ ms.estado(sesion.estado) }}
+        </p>
+        <p class="text-muted mb-0 small">
+            {% if sesion.lugar %}Lugar: {{ sesion.lugar }} · {% endif %}
+            {% if sesion.cupo %}Cupo: {{ sesion.cupo }} · {% endif %}
+            Encuesta: {% if sesion.fk_encuesta %}<a href="{{ url_for('admin.encuestas_detalle', id_encuesta=sesion.fk_encuesta) }}">{{ sesion.fk_encuesta }}</a>{% else %}sin encuesta{% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.sesiones_editar', id_sesion=sesion.id_sesion) }}"><i class="fas fa-edit me-1"></i>Editar</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin.ponencias_listar', fk_sesion=sesion.id_sesion) }}"><i class="fas fa-chalkboard-teacher me-1"></i>Ponentes</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('sesiones.detalle', id_sesion=sesion.id_sesion) }}"><i class="fas fa-external-link-alt me-1"></i>Página pública</a>
+        <form method="post" action="{{ url_for('admin.sesiones_eliminar', id_sesion=sesion.id_sesion) }}"
+              onsubmit="return confirm('¿Eliminar la sesión {{ sesion.id_sesion }}? Sus ponencias se borrarán también. Si ya tiene registros de asistencia o un lote de migración, la base de datos NO lo permitirá.');">
+            <input type="hidden" name="fk_catedra" value="{{ sesion.fk_catedra }}">
+            <input type="hidden" name="volver" value="{{ url_for('admin.catedras_detalle', id_catedra=sesion.fk_catedra) }}">
+            <button class="btn btn-outline-danger" type="submit"><i class="fas fa-trash me-1"></i>Eliminar</button>
+        </form>
+    </div>
+</div>
+
+{# ---------------- Detalle #2: enlaces de registro (se emiten y se revocan) ---------------- #}
+<div class="card shadow-sm mb-4" id="enlaces">
+    <div class="card-header fw-bold"><i class="fas fa-qrcode me-2"></i>Enlaces de registro <span class="badge badge-secondary ms-1">{{ enlaces|length }}</span></div>
+    <div class="card-body border-bottom">
+        <form class="row g-2 align-items-end" method="post" action="{{ url_for('admin.enlaces_emitir') }}">
+            <input type="hidden" name="fk_sesion" value="{{ sesion.id_sesion }}">
+            <input type="hidden" name="volver" value="{{ request.path }}#enlaces">
+            <div class="col-md-5">
+                <label class="form-label small mb-1" for="minutos_antes">Abre (min antes)</label>
+                <input type="number" min="0" max="1440" class="form-control" id="minutos_antes" name="minutos_antes" placeholder="por defecto">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label small mb-1" for="minutos_despues">Cierra (min después)</label>
+                <input type="number" min="0" max="1440" class="form-control" id="minutos_despues" name="minutos_despues" placeholder="por defecto">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100" type="submit"><i class="fas fa-plus me-1"></i>Emitir</button>
+            </div>
+        </form>
+        <div class="form-text">Emitir un enlace nuevo revoca el anterior de esta sesión (RN-14). La ventana se cuenta desde el inicio y el fin de la sesión.</div>
+    </div>
+    <div class="card-body p-0">
+        {% if enlaces %}
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="table-light"><tr><th>Id</th><th>Estado</th><th>Ventana</th><th>Enlace para compartir</th><th class="text-end">Acciones</th></tr></thead>
+                <tbody>
+                {% for e in enlaces %}
+                <tr>
+                    <td class="fw-semibold">{{ e.id_enlace }}</td>
+                    <td>
+                        {% if e.estado == 'Vigente' %}<span class="badge badge-success">Vigente</span>
+                        {% elif e.estado == 'Revocado' %}<span class="badge badge-danger">Revocado</span>
+                        {% else %}<span class="badge badge-warning">{{ e.estado }}</span>{% endif %}
+                    </td>
+                    <td class="small">{{ e.ventana_desde|fecha_hora }}<br>{{ e.ventana_hasta|fecha_hora }}</td>
+                    <td class="small">
+                        {% if e.estado == 'Revocado' %}<span class="text-muted">— (ya no sirve)</span>
+                        {% else %}<a href="{{ e.enlace_publico }}" target="_blank" rel="noopener"><code>{{ e.token }}</code></a>{% endif %}
+                    </td>
+                    <td class="text-end">
+                        {% if e.estado != 'Revocado' %}
+                        <form class="d-inline" method="post" action="{{ url_for('admin.enlaces_revocar', id_enlace=e.id_enlace) }}"
+                              onsubmit="return confirm('¿Revocar el enlace {{ e.id_enlace }}? Nadie podrá registrarse con él.');">
+                            <input type="hidden" name="volver" value="{{ request.path }}#enlaces">
+                            <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-ban me-1"></i>Revocar</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}<p class="text-muted text-center py-3 mb-0">Esta sesión no tiene enlaces emitidos.</p>{% endif %}
+    </div>
+</div>
+
+{# ---------------- Detalle #3: registros de asistencia (auditoría: no se editan) ---------------- #}
+<div class="card shadow-sm mb-4" id="registros">
+    <div class="card-header fw-bold"><i class="fas fa-clipboard-check me-2"></i>Registros de asistencia <span class="badge badge-secondary ms-1">{{ registros|length }}</span></div>
+    <div class="card-body border-bottom">
+        <p class="small fw-semibold mb-2">Registrar asistencia a mano</p>
+        {# Regla 2: la persona se busca (la API filtra con ?q=) y se elige de la lista. #}
+        <form class="d-flex gap-2 mb-2" method="get" action="{{ request.path }}#registros">
+            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Buscar persona por nombre, apellido o código ASIS" autocomplete="off">
+            <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
+        </form>
+        {% if candidatos %}
+        <form class="row g-2 align-items-end" method="post" action="{{ url_for('admin.registros_nuevo') }}">
+            <input type="hidden" name="fk_sesion" value="{{ sesion.id_sesion }}">
+            <input type="hidden" name="volver" value="{{ request.path }}#registros">
+            <div class="col-md-6">
+                <label class="form-label small mb-1" for="fk_asistente_nuevo">Persona ({{ candidatos|length }} resultado{{ '' if candidatos|length == 1 else 's' }})</label>
+                <select class="form-select" id="fk_asistente_nuevo" name="fk_asistente" required>
+                    {% for a in candidatos %}
+                    <option value="{{ a.id_asistente }}">{{ a.id_asistente }} · {{ a.nombres }} {{ a.apellidos }}{% if a.id_asis %} · {{ a.id_asis }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1" for="origen">Origen</label>
+                <select class="form-select" id="origen" name="origen" required>
+                    <option value="MANUAL">MANUAL</option>
+                    <option value="IMPORTADO">IMPORTADO</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-primary w-100" type="submit"><i class="fas fa-plus me-1"></i>Registrar</button>
+            </div>
+        </form>
+        <div class="form-text">La persona debe tener una vinculación vigente (RN-07); si no, la base de datos lo rechaza y se muestra el motivo.</div>
+        {% elif q %}
+        <p class="text-muted small mb-0">Nadie coincide con «{{ q }}».</p>
+        {% endif %}
+    </div>
+    <div class="card-body p-0">
+        {% if registros %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Id</th><th>Asistente</th><th>Registrado</th><th>Origen</th><th>Vinculación</th><th>Programa</th><th>Ubicación</th>{% if sesion.fk_encuesta %}<th>Encuesta</th>{% endif %}<th class="text-end"></th></tr>
+                </thead>
+                <tbody>
+                    {% for r in registros %}
+                    <tr>
+                        <td class="fw-semibold"><a href="{{ url_for('admin.registros_detalle', id_registro=r.id_registro) }}">{{ r.id_registro }}</a></td>
+                        <td><a href="{{ url_for('admin.asistentes_detalle', id_asistente=r.fk_asistente) }}">{{ r.fk_asistente }}</a></td>
+                        <td class="small">{{ r.registrado_en|fecha_hora }}</td>
+                        <td><span class="badge badge-secondary">{{ r.origen }}</span></td>
+                        <td>{{ r.fk_vinculacion_snapshot }}</td>
+                        <td>{{ r.fk_programa_snapshot or '—' }}</td>
+                        <td class="small">{{ geo.ubicacion(r) }}</td>
+                        {% if sesion.fk_encuesta %}
+                        <td>{% if r.id_respuesta %}<span class="badge badge-success">Respondida</span>{% else %}<span class="text-muted small">Pendiente</span>{% endif %}</td>
+                        {% endif %}
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.registros_detalle', id_registro=r.id_registro) }}" title="Ver el registro y su respuesta de encuesta"><i class="fas fa-eye"></i></a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}<p class="text-muted text-center py-3 mb-0">Nadie ha registrado asistencia en esta sesión.</p>{% endif %}
+        <p class="form-text px-3 pb-2 mb-0">Horas en hora de Colombia. Un registro de asistencia es de auditoría: no se edita ni se elimina.</p>
+    </div>
+</div>
+{% endblock %}

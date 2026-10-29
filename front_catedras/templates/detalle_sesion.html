@@ -58,6 +58,22 @@
     </div>
 </div>
 
+{# v7.1 · el estudiante se registra desde aquí (no solo ve la información). #}
+{% if es_estudiante %}
+<div class="alert {{ 'alert-success' if token_registro else 'alert-light border' }} d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <span class="small">
+        <i class="fas fa-user-check me-1"></i>
+        {% if token_registro %}El registro de asistencia de esta sesión está abierto. Te pediremos tu ubicación y te enviaremos una clave por correo.
+        {% else %}El registro de asistencia no está abierto ahora (la sesión no tiene un enlace vigente). Si el organizador te compartió un enlace, <a href="{{ url_for('registro.inicio') }}">pégalo aquí</a>.{% endif %}
+    </span>
+    {% if token_registro %}
+    <a class="btn btn-sm btn-success" href="{{ url_for('registro.solicitar', token=token_registro) }}">
+        <i class="fas fa-user-check me-1"></i>Registrar mi asistencia
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+
 {% if sesion.fk_encuesta %}
 <div class="alert {{ 'alert-info' if mostrar_encuesta else 'alert-light border' }} d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
     <span class="small">
@@ -98,7 +114,8 @@
 {{ ms.ponentes(sesion.id_sesion, ponentes, candidatos, q, roles,
                url_for('sesiones.detalle', id_sesion=sesion.id_sesion),
                url_for('sesiones.asignar', id_sesion=sesion.id_sesion),
-               url_for('sesiones.quitar', id_sesion=sesion.id_sesion)) }}
+               url_for('sesiones.quitar', id_sesion=sesion.id_sesion),
+               puede_editar) }}
 
 <a class="btn btn-outline-primary" href="{{ url_for('catedras.detalle', id_catedra=sesion.fk_catedra) }}">
     <i class="fas fa-arrow-left me-1"></i>Volver al calendario de la cátedra

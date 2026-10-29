@@ -1,4 +1,5 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
+{% import 'partials/filas_detalle.html' as fd %}
 {% block titulo %}{{ 'Nuevo programa' if modo == 'nueva' else 'Editar programa' }} · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -54,17 +55,22 @@
                 <label class="form-check-label" for="activo">Activo</label>
             </div>
 
-            {# Retrofit V2 (Guía IA, Regla 1): alias iniciales, solo al CREAR.
-               Se guardan en la misma transacción que el programa. Para agregar
-               alias a un programa que ya existe se usa "Alias de programa". #}
-            {% if modo == 'nueva' %}
-            <div class="mb-3">
-                <label class="form-label" for="alias">Alias iniciales <span class="text-muted small">(opcional)</span></label>
-                <textarea class="form-control" id="alias" name="alias" rows="3"
-                          placeholder="ingenieria de datos&#10;ing. datos y software">{% if programa and programa.alias %}{% for a in programa.alias %}{{ a.texto_normalizado }}{% if not loop.last %}&#10;{% endif %}{% endfor %}{% endif %}</textarea>
-                <div class="form-text">Uno por línea. Se guardan junto con el programa: si alguno ya existe, no se crea nada (ni el programa ni los alias).</div>
-            </div>
-            {% endif %}
+            {# ---- Maestro-detalle #10: los alias, en el MISMO formulario ----
+               Retrofit V2 (Guía IA, Regla 1): al CREAR se guardan en la misma
+               transacción que el programa. Al EDITAR, cada alias nuevo aparte. #}
+            {% set existentes %}{% if alias_existentes %}
+                Ya tiene {{ alias_existentes|length }} alias: {% for a in alias_existentes %}«{{ a.texto_normalizado }}»{{ ', ' if not loop.last }}{% endfor %}.
+                Un alias no se edita; se borra en <a href="{{ url_for('admin.programas_detalle', codigo=programa.codigo) }}">la pantalla del programa</a>.
+            {% endif %}{% endset %}
+            {% call(f) fd.bloque('alias', 'Alias (nombres alternos)', 'fa-tags', filas_alias, 'Agregar alias',
+                                 ayuda=('Se guardan JUNTO con el programa: si alguno ya existe, no se crea nada (ni el programa ni los alias).'
+                                        if modo == 'nueva' else
+                                        'Cada alias nuevo se guarda por su cuenta: si uno ya existe, vuelve aquí con el motivo.'),
+                                 existentes=existentes) %}
+            <label class="w-100"><span class="form-label small d-block mb-1">Texto normalizado</span>
+                <input type="text" class="form-control form-control-sm" name="ali_texto_normalizado" maxlength="200" required
+                       placeholder="p. ej. ing. datos y software" value="{{ f.texto_normalizado if f else '' }}"></label>
+            {% endcall %}
 
             {% if errores %}
             <div class="alert alert-danger py-2">
@@ -74,7 +80,7 @@
 
             <div class="d-flex gap-2">
                 <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
-                <a class="btn btn-outline-secondary" href="{{ url_for('admin.programas_listar') }}">Cancelar</a>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.programas_detalle', codigo=programa.codigo) if modo == 'editar' else url_for('admin.programas_listar') }}">Cancelar</a>
             </div>
         </form>
     </div>

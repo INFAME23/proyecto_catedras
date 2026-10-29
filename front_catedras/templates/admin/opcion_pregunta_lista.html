@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
 {% block titulo %}Opciones de pregunta · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -33,7 +33,7 @@
                     {% for o in opciones %}
                     <tr>
                         <td class="fw-semibold">{{ o.id_opcion }}</td>
-                        <td><a href="{{ url_for('admin.opciones_listar', fk_pregunta=o.fk_pregunta) }}">{{ o.fk_pregunta }}</a></td>
+                        <td><a href="{{ url_for('admin.preguntas_detalle', id_pregunta=o.fk_pregunta) }}" title="Ver la pregunta con sus opciones">{{ o.fk_pregunta }}</a></td>
                         <td>{{ o.orden }}</td>
                         <td>{{ o.etiqueta }}</td>
                         <td>{{ o.valor if o.valor is not none else '—' }}</td>
