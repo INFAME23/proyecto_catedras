@@ -14,17 +14,23 @@
 #  'solicitar'. En producción llegaría por correo; aquí se MUESTRA en pantalla
 #  para simular el envío. El front nunca la guarda: ni en sesión ni en disco.
 #
+#  v7.1 · RF-S1: 'validar' exige además la ubicación del navegador
+#  (campos ocultos 'latitud' y 'longitud', que llena static/geolocalizacion.js).
+#  Sin ella no se registra la asistencia; ver el comentario de ese archivo.
+#
 #  Las 5 razones por las que 'validar' puede fallar (clave incorrecta, usada,
 #  expirada, cupo agotado, sin vinculación vigente) llegan como un 500 de la
 #  API (ADR D25); el texto de la razón viene en 'detalle' y se muestra tal cual.
 # ==========================================================================
 
 import ipaddress
+import math
 import re
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
-from servicios.api_catedras import ErrorApi, crear
+from auth_helpers import ROL_ESTUDIANTE, sesion_activa, tiene_rol, usuario_actual
+from servicios.api_catedras import ErrorApi, crear, obtener
 
 registro_bp = Blueprint('registro', __name__)
 
@@ -41,12 +47,40 @@ def _ip_cliente():
         return None
 
 
+def _ubicacion_del_formulario():
+    """(latitud, longitud) del formulario como números, o None si faltan,
+    no son números finitos o están fuera de rango. La API y la BD las
+    vuelven a validar; aquí solo se evita viajar con basura."""
+    try:
+        latitud = float(request.form.get('latitud', ''))
+        longitud = float(request.form.get('longitud', ''))
+    except ValueError:
+        return None
+    if not (math.isfinite(latitud) and math.isfinite(longitud)):
+        return None
+    if not (-90 <= latitud <= 90 and -180 <= longitud <= 180):
+        return None
+    return latitud, longitud
+
+
 def _motivo(ex):
     """Texto para mostrar de un error de la API: la razón de negocio (detalle)
     si existe; si no, el mensaje general."""
     if ex.codigo is None:          # no hubo respuesta: la API está caída o inalcanzable
         return 'No se pudo contactar el servicio de registro. Intenta de nuevo en un momento.'
     return (ex.detalle or ex.mensaje or 'No se pudo completar la operación.').strip()
+
+
+def _identificador_del_estudiante():
+    """v7.1 · Si quien llega tiene sesión de ESTUDIANTE, su código ASIS para
+    precargar el formulario (solo comodidad: la clave sigue yendo a su correo,
+    así que escribir otro código no sirve de nada). '' si no aplica."""
+    if not (sesion_activa() and tiene_rol(ROL_ESTUDIANTE)):
+        return ''
+    try:
+        return obtener('Asistente', usuario_actual()['fk_asistente']).get('id_asis') or ''
+    except (ErrorApi, KeyError, TypeError):
+        return ''
 
 
 def _token_o_404(token):
@@ -75,7 +109,8 @@ def solicitar(token):
     token = _token_o_404(token)
 
     if request.method == 'GET':
-        return render_template('registro_solicitar.html', token=token, identificador='')
+        return render_template('registro_solicitar.html', token=token,
+                               identificador=_identificador_del_estudiante())
 
     identificador = request.form.get('identificador', '').strip()
     try:
@@ -109,12 +144,25 @@ def validar(token):
         abort(400)
     clave = request.form.get('clave', '').strip()
 
+    # v7.1 · RF-S1: la ubicación es obligatoria. static/geolocalizacion.js ya
+    # bloquea el botón sin ella; esto es la segunda barrera (el navegador no es
+    # de fiar). Se corta ANTES de llamar a la API para no gastar un intento
+    # de la clave.
+    ubicacion = _ubicacion_del_formulario()
+    if ubicacion is None:
+        flash('Falta tu ubicación: es obligatoria para registrar la asistencia. '
+              'Permite el acceso a la ubicación en el navegador y vuelve a intentarlo.', 'error')
+        return render_template('registro_validar.html', token=token, id_clave=id_clave,
+                               clave=None, enviado_a=None, registrado=False)
+
     try:
         crear('ClaveAcceso/validar', {
             'id_clave': id_clave,
             'clave': clave,
             'ip': _ip_cliente(),
             'user_agent': (request.headers.get('User-Agent') or '')[:300] or None,
+            'latitud': ubicacion[0],
+            'longitud': ubicacion[1],
         })
     except ErrorApi as ex:
         # Cualquiera de las 5 razones de rechazo. La clave original NO se

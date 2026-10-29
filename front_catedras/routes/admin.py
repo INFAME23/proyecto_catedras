@@ -25,6 +25,9 @@
 
 from datetime import datetime, timezone
 
+import secrets
+import string
+
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
 from auth_helpers import ROL_ADMIN, exigir_rol, usuario_actual
@@ -2397,6 +2400,97 @@ def usuarios_nuevo():
 
     flash(f"Usuario '{datos['usuario']}' creado.", 'exito')
     return redirect(url_for('admin.usuarios_listar'))
+
+
+# ==========================================================================
+#  v7.1 · NUEVO PONENTE EN UN PASO  (D48)
+# --------------------------------------------------------------------------
+#  El administrador da de alta a un ponente SIN buscarlo antes en la base de
+#  datos: escribe sus datos y la pantalla crea, en este orden, la persona
+#  (Asistente), su cuenta (Usuario) y el rol PONENTE. Si un paso falla se
+#  deshacen los anteriores (la API no tiene una operación que lo haga todo
+#  junto, así que se compensa aquí) para no dejar personas o cuentas a medias.
+#  Al terminar se muestra UNA vez el usuario y la clave temporal para
+#  entregárselos; la clave no se guarda en ningún lado del front.
+# ==========================================================================
+
+def _clave_temporal():
+    """12 caracteres, sin los que se confunden al dictarlos (0/O, 1/l/I)."""
+    alfabeto = ''.join(c for c in string.ascii_letters + string.digits if c not in '0O1lI')
+    return ''.join(secrets.choice(alfabeto) for _ in range(12))
+
+
+def _deshacer(pasos):
+    """Borra lo ya creado, del último al primero. Un fallo aquí no se oculta:
+    se avisa para que el administrador lo revise a mano."""
+    for recurso, id_valor in reversed(pasos):
+        try:
+            eliminar(recurso, id_valor)
+        except ErrorApi:
+            flash(f"No se pudo deshacer {recurso} {id_valor}: revísalo en /admin.", 'error')
+
+
+@admin_bp.route('/ponentes/nuevo', methods=['GET', 'POST'])
+def ponentes_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/ponente_nuevo.html', f={'es_externo': True}, errores=[], creado=None)
+
+    f = {campo: request.form.get(campo, '').strip() for campo in
+         ('nombres', 'apellidos', 'correo_institucional', 'correo_personal', 'celular', 'id_asis', 'usuario')}
+    f['es_externo'] = request.form.get('es_externo') == 'on'
+    clave = request.form.get('clave', '') or _clave_temporal()
+
+    def volver(ex=None, mensaje=None):
+        if ex is not None:
+            _avisar(ex)
+        if mensaje:
+            flash(mensaje, 'error')
+        return render_template('admin/ponente_nuevo.html', f=f, errores=ex.errores if ex else [], creado=None)
+
+    if not (f['correo_institucional'] or f['correo_personal']):
+        return volver(mensaje='Escribe al menos un correo: a él llegará el código si el ponente olvida su clave.')
+
+    datos = {'nombres': f['nombres'], 'apellidos': f['apellidos'], 'es_externo': f['es_externo'], 'activo': True}
+    for campo in ('correo_institucional', 'correo_personal', 'celular', 'id_asis'):
+        if f[campo]:
+            datos[campo] = f[campo]
+
+    creados = []          # (recurso, id) en el orden en que se crearon
+    try:
+        asistente = crear('Asistente', datos)
+        creados.append(('Asistente', asistente['id_asistente']))
+        usuario = crear('Usuario', {'fk_asistente': asistente['id_asistente'], 'usuario': f['usuario'],
+                                    'clave': clave, 'activo': True})
+        creados.append(('Usuario', usuario['id_usuario']))
+        crear('RolPorUsuario', {'fk_usuario': usuario['id_usuario'], 'fk_rol': 'PONENTE'})
+    except ErrorApi as ex:
+        _deshacer(creados)
+        return volver(ex)
+
+    return render_template('admin/ponente_nuevo.html', f=f, errores=[], creado={
+        'id_asistente': asistente['id_asistente'], 'id_usuario': usuario['id_usuario'],
+        'usuario': f['usuario'], 'clave': clave,
+        'nombre': f"{f['nombres']} {f['apellidos']}",
+        'correo': f['correo_institucional'] or f['correo_personal']})
+
+
+@admin_bp.route('/inscripciones')
+def inscripciones_listar():
+    """v7.1 · D50 · Inscripciones de estudiantes a cátedras (solo lectura).
+    Filtros: ?fk_catedra=, ?fk_asistente= y ?todas=1 (incluye las canceladas)."""
+    fk_catedra = _entero_o_none(request.args.get('fk_catedra'))
+    fk_asistente = _entero_o_none(request.args.get('fk_asistente'))
+    todas = request.args.get('todas') == '1'
+    filtros = {'fkCatedra': fk_catedra, 'fkAsistente': fk_asistente}
+    if todas:
+        filtros['soloActivas'] = 'false'
+    try:
+        inscripciones = listar('InscripcionCatedra', limite=1000, **filtros)
+    except ErrorApi as ex:
+        _avisar(ex)
+        inscripciones = []
+    return render_template('admin/inscripcion_lista.html', inscripciones=inscripciones,
+                           fk_catedra=fk_catedra, fk_asistente=fk_asistente, todas=todas)
 
 
 @admin_bp.route('/usuarios/<int:id_usuario>/editar', methods=['GET', 'POST'])

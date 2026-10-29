@@ -7,8 +7,10 @@ from routes.catedras import catedras_bp
 from routes.registro import registro_bp
 from routes.admin import admin_bp
 from routes.ponente import ponente_bp
+from routes.ponente_catedras import ponente_catedras_bp   # v7.1: el ponente crea y se asigna a cátedras
 from routes.estudiante import estudiante_bp
 from routes.auth import auth_bp
+from routes.perfil import perfil_bp   # v7.1: cambiar y recuperar la clave
 from routes.carga import carga_bp   # v3: pantalla de carga de datos
 from routes.sesiones import sesiones_bp   # v4: detalle de sesión y sus ponentes
 from routes.encuestas import encuestas_bp   # v6: responder la encuesta de una sesión
@@ -28,8 +30,10 @@ fechas.registrar_en(app)
 app.register_blueprint(catedras_bp, url_prefix='/')
 app.register_blueprint(registro_bp, url_prefix='/')
 app.register_blueprint(auth_bp, url_prefix='/')
+app.register_blueprint(perfil_bp, url_prefix='/')
 app.register_blueprint(admin_bp, url_prefix='/admin')
 app.register_blueprint(ponente_bp, url_prefix='/ponente')
+app.register_blueprint(ponente_catedras_bp, url_prefix='/ponente/catedras')
 app.register_blueprint(estudiante_bp, url_prefix='/estudiante')
 app.register_blueprint(carga_bp, url_prefix='/')
 app.register_blueprint(sesiones_bp, url_prefix='/')
@@ -38,7 +42,7 @@ app.register_blueprint(encuestas_bp, url_prefix='/')
 
 @app.errorhandler(403)
 def sin_permiso(e):
-    # v5: usuario con sesión pero sin el rol ADMIN intentando entrar a /admin.
+    # v5/v7.1: usuario con sesión pero sin el rol que pide la zona (/admin, /estudiante, /ponente).
     return render_template('errors/403.html'), 403
 
 

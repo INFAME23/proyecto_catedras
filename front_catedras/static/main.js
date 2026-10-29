@@ -1,7 +1,9 @@
 ﻿document.addEventListener('DOMContentLoaded', function() {
     console.log('Catedras USB - Aplicacion cargada');
 
-    document.querySelectorAll('.alert').forEach(alert => {
+    // Solo los mensajes flash (los '.alert-dismissible' de partials/mensajes.html) se quitan solos.
+    // Los demás '.alert' son avisos y acciones permanentes (inscribirse, registrar asistencia, errores...).
+    document.querySelectorAll('.alert.alert-dismissible').forEach(alert => {
         setTimeout(() => {
             alert.style.transition = 'opacity 0.5s ease';
             alert.style.opacity = '0';

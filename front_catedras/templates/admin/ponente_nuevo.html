@@ -1,0 +1,97 @@
+{% extends 'admin/base_admin.html' %}
+{% block titulo %}Nuevo ponente · Administración{% endblock %}
+{# ==========================================================================
+   ponente_nuevo.html  ·  v7.1 (D48)
+   Alta de un ponente en un solo formulario: persona + cuenta + rol PONENTE.
+   Con 'creado' muestra las credenciales UNA vez (no se guardan en ningún lado).
+   ========================================================================== #}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.usuarios_listar') }}">Usuario</a></li>
+        <li class="breadcrumb-item active">Nuevo ponente</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-user-plus text-primary-custom me-2"></i>Nuevo ponente</h1>
+
+{% if creado %}
+<div class="card shadow-sm border-success">
+    <div class="card-body">
+        <h2 class="h5 fw-bold text-success"><i class="fas fa-check-circle me-2"></i>Ponente creado: {{ creado.nombre }}</h2>
+        <p class="text-muted">Entrégale estas credenciales. <strong>La clave solo se muestra ahora</strong>; si se pierde, se fija una nueva en
+            <a href="{{ url_for('admin.usuarios_editar', id_usuario=creado.id_usuario) }}">Editar usuario</a>.</p>
+        <dl class="row mb-3">
+            <dt class="col-sm-3">Ingresa en</dt><dd class="col-sm-9"><code>{{ url_for('auth.login', _external=True) }}</code></dd>
+            <dt class="col-sm-3">Usuario</dt><dd class="col-sm-9"><code id="cred-usuario">{{ creado.usuario }}</code></dd>
+            <dt class="col-sm-3">Clave temporal</dt><dd class="col-sm-9"><code id="cred-clave">{{ creado.clave }}</code></dd>
+        </dl>
+        <p class="small text-muted mb-3"><i class="fas fa-info-circle me-1"></i>Que la cambie al entrar (menú → Cambiar clave). Si la olvida, el código de recuperación llega a <strong>{{ creado.correo }}</strong>.</p>
+        <button class="btn btn-outline-primary" type="button" id="copiar"><i class="fas fa-copy me-1"></i>Copiar usuario y clave</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin.ponentes_nuevo') }}"><i class="fas fa-user-plus me-1"></i>Crear otro</a>
+        <a class="btn btn-primary" href="{{ url_for('admin.asistentes_detalle', id_asistente=creado.id_asistente) }}">Ver la persona</a>
+    </div>
+</div>
+<script>
+document.getElementById('copiar').addEventListener('click', function () {
+    var texto = 'Usuario: ' + document.getElementById('cred-usuario').textContent +
+                '\nClave temporal: ' + document.getElementById('cred-clave').textContent;
+    if (navigator.clipboard) { navigator.clipboard.writeText(texto); this.textContent = 'Copiado'; }
+});
+</script>
+{% else %}
+<p class="text-muted">Escribe los datos del ponente: se crean la persona, su cuenta y el rol <span class="badge badge-primary">PONENTE</span> de una vez. No hace falta buscarlo antes.</p>
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post" action="{{ url_for('admin.ponentes_nuevo') }}" autocomplete="off">
+            <h2 class="h6 fw-bold">La persona</h2>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6"><label class="form-label" for="nombres">Nombres</label>
+                    <input class="form-control" id="nombres" name="nombres" required maxlength="100" value="{{ f.nombres or '' }}"></div>
+                <div class="col-md-6"><label class="form-label" for="apellidos">Apellidos</label>
+                    <input class="form-control" id="apellidos" name="apellidos" required maxlength="100" value="{{ f.apellidos or '' }}"></div>
+                <div class="col-md-6"><label class="form-label" for="correo_institucional">Correo institucional</label>
+                    <input type="email" class="form-control" id="correo_institucional" name="correo_institucional" maxlength="254" value="{{ f.correo_institucional or '' }}"></div>
+                <div class="col-md-6"><label class="form-label" for="correo_personal">Correo personal</label>
+                    <input type="email" class="form-control" id="correo_personal" name="correo_personal" maxlength="254" value="{{ f.correo_personal or '' }}">
+                    <div class="form-text">Pon al menos uno: ahí llega el código si olvida la clave.</div></div>
+                <div class="col-md-4"><label class="form-label" for="celular">Celular (opcional)</label>
+                    <input class="form-control" id="celular" name="celular" maxlength="20" value="{{ f.celular or '' }}"></div>
+                <div class="col-md-4"><label class="form-label" for="id_asis">Código ASIS</label>
+                    <input class="form-control" id="id_asis" name="id_asis" pattern="[0-9A-Za-z]{5,15}" maxlength="15" value="{{ f.id_asis or '' }}">
+                    <div class="form-text">Solo si pertenece a la universidad.</div></div>
+                <div class="col-md-4 d-flex align-items-center">
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" type="checkbox" id="es_externo" name="es_externo" {{ 'checked' if f.es_externo }}>
+                        <label class="form-check-label" for="es_externo">Persona externa a la universidad</label>
+                        <div class="form-text">Externo: sin código ASIS. Si no, el código es obligatorio.</div>
+                    </div>
+                </div>
+            </div>
+
+            <h2 class="h6 fw-bold">Su cuenta</h2>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6"><label class="form-label" for="usuario">Usuario</label>
+                    <input class="form-control" id="usuario" name="usuario" required minlength="4" maxlength="40" pattern="[a-z0-9._\-]{4,40}" value="{{ f.usuario or '' }}">
+                    <div class="form-text">4 a 40 caracteres: minúsculas, dígitos, punto, guion y guion bajo. Se sugiere con el nombre.</div></div>
+                <div class="col-md-6"><label class="form-label" for="clave">Clave temporal</label>
+                    <input class="form-control" id="clave" name="clave" minlength="8" maxlength="72" autocomplete="new-password">
+                    <div class="form-text">Déjala vacía y se genera una segura; se muestra al terminar.</div></div>
+            </div>
+            <button class="btn btn-primary" type="submit"><i class="fas fa-user-plus me-1"></i>Crear ponente</button>
+            <a class="btn btn-outline-secondary" href="{{ url_for('admin.usuarios_listar') }}">Cancelar</a>
+        </form>
+    </div>
+</div>
+<script>
+// Sugiere "nombre.apellido" (sin tildes) si el usuario está vacío.
+(function () {
+    var n = document.getElementById('nombres'), a = document.getElementById('apellidos'), u = document.getElementById('usuario');
+    function limpio(t) { return t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().split(/\s+/)[0].replace(/[^a-z0-9]/g, ''); }
+    function sugerir() { if (!u.dataset.manual && n.value && a.value) u.value = limpio(n.value) + '.' + limpio(a.value); }
+    u.addEventListener('input', function () { u.dataset.manual = '1'; });
+    n.addEventListener('blur', sugerir); a.addEventListener('blur', sugerir);
+})();
+</script>
+{% endif %}
+{% endblock %}

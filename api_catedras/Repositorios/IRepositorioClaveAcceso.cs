@@ -27,7 +27,9 @@ public interface IRepositorioClaveAcceso
     Task<(long IdClave, string Clave, string EnviadoA)> SolicitarAsync(
         string identificador, Guid token, string? ip);
 
-    /// <summary>SELECT * FROM fn_validar_clave_api. Devuelve el id_registro creado.
-    /// Clave incorrecta/usada/expirada, sin cupo o sin vinculación -> NpgsqlException (500, D25).</summary>
-    Task<long> ValidarAsync(long idClave, string clave, string? ip, string? userAgent);
+    /// <summary>SELECT * FROM fn_validar_clave_geo_api (v7.1, RF-S1). Devuelve el id_registro
+    /// creado, con la ubicación guardada en él. Clave incorrecta/usada/expirada, sin cupo,
+    /// sin vinculación o sin ubicación -> NpgsqlException (500, D25).</summary>
+    Task<long> ValidarAsync(long idClave, string clave, decimal latitud, decimal longitud,
+        string? ip, string? userAgent);
 }

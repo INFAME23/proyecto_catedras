@@ -11,6 +11,10 @@
 #      powershell -ExecutionPolicy Bypass -File .\pruebas\verificar_v5.ps1
 #  Otro puerto/host:  ... -File .\pruebas\verificar_v5.ps1 -Api http://127.0.0.1:8142
 #
+#  v7.1 (RF-S1): 'ClaveAcceso/validar' ahora exige latitud y longitud; las
+#  llamadas de este script las mandan. La verificacion propia de la v7.1 esta
+#  en verificar_v71.ps1.
+#
 #  IMPORTANTE: el script ESCRIBE datos (usuarios, sesion, enlaces, registros).
 #  Al terminar, para dejar la BD como nueva:
 #      docker compose down -v ; docker compose up -d --build
@@ -198,12 +202,12 @@ $claveGet = Llamar GET "/api/ClaveAcceso/$idClave"
 Verificar "GET /api/ClaveAcceso/{id} NO trae ni clave_hash ni la clave" `
     ($claveGet.Codigo -eq 200 -and $claveGet.Texto -notmatch "clave_hash" -and $claveGet.Texto -notmatch $claveOk) $claveGet
 
-$val = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $idClave; clave = $claveOk; ip = "10.0.0.5"; user_agent = "verificar_v5.ps1" }
+$val = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $idClave; clave = $claveOk; ip = "10.0.0.5"; user_agent = "verificar_v5.ps1"; latitud = 6.244203; longitud = -75.581211 }
 Verificar "Validar con la clave correcta -> 200 con id_registro" ($val.Codigo -eq 200 -and $val.Json.id_registro -gt 0) $val
 $reg = Llamar GET "/api/RegistroAsistencia/$($val.Json.id_registro)"
 Verificar "GET del registro: origen QR y fk_vinculacion_snapshot resuelto por el trigger" `
     ($reg.Codigo -eq 200 -and $reg.Json.origen -eq "QR" -and $reg.Json.fk_vinculacion_snapshot) $reg
-$val2 = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $idClave; clave = $claveOk }
+$val2 = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $idClave; clave = $claveOk; latitud = 6.244203; longitud = -75.581211 }
 Verificar "Repetir el mismo validar -> 500 (clave ya usada, RN-20)" ($val2.Codigo -eq 500) $val2
 
 # --------------------------------------------------------------------------
@@ -213,14 +217,14 @@ Verificar "Pedir otra clave (asistente 100, id_asis 1010372) -> 200" ($sol2.Codi
 $idClave2 = $sol2.Json.id_clave
 $todos500 = $true
 foreach ($i in 1..4) {
-    $m = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $idClave2; clave = "000000" }
+    $m = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $idClave2; clave = "000000"; latitud = 6.244203; longitud = -75.581211 }
     if ($m.Codigo -ne 500) { $todos500 = $false }
 }
 Verificar "4 validar con clave incorrecta -> 500 cada uno" $todos500
 $claveGet2 = Llamar GET "/api/ClaveAcceso/$idClave2"
 Verificar "GET /api/ClaveAcceso/{id} sigue mostrando intentos = 0 (la excepcion deshace el contador)" `
     ($claveGet2.Json.intentos -eq 0) $claveGet2
-$valFinal = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $idClave2; clave = $sol2.Json.clave }
+$valFinal = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $idClave2; clave = $sol2.Json.clave; latitud = 6.244203; longitud = -75.581211 }
 Verificar "...y la clave CORRECTA todavia se acepta -> 200" ($valFinal.Codigo -eq 200) $valFinal
 
 # --------------------------------------------------------------------------

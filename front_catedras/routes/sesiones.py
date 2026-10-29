@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 
 from servicios.api_catedras import ErrorApi, crear, eliminar, listar, llave, obtener
 from servicios.fechas import a_local
-from auth_helpers import ROL_ADMIN, tiene_rol
+from auth_helpers import ROL_ADMIN, ROL_ESTUDIANTE, rol_requerido, sesion_activa, tiene_rol, usuario_actual
 from routes.encuestas import estado_encuesta_sesion   # v6: ¿se ofrece "responder encuesta"?
 
 sesiones_bp = Blueprint('sesiones', __name__)
@@ -124,6 +124,28 @@ def puede_migrar(sesion):
         return False   # si no se puede saber, no se ofrece el botón
 
 
+def enlace_para_registrarse(id_sesion):
+    """v7.1 · Token del enlace de registro VIGENTE de la sesión (no revocado y
+    dentro de su ventana), o None. Solo se busca para un ESTUDIANTE con sesión
+    iniciada: es quien ve el botón «Registrar mi asistencia» y el que llega
+    así a /registro/<token> sin tener que pegar el enlace del QR. Los demás
+    siguen entrando con el enlace que comparte el organizador."""
+    if not (sesion_activa() and tiene_rol(ROL_ESTUDIANTE)):
+        return None
+    try:
+        enlaces = listar('EnlaceRegistro', limite=50, fkSesion=id_sesion)
+    except ErrorApi:
+        return None
+    ahora = datetime.now(timezone.utc)
+    for e in enlaces:
+        desde, hasta = a_local(e.get('ventana_desde')), a_local(e.get('ventana_hasta'))
+        if e.get('revocado_en') or desde is None or hasta is None:
+            continue
+        if desde <= ahora <= hasta:
+            return str(e['token'])
+    return None
+
+
 @sesiones_bp.route('/sesiones/<int:id_sesion>')
 def detalle(id_sesion):
     try:
@@ -133,7 +155,8 @@ def detalle(id_sesion):
             abort(404)   # sesión inexistente -> página 404 del front
         return render_template('detalle_sesion.html', error=ex, sesion=None, catedra=None,
                                ponentes=[], candidatos=[], q='', roles=ROLES_PONENCIA,
-                               mostrar_encuesta=False, motivo_encuesta=None), 502
+                               mostrar_encuesta=False, motivo_encuesta=None, puede_editar=False,
+                               token_registro=None, es_estudiante=False), 502
 
     error = None
     catedra = None
@@ -150,12 +173,20 @@ def detalle(id_sesion):
 
     texto = request.args.get('q', '').strip()
     return render_template('detalle_sesion.html', error=error, sesion=sesion, catedra=catedra,
-                           ponentes=ponentes, candidatos=buscar_candidatos(texto), q=texto,
+                           ponentes=ponentes, q=texto,
+                           candidatos=buscar_candidatos(texto) if tiene_rol(ROL_ADMIN) else [],
                            roles=ROLES_PONENCIA, mostrar_encuesta=mostrar_encuesta,
-                           motivo_encuesta=motivo_encuesta, migracion=puede_migrar(sesion))
+                           motivo_encuesta=motivo_encuesta, migracion=puede_migrar(sesion),
+                           puede_editar=tiene_rol(ROL_ADMIN),
+                           token_registro=enlace_para_registrarse(id_sesion),
+                           es_estudiante=sesion_activa() and tiene_rol(ROL_ESTUDIANTE))
 
 
+# v7.1: asignar y quitar personas de una sesión (con su rol) es de ADMIN. Antes
+# estas dos rutas no pedían sesión: cualquiera, incluido un estudiante, podía
+# darle a cualquier persona el rol que quisiera.
 @sesiones_bp.route('/sesiones/<int:id_sesion>/ponentes', methods=['POST'])
+@rol_requerido(ROL_ADMIN)
 def asignar(id_sesion):
     asignar_ponente(id_sesion, request.form)
     # Post/Redirect/Get: al volver, la lista ya incluye al nuevo ponente.
@@ -163,6 +194,7 @@ def asignar(id_sesion):
 
 
 @sesiones_bp.route('/sesiones/<int:id_sesion>/ponentes/quitar', methods=['POST'])
+@rol_requerido(ROL_ADMIN)
 def quitar(id_sesion):
     quitar_ponente(id_sesion, request.form)
     return redirect(url_for('sesiones.detalle', id_sesion=id_sesion) + '#ponentes')

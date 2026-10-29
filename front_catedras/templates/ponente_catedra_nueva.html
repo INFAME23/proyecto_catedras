@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% import 'partials/filas_detalle.html' as fd %}
+{# ==========================================================================
+   ponente_catedra_nueva.html  ·  v7.1 (D49)
+   El ponente crea una cátedra con sus sesiones y queda como ponente en todas.
+   Mismo maestro-detalle que /admin/catedras/nueva, sin la encuesta al cierre.
+   ========================================================================== #}
+{% block titulo %}Nueva cátedra · Cátedras USB{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('ponente.inicio') }}">Calendario del ponente</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('ponente_catedras.lista') }}">Cátedras</a></li>
+        <li class="breadcrumb-item active">Nueva</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-book-open text-primary-custom me-2"></i>Nueva cátedra</h1>
+<p class="text-muted">Quedas como ponente en todas las sesiones que agregues. Si otro ponente participa también, que se asigne desde «Cátedras»: no la dupliques.</p>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post" action="{{ url_for('ponente_catedras.nueva') }}">
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="id_evento_asis">Código ASIS (9 dígitos)</label>
+                    <input type="text" class="form-control" id="id_evento_asis" name="id_evento_asis" maxlength="9" pattern="[0-9]{9}" required
+                           value="{{ catedra.id_evento_asis if catedra else '' }}">
+                    <div class="form-text">Con ceros a la izquierda, p. ej. 000023636. Si no lo tienes, pídeselo al administrador.</div>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label" for="nombre">Nombre</label>
+                    <input type="text" class="form-control" id="nombre" name="nombre" maxlength="200" required
+                           value="{{ catedra.nombre if catedra else '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="fk_tipo_evento">Tipo de evento</label>
+                    <select class="form-select" id="fk_tipo_evento" name="fk_tipo_evento" required>
+                        <option value="">-- Selecciona --</option>
+                        {% for t in tipos_evento %}
+                        <option value="{{ t.id_tipo_evento }}" {% if catedra and catedra.fk_tipo_evento == t.id_tipo_evento %}selected{% endif %}>{{ t.id_tipo_evento }} · {{ t.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="fk_dependencia">Dependencia <span class="text-muted">(opcional)</span></label>
+                    <select class="form-select" id="fk_dependencia" name="fk_dependencia">
+                        <option value="">— Sin dependencia —</option>
+                        {% for d in dependencias %}
+                        <option value="{{ d.id_dependencia }}" {% if catedra and catedra.fk_dependencia == d.id_dependencia %}selected{% endif %}>{{ d.id_dependencia }} · {{ d.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            {% call(f) fd.bloque('sesiones', 'Sesiones', 'fa-calendar-check', filas_sesiones, 'Agregar sesión',
+                                 ayuda='Agrega al menos una. Se guardan junto con la cátedra: si una falla, no se crea nada. El número de reunión lo pone la base de datos. Horas de Colombia.') %}
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Título <span class="text-muted">(opcional)</span></span>
+                        <input type="text" class="form-control form-control-sm" name="ses_titulo" maxlength="200" value="{{ f.titulo if f else '' }}"></label>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Inicio</span>
+                        <input type="datetime-local" class="form-control form-control-sm" name="ses_inicio" required value="{{ f.inicio if f else '' }}"></label>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Fin</span>
+                        <input type="datetime-local" class="form-control form-control-sm" name="ses_fin" required value="{{ f.fin if f else '' }}"></label>
+                </div>
+                <div class="col-md-4">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Modalidad</span>
+                        <select class="form-select form-select-sm" name="ses_fk_modalidad" required>
+                            <option value="">-- Selecciona --</option>
+                            {% for m in modalidades %}<option value="{{ m.id_modalidad }}" {% if f and f.fk_modalidad == m.id_modalidad %}selected{% endif %}>{{ m.nombre }}</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-md-4">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Sede</span>
+                        <select class="form-select form-select-sm" name="ses_fk_sede" required>
+                            <option value="">-- Selecciona --</option>
+                            {% for s in sedes %}<option value="{{ s.id_sede }}" {% if f and f.fk_sede == s.id_sede %}selected{% endif %}>{{ s.nombre }}</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-md-4">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Periodo</span>
+                        <select class="form-select form-select-sm" name="ses_fk_periodo" required>
+                            <option value="">--</option>
+                            {% for p in periodos %}<option value="{{ p.id_periodo }}" {% if f and f.fk_periodo == p.id_periodo %}selected{% endif %}>{{ p.id_periodo }}</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-md-9">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Lugar <span class="text-muted">(opcional)</span></span>
+                        <input type="text" class="form-control form-control-sm" name="ses_lugar" maxlength="200" value="{{ f.lugar if f else '' }}"></label>
+                </div>
+                <div class="col-md-3">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Cupo <span class="text-muted">(opcional)</span></span>
+                        <input type="number" class="form-control form-control-sm" name="ses_cupo" min="1" value="{{ f.cupo if f else '' }}"></label>
+                </div>
+            </div>
+            {% endcall %}
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Crear cátedra y asignarme</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('ponente.inicio') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

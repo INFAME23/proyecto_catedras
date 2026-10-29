@@ -1,5 +1,6 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
 {% import 'partials/macros_sesion.html' as ms %}
+{% import 'partials/macros_geo.html' as geo %}
 {# Maestro-detalle #2 y #3: SESIÓN -> sus ENLACES DE REGISTRO y sus
    REGISTROS DE ASISTENCIA. Todo lo que se hace aquí (emitir, revocar,
    registrar a mano) regresa a esta misma pantalla con 'volver'. #}
@@ -146,7 +147,7 @@
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
-                    <tr><th>Id</th><th>Asistente</th><th>Registrado</th><th>Origen</th><th>Vinculación</th><th>Programa</th>{% if sesion.fk_encuesta %}<th>Encuesta</th>{% endif %}<th class="text-end"></th></tr>
+                    <tr><th>Id</th><th>Asistente</th><th>Registrado</th><th>Origen</th><th>Vinculación</th><th>Programa</th><th>Ubicación</th>{% if sesion.fk_encuesta %}<th>Encuesta</th>{% endif %}<th class="text-end"></th></tr>
                 </thead>
                 <tbody>
                     {% for r in registros %}
@@ -157,6 +158,7 @@
                         <td><span class="badge badge-secondary">{{ r.origen }}</span></td>
                         <td>{{ r.fk_vinculacion_snapshot }}</td>
                         <td>{{ r.fk_programa_snapshot or '—' }}</td>
+                        <td class="small">{{ geo.ubicacion(r) }}</td>
                         {% if sesion.fk_encuesta %}
                         <td>{% if r.id_respuesta %}<span class="badge badge-success">Respondida</span>{% else %}<span class="text-muted small">Pendiente</span>{% endif %}</td>
                         {% endif %}

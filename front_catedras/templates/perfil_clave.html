@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block titulo %}Cambiar mi clave · Cátedras USB{% endblock %}
+{% block contenido %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow-sm animate-fade-in">
+            <div class="card-body p-4">
+                <div class="text-center mb-3">
+                    <i class="fas fa-lock fa-3x text-primary-custom mb-2"></i>
+                    <h1 class="h4 fw-bold mb-0">Cambiar mi clave</h1>
+                    <p class="text-muted small mb-0">Cuenta: <strong>{{ usuario_actual().usuario }}</strong></p>
+                </div>
+
+                <form method="post" action="{{ url_for('perfil.cambiar_clave') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="clave_actual">Clave actual</label>
+                        <input type="password" class="form-control" id="clave_actual" name="clave_actual" required
+                               autofocus autocomplete="current-password">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="clave_nueva">Clave nueva</label>
+                        <input type="password" class="form-control" id="clave_nueva" name="clave_nueva" required
+                               minlength="8" autocomplete="new-password">
+                        <div class="form-text">Mínimo 8 caracteres.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="clave_confirmacion">Repite la clave nueva</label>
+                        <input type="password" class="form-control" id="clave_confirmacion" name="clave_confirmacion" required
+                               minlength="8" autocomplete="new-password">
+                    </div>
+
+                    {% if errores %}
+                    <div class="alert alert-danger py-2">
+                        <ul class="mb-0 small">
+                            {% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+
+                    <button class="btn btn-primary w-100" type="submit"><i class="fas fa-save me-1"></i>Guardar la clave nueva</button>
+                </form>
+
+                <hr>
+                <p class="small text-muted mb-0 text-center">
+                    ¿No recuerdas la clave actual? Cierra sesión y usa
+                    <a href="{{ url_for('perfil.recuperar') }}">«Olvidé mi clave»</a>.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

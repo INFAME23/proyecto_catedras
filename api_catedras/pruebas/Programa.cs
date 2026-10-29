@@ -1389,7 +1389,8 @@ await AfirmarLanza<InvalidOperationException>(
 // ============================================================================
 var repoUsr5 = new RepositorioUsuarioFalso();
 var repoRolesUsr5 = new RepositorioRolPorUsuarioFalso();
-var servicioUsuario5 = new ServicioUsuario(repoUsr5, repoRolesUsr5);
+var repoCodRec71 = new RepositorioCodigoRecuperacionFalso();
+var servicioUsuario5 = new ServicioUsuario(repoUsr5, repoRolesUsr5, repoCodRec71);
 
 Console.WriteLine("\n== v5 · Prueba de capas: ServicioUsuario + repositorios falsos en memoria ==\n");
 
@@ -1605,6 +1606,66 @@ Afirmar("EnlaceRegistroEmitir NO tiene canal, token, ventana ni url_publica (RF1
         .All(p => typeof(EnlaceRegistroEmitir).GetProperty(p) is null));
 
 // ============================================================================
+//  v7.1 · Prueba de capas: cambiar la clave (RF-S5) y recuperarla (RF-S5/RF-S6)
+//  Todo el hash BCrypt sale de ServicioUsuario; el repositorio falso de
+//  códigos solo guarda la cadena opaca.
+// ============================================================================
+Console.WriteLine("\n== v7.1 · Prueba de capas: cambiar y recuperar la clave ==\n");
+
+// Cambiar sabiendo la actual (usuario 1 = admin / Admin12345)
+Afirmar("CambiarClave con la clave actual correcta devuelve true y guarda un hash NUEVO",
+    await servicioUsuario5.CambiarClaveAsync(1, new UsuarioCambiarClave { ClaveActual = "Admin12345", ClaveNueva = "Nueva-Clave-71" }));
+var trasCambio71 = await servicioUsuario5.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "Nueva-Clave-71" });
+Afirmar("...y el login ya funciona con la clave nueva", trasCambio71 is not null);
+Afirmar("...y la clave anterior dejó de servir",
+    await servicioUsuario5.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "Admin12345" }) is null);
+Afirmar("CambiarClave con la clave actual INCORRECTA devuelve false (401, D27)",
+    !await servicioUsuario5.CambiarClaveAsync(1, new UsuarioCambiarClave { ClaveActual = "equivocada", ClaveNueva = "Otra-Clave-71" }));
+Afirmar("CambiarClave en una cuenta INACTIVA devuelve false (misma respuesta)",
+    !await servicioUsuario5.CambiarClaveAsync(2, new UsuarioCambiarClave { ClaveActual = "Clave12345", ClaveNueva = "Otra-Clave-71" }));
+await AfirmarLanza<ArgumentException>(
+    "CambiarClave con la clave nueva IGUAL a la actual lanza ArgumentException (400)",
+    () => servicioUsuario5.CambiarClaveAsync(1, new UsuarioCambiarClave { ClaveActual = "Nueva-Clave-71", ClaveNueva = "Nueva-Clave-71" }));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "CambiarClave de un usuario inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioUsuario5.CambiarClaveAsync(999, new UsuarioCambiarClave { ClaveActual = "x", ClaveNueva = "Otra-Clave-71" }));
+Afirmar("UsuarioCambiarClave exige clave nueva de al menos 8 caracteres",
+    typeof(UsuarioCambiarClave).GetProperty("ClaveNueva")!
+        .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.MinLengthAttribute), false).Length == 1);
+// (la cuenta de prueba vuelve a su clave original para no alterar las pruebas siguientes)
+await servicioUsuario5.CambiarClaveAsync(1, new UsuarioCambiarClave { ClaveActual = "Nueva-Clave-71", ClaveNueva = "Admin12345" });
+
+// Recuperar una clave olvidada
+await AfirmarLanza<ArgumentException>(
+    "SolicitarRecuperacion con una 'ip' inválida lanza ArgumentException (400)",
+    () => servicioUsuario5.SolicitarRecuperacionAsync(new RecuperacionSolicitar { Identificador = "admin", Ip = "999.9.9.9" }));
+Afirmar("SolicitarRecuperacion de una cuenta que no existe devuelve null (la API responde igual, D27)",
+    await servicioUsuario5.SolicitarRecuperacionAsync(new RecuperacionSolicitar { Identificador = "nadie.existe" }) is null);
+var rec71 = await servicioUsuario5.SolicitarRecuperacionAsync(new RecuperacionSolicitar { Identificador = "  admin  ", Ip = "10.0.0.7" });
+Afirmar("SolicitarRecuperacion devuelve id, código en claro y correo de destino (RNF12)",
+    rec71 is not null && rec71.Value.IdCodigo > 0 && rec71.Value.Codigo == RepositorioCodigoRecuperacionFalso.CodigoFijo
+    && rec71.Value.EnviadoA.Contains('@'));
+Afirmar("...el identificador llegó sin espacios y la IP ya validada",
+    repoCodRec71.UltimoIdentificador == "admin" && repoCodRec71.UltimaIp == "10.0.0.7");
+
+await AfirmarLanza<CodigoRecuperacionInvalidoExcepcion>(
+    "Restablecer con el código INCORRECTO lanza CodigoRecuperacionInvalidoExcepcion (400)",
+    () => servicioUsuario5.RestablecerClaveAsync(new RecuperacionRestablecer { IdCodigo = rec71!.Value.IdCodigo, Codigo = "000000", ClaveNueva = "Recuperada-71" }));
+Afirmar("...y el servicio no llegó a guardar ningún hash", repoCodRec71.UltimoHashRecibido is null);
+await servicioUsuario5.RestablecerClaveAsync(new RecuperacionRestablecer
+{ IdCodigo = rec71!.Value.IdCodigo, Codigo = rec71.Value.Codigo, ClaveNueva = "Recuperada-71" });
+Afirmar("Restablecer con el código correcto guarda un hash BCrypt, NUNCA la clave en claro (Regla 3)",
+    repoCodRec71.UltimoHashRecibido is not null
+    && repoCodRec71.UltimoHashRecibido != "Recuperada-71"
+    && BCrypt.Net.BCrypt.Verify("Recuperada-71", repoCodRec71.UltimoHashRecibido));
+await AfirmarLanza<CodigoRecuperacionInvalidoExcepcion>(
+    "Restablecer OTRA VEZ con el mismo código falla (ya usado; la API responde 400)",
+    () => servicioUsuario5.RestablecerClaveAsync(new RecuperacionRestablecer { IdCodigo = rec71!.Value.IdCodigo, Codigo = rec71.Value.Codigo, ClaveNueva = "Otra-71-Clave" }));
+Afirmar("IRepositorioCodigoRecuperacion no declara Crear/Reemplazar/Actualizar/Eliminar (no es un CRUD)",
+    new[] { "CrearAsync", "ReemplazarAsync", "ActualizarAsync", "EliminarAsync" }
+        .All(m => typeof(IRepositorioCodigoRecuperacion).GetMethod(m) is null));
+
+// ============================================================================
 //  v5 · Prueba de capas: ServicioClaveAcceso + repositorio falso
 //  NO es un CRUD (ADR D24): SOLICITAR y VALIDAR (funciones de la BD simuladas).
 // ============================================================================
@@ -1638,19 +1699,60 @@ await AfirmarLanza<InvalidOperationException>(
 // Validar
 await AfirmarLanza<ArgumentException>(
     "Validar con una 'ip' inválida lanza ArgumentException (400)",
-    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "abc" }));
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "abc", Latitud = 6.2m, Longitud = -75.5m }));
 
 await AfirmarLanza<InvalidOperationException>(
     "Validar con la clave INCORRECTA falla (simulado; en la API real -> 500, D25)",
-    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = "000000" }));
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = "000000", Latitud = 6.2m, Longitud = -75.5m }));
 
 long idRegistroVal5 = await servicioCla5.ValidarAsync(new ClaveAccesoValidar
-{ IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "10.0.0.5", UserAgent = "prueba/1.0" });
+{ IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "10.0.0.5", UserAgent = "prueba/1.0",
+  Latitud = 6.244203m, Longitud = -75.581211m });
 Afirmar("Validar() con la clave correcta devuelve el id_registro creado", idRegistroVal5 > 0);
 
 await AfirmarLanza<InvalidOperationException>(
     "Validar OTRA VEZ la misma clave falla (ya usada, RN-20; en la API real -> 500)",
-    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave }));
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Latitud = 6.2m, Longitud = -75.5m }));
+
+// ---------------------------------------------------------------------------
+//  v7.1 · RF-S1 · Geolocalización obligatoria al validar la clave
+// ---------------------------------------------------------------------------
+Afirmar("Validar() guardó la ubicación que llegó (RF-S1)",
+    repoCla5.UltimaLatitud == 6.244203m && repoCla5.UltimaLongitud == -75.581211m);
+
+var solicitudGeo71 = await servicioCla5.SolicitarAsync(new ClaveAccesoSolicitar
+{ Identificador = "1000091", Token = tokenOk5 });
+int validacionesAntesGeo71 = repoCla5.LlamadasValidar;
+await AfirmarLanza<ArgumentException>(
+    "Validar SIN latitud ni longitud lanza ArgumentException (400, RF-S1)",
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitudGeo71.IdClave, Clave = solicitudGeo71.Clave }));
+await AfirmarLanza<ArgumentException>(
+    "Validar con latitud pero SIN longitud lanza ArgumentException (400, RF-S1)",
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitudGeo71.IdClave, Clave = solicitudGeo71.Clave, Latitud = 6.2m }));
+Afirmar("...y en ninguno de los dos casos se llamó al repositorio (la clave no gasta intentos)",
+    repoCla5.LlamadasValidar == validacionesAntesGeo71);
+
+static bool Obligatoria(Type tipo, string propiedad) =>
+    tipo.GetProperty(propiedad)!
+        .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), false).Length == 1;
+Afirmar("ClaveAccesoValidar marca latitud y longitud como [Required] (-> 422 antes del servicio)",
+    Obligatoria(typeof(ClaveAccesoValidar), "Latitud") && Obligatoria(typeof(ClaveAccesoValidar), "Longitud"));
+
+static bool RangoDe(Type tipo, string propiedad, double min, double max)
+{
+    var r = (System.ComponentModel.DataAnnotations.RangeAttribute?)tipo.GetProperty(propiedad)!
+        .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RangeAttribute), false).FirstOrDefault();
+    return r is not null && Convert.ToDouble(r.Minimum) == min && Convert.ToDouble(r.Maximum) == max;
+}
+Afirmar("...con rango -90..90 para la latitud y -180..180 para la longitud",
+    RangoDe(typeof(ClaveAccesoValidar), "Latitud", -90, 90) && RangoDe(typeof(ClaveAccesoValidar), "Longitud", -180, 180));
+Afirmar("El modelo RegistroAsistencia expone latitud y longitud NULABLES (MANUAL / IMPORTADO no las tienen)",
+    typeof(RegistroAsistencia).GetProperty("Latitud")!.PropertyType == typeof(decimal?)
+    && typeof(RegistroAsistencia).GetProperty("Longitud")!.PropertyType == typeof(decimal?));
+string jsonReg71 = System.Text.Json.JsonSerializer.Serialize(
+    new RegistroAsistencia { FkSesion = 1, FkAsistente = 1, Latitud = 6.25m, Longitud = -75.56m });
+Afirmar("...y se serializan como 'latitud' y 'longitud'",
+    jsonReg71.Contains("\"latitud\":6.25") && jsonReg71.Contains("\"longitud\":-75.56"));
 
 // Lecturas de auditoría
 var claveLeida5 = await servicioCla5.ObtenerAsync(solicitud5.IdClave);
@@ -2228,11 +2330,48 @@ Afirmar("SesionInicial con fk_sede vacía no es válida (-> 422 antes de llegar 
 Afirmar("EnlaceInicial con minutos fuera de 0..1440 no es válido (-> 422)",
     !EsValida(new EnlaceInicial { MinutosAntes = 2000 }));
 
+// ---------------------------------------------------------------------------
+//  v7.1 · D50 · Inscripción de una persona a una cátedra
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.1 · Prueba de capas: inscripción a una cátedra ==\n");
+var repoInsc71 = new RepositorioInscripcionCatedraFalso();
+var servicioInsc71 = new ServicioInscripcionCatedra(repoInsc71);
+
+Afirmar("Inscribir por primera vez devuelve true (inscripción nueva)",
+    await servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 }));
+Afirmar("Inscribir OTRA VEZ la misma persona devuelve false (ya estaba; no se duplica)",
+    !await servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 }));
+var lista71 = await servicioInsc71.ListarAsync(5, null, null, null);
+Afirmar("Listar por persona trae 1 inscripción ACTIVA", lista71.Total == 1 && lista71.Datos[0].Estado == "ACTIVA");
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Inscribir en una cátedra inactiva o inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 999, FkAsistente = 5 }));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Inscribir a una persona inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 999 }));
+await servicioInsc71.CancelarAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 });
+Afirmar("Cancelar deja la inscripción CANCELADA y ya no sale en el listado por defecto",
+    (await servicioInsc71.ListarAsync(5, null, null, null)).Total == 0
+    && (await servicioInsc71.ListarAsync(5, null, false, null)).Datos[0].Estado == "CANCELADA");
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Cancelar sin inscripción activa lanza NoEncontradoExcepcion (404)",
+    () => servicioInsc71.CancelarAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 }));
+Afirmar("Volver a inscribirse tras cancelar la reactiva (devuelve true)",
+    await servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 })
+    && (await servicioInsc71.ListarAsync(5, null, null, null)).Total == 1);
+await AfirmarLanza<ArgumentException>(
+    "Listar con limite 0 lanza ArgumentException (400)",
+    () => servicioInsc71.ListarAsync(null, null, null, 0));
+Afirmar("InscripcionCatedraAccion exige fk_catedra y fk_asistente",
+    !EsValida(new InscripcionCatedraAccion()) && !EsValida(new InscripcionCatedraAccion { FkCatedra = 10 })
+    && EsValida(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 }));
+
 // ---- Cuenta de control --------------------------------------------------------
 Console.WriteLine("\n== Cuenta de control: 37 tablas, 37 recursos ==\n");
-Afirmar("La API declara 37 controladores (10+5+7+2+5+4+4 = 37 tablas de bdcatedras)",
+// v7.1 · D50 agrega UN recurso: InscripcionCatedra (tabla de la migración 049). 37 del script + 1.
+Afirmar("La API declara 38 controladores (los 37 de bdcatedras + InscripcionCatedra de la v7.1)",
     typeof(ApiCatedras.Controllers.BitacoraController).Assembly.GetTypes()
-        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 37);
+        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 38);
 
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
@@ -3721,7 +3860,10 @@ class RepositorioClaveAccesoFalso : IRepositorioClaveAcceso
     private long _siguienteRegistro = 900;
 
     public int LlamadasSolicitar { get; private set; }
+    public int LlamadasValidar { get; private set; }
     public string? UltimaIp { get; private set; }
+    public decimal? UltimaLatitud { get; private set; }
+    public decimal? UltimaLongitud { get; private set; }
 
     public Task<List<ClaveAcceso>> ObtenerTodosAsync(long? fkAsistente, int limite) =>
         Task.FromResult(_tabla
@@ -3752,8 +3894,10 @@ class RepositorioClaveAccesoFalso : IRepositorioClaveAcceso
         return Task.FromResult((clave.IdClave, ClaveFija, clave.EnviadoA));
     }
 
-    public Task<long> ValidarAsync(long idClave, string clave, string? ip, string? userAgent)
+    public Task<long> ValidarAsync(long idClave, string clave, decimal latitud, decimal longitud,
+        string? ip, string? userAgent)
     {
+        LlamadasValidar++;
         var fila = _tabla.FirstOrDefault(c => c.IdClave == idClave)
             ?? throw new InvalidOperationException("La clave no existe (simulado).");
 
@@ -3763,7 +3907,56 @@ class RepositorioClaveAccesoFalso : IRepositorioClaveAcceso
             throw new InvalidOperationException("Clave incorrecta (simulado).");
 
         fila.UsadoEn = DateTime.UtcNow;
+        UltimaLatitud = latitud;      // el SP de la BD las guarda en registro_asistencia
+        UltimaLongitud = longitud;
         return Task.FromResult(_siguienteRegistro++);
+    }
+}
+
+// ==========================================================================
+//  v7.1 · Repositorio FALSO de 'CodigoRecuperacion'. Simula los dos
+//  procedimientos de la migración 047: una cuenta "admin" existe, el código
+//  correcto es siempre CodigoFijo y se puede usar UNA vez. Guarda el último
+//  hash que recibió para comprobar que es un hash y no la clave.
+// ==========================================================================
+class RepositorioCodigoRecuperacionFalso : IRepositorioCodigoRecuperacion
+{
+    public const string CodigoFijo = "719304";
+
+    private readonly Dictionary<long, bool> _usado = new();   // id_codigo -> ¿ya se usó?
+    private long _siguienteId = 70;
+
+    public string? UltimoIdentificador { get; private set; }
+    public string? UltimaIp { get; private set; }
+    public string? UltimoHashRecibido { get; private set; }
+
+    public Task<(long IdCodigo, string Codigo, string EnviadoA, string Usuario)?> SolicitarAsync(
+        string identificador, string? ip)
+    {
+        UltimoIdentificador = identificador;
+        UltimaIp = ip;
+
+        if (identificador != "admin")
+            return Task.FromResult<(long, string, string, string)?>(null);   // sin cuenta activa
+
+        long id = _siguienteId++;
+        _usado[id] = false;
+        return Task.FromResult<(long, string, string, string)?>((id, CodigoFijo, "admin.catedras@usbmed.edu.co", "admin"));
+    }
+
+    public Task<string> RestablecerAsync(long idCodigo, string codigo, string claveHash)
+    {
+        // Como sp_restablecer_clave: devuelve un ESTADO, no lanza.
+        if (!_usado.TryGetValue(idCodigo, out var usado))
+            return Task.FromResult("NO_EXISTE");
+        if (usado)
+            return Task.FromResult("USADO");
+        if (codigo != CodigoFijo)
+            return Task.FromResult("INCORRECTO");
+
+        _usado[idCodigo] = true;
+        UltimoHashRecibido = claveHash;
+        return Task.FromResult("OK");
     }
 }
 
@@ -4178,4 +4371,52 @@ class RepositorioRespuestaItemFalso : IRepositorioRespuestaItem
 
     public Task<RespuestaItem?> ObtenerPorIdAsync(long idItem) =>
         Task.FromResult(_items.FirstOrDefault(i => i.IdItem == idItem));
+}
+
+// ==========================================================================
+//  v7.1 · D50 · Repositorio FALSO de 'InscripcionCatedra'. Simula los tres
+//  procedimientos de la migración 049: cátedra 10 y personas 5 y 6 existen;
+//  cancelar conserva la fila (CANCELADA) y volver a inscribirse la reactiva.
+// ==========================================================================
+class RepositorioInscripcionCatedraFalso : IRepositorioInscripcionCatedra
+{
+    private readonly List<InscripcionCatedra> _tabla = new();
+    private long _siguiente = 1;
+
+    public Task<List<InscripcionCatedra>> ObtenerTodosAsync(long? fkAsistente, long? fkCatedra, bool soloActivas, int limite) =>
+        Task.FromResult(_tabla
+            .Where(i => (fkAsistente is null || i.FkAsistente == fkAsistente)
+                     && (fkCatedra is null || i.FkCatedra == fkCatedra)
+                     && (!soloActivas || i.Estado == "ACTIVA"))
+            .Take(limite).ToList());
+
+    public Task<string> InscribirAsync(long fkCatedra, long fkAsistente)
+    {
+        if (fkCatedra != 10) return Task.FromResult("CATEDRA_NO_DISPONIBLE");
+        if (fkAsistente != 5 && fkAsistente != 6) return Task.FromResult("PERSONA_NO_DISPONIBLE");
+
+        var existente = _tabla.FirstOrDefault(i => i.FkCatedra == fkCatedra && i.FkAsistente == fkAsistente);
+        if (existente is null)
+        {
+            _tabla.Add(new InscripcionCatedra { IdInscripcion = _siguiente++, FkCatedra = fkCatedra, FkAsistente = fkAsistente,
+                                                Estado = "ACTIVA", InscritaEn = DateTime.UtcNow });
+            return Task.FromResult("INSCRITA");
+        }
+        if (existente.Estado == "CANCELADA")
+        {
+            existente.Estado = "ACTIVA";
+            existente.CanceladaEn = null;
+            return Task.FromResult("INSCRITA");
+        }
+        return Task.FromResult("YA_INSCRITA");
+    }
+
+    public Task<string> CancelarAsync(long fkCatedra, long fkAsistente)
+    {
+        var existente = _tabla.FirstOrDefault(i => i.FkCatedra == fkCatedra && i.FkAsistente == fkAsistente && i.Estado == "ACTIVA");
+        if (existente is null) return Task.FromResult("NO_INSCRITA");
+        existente.Estado = "CANCELADA";
+        existente.CanceladaEn = DateTime.UtcNow;
+        return Task.FromResult("CANCELADA");
+    }
 }

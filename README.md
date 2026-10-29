@@ -8,6 +8,51 @@ de `bdcatedras`. Se apoya en las encuestas de la v6, el login y registro de
 asistencia de la v5, las sesiones de la v4, las personas de la v3, la
 estructura académica de la v2 y la arquitectura en capas de la v1.
 
+## Subversión v7.1 (mantenimiento sobre V5–V7)
+
+Sin tablas de negocio nuevas en el mapa (sigue en 37 recursos) y sin romper el
+orden de versiones; sus requisitos se numeran `RF-S1`…`RF-S7`. Documento
+completo, con las decisiones (D38–D51), lo verificado y lo pendiente:
+[docs/spec_kit/Versiones/version7_1/v7_1_subversion.md](docs/spec_kit/Versiones/version7_1/v7_1_subversion.md).
+
+- **Geolocalización obligatoria** al autorregistrar la asistencia: el navegador
+  entrega latitud y longitud; sin ellas no se registra (front, API y BD lo
+  exigen). Se ve en `/admin` con un enlace al mapa.
+- **Panel de estudiante** (`/estudiante`): su información y sus sesiones.
+  **Cuentas de estudiante y ponente** con el mismo login (`ESTUDIANTE`,
+  `PONENTE`); `/ponente` ya no es público.
+- **Estudiante semilla**: usuario `alejandro.zuleta`, clave temporal
+  `Cambiar-123` (cámbiala en `/perfil/clave`; credencial didáctica, solo local).
+- **Cambiar la clave** (`/perfil/clave`) y **recuperarla** por un código de un
+  solo uso enviado por correo (`/recuperar`).
+- **Panel de `/admin` con categorías desplegables** (cerradas por defecto, sin barra lateral).
+
+> **Si ya tienes el volumen de PostgreSQL creado**, las migraciones 045-049 no
+> corren solas (initdb solo corre con el volumen vacío). Aplícalas **en orden**:
+>
+> ```bash
+> for n in 045_geolocalizacion_registro 046_roles_estudiante_ponente 047_codigo_recuperacion 048_semilla_estudiante 049_inscripcion_catedra; do
+>   docker compose cp db/postgres/migraciones/$n.sql postgres:/tmp/m.sql
+>   docker compose exec -T postgres psql -U sa -d bdcatedras_postgres_local -v ON_ERROR_STOP=1 -f /tmp/m.sql
+> done
+> ```
+>
+> Sin la 045, validar una clave responde `42883: function fn_validar_clave_geo_api
+> does not exist`; sin la 047, la recuperación de clave falla; sin la 049, inscribirse a una cátedra falla.
+
+**Correo (RF-S6).** El código de recuperación se envía por SMTP configurado
+con variables de entorno; copia `front_catedras/env.ejemplo` como
+`front_catedras/.env` (o como `.env` junto al compose) y llena lo de tu
+proveedor. Sin `SMTP_HOST` el correo queda apagado y la pantalla avisa. Para
+desarrollo sin proveedor: `CORREO_MODO_CONSOLA=1` escribe el correo en el log
+del front. Qué proveedor usar lo decide el equipo.
+
+**Ubicación en el navegador.** Solo funciona en `https://` o `localhost`; abrir
+el front por la IP de la red (`http://192.168.x.x:5000`) la deniega siempre.
+
+Verificación contra la API real: `pruebas/verificar_v71.ps1` (49/0; ver el
+documento de la subversión para el resto).
+
 ## Qué incluye la v7
 
 - Lo nuevo que enseña la v7:

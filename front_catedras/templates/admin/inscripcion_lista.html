@@ -1,0 +1,52 @@
+{% extends 'admin/base_admin.html' %}
+{% block titulo %}Inscripciones a cátedras · Administración{% endblock %}
+{# v7.1 · D50. Solo lectura: las inscripciones las hace (y cancela) cada estudiante desde el catálogo. #}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Inscripción a cátedra</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-user-graduate text-primary-custom me-2"></i>Inscripciones a cátedras</h1>
+<p class="text-muted small">Las crea y las cancela cada estudiante desde el catálogo; aquí solo se consultan.
+    {% if fk_catedra %}Cátedra <strong>{{ fk_catedra }}</strong>.{% endif %}
+    {% if fk_asistente %}Persona <strong>{{ fk_asistente }}</strong>.{% endif %}</p>
+
+<form class="row g-2 align-items-end mb-3" method="get" action="{{ url_for('admin.inscripciones_listar') }}">
+    <div class="col-auto"><label class="form-label small mb-0" for="fk_catedra">Id de cátedra</label>
+        <input class="form-control form-control-sm" id="fk_catedra" name="fk_catedra" type="number" min="1" value="{{ fk_catedra or '' }}"></div>
+    <div class="col-auto"><label class="form-label small mb-0" for="fk_asistente">Id de persona</label>
+        <input class="form-control form-control-sm" id="fk_asistente" name="fk_asistente" type="number" min="1" value="{{ fk_asistente or '' }}"></div>
+    <div class="col-auto form-check ms-2 mb-1">
+        <input class="form-check-input" type="checkbox" id="todas" name="todas" value="1" {{ 'checked' if todas }}>
+        <label class="form-check-label small" for="todas">Incluir canceladas</label></div>
+    <div class="col-auto"><button class="btn btn-sm btn-outline-primary" type="submit"><i class="fas fa-filter me-1"></i>Filtrar</button></div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if inscripciones %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Id</th><th>Cátedra</th><th>Persona</th><th>Estado</th><th>Inscrita</th><th>Cancelada</th></tr></thead>
+                <tbody>
+                {% for i in inscripciones %}
+                <tr>
+                    <td class="fw-semibold">{{ i.id_inscripcion }}</td>
+                    <td><a href="{{ url_for('admin.catedras_detalle', id_catedra=i.fk_catedra) }}">{{ i.nombre_catedra }}</a> <span class="text-muted small">{{ i.id_evento_asis }}</span></td>
+                    <td><a href="{{ url_for('admin.asistentes_detalle', id_asistente=i.fk_asistente) }}">{{ i.nombres }} {{ i.apellidos }}</a>{% if i.id_asis %} <span class="text-muted small">· {{ i.id_asis }}</span>{% endif %}</td>
+                    <td>{% if i.estado == 'ACTIVA' %}<span class="badge badge-success">Activa</span>{% else %}<span class="badge badge-secondary">Cancelada</span>{% endif %}</td>
+                    <td class="small">{{ i.inscrita_en|fecha_hora }}</td>
+                    <td class="small">{{ (i.cancelada_en|fecha_hora) if i.cancelada_en else '—' }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay inscripciones con esos filtros.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

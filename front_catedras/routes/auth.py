@@ -11,7 +11,7 @@
 
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
-from auth_helpers import ROL_ADMIN, sesion_activa
+from auth_helpers import endpoint_de_inicio, sesion_activa
 from servicios.api_catedras import ErrorApi, crear
 
 auth_bp = Blueprint('auth', __name__)
@@ -33,7 +33,7 @@ def login():
 
     if request.method == 'GET':
         if sesion_activa():
-            return redirect(siguiente or url_for('catedras.inicio'))
+            return redirect(siguiente or url_for(endpoint_de_inicio()))
         return render_template('login.html', siguiente=siguiente, usuario='')
 
     usuario = request.form.get('usuario', '').strip()
@@ -63,9 +63,8 @@ def login():
     flash(f"Bienvenido, {datos['usuario']}.", 'exito')
     if siguiente:
         return redirect(siguiente)
-    if ROL_ADMIN in session['roles']:
-        return redirect(url_for('admin.panel'))
-    return redirect(url_for('catedras.inicio'))
+    # v7.1 · RF-S3: un solo login; el destino depende del rol (admin, ponente o estudiante).
+    return redirect(url_for(endpoint_de_inicio()))
 
 
 @auth_bp.route('/logout', methods=['POST'])

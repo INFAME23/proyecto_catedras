@@ -136,6 +136,23 @@ desalinearía las listas): los sí/no van en un `<select>`.
 | 3. BCrypt | V1-V4: no aplicaba (no había tabla con contraseña). **V5: cumple** — `BCrypt.HashPassword` y `Verify` solo en `ServicioUsuario` (un único `Hashear`); el repositorio trata `clave_hash` como cadena opaca y ninguna respuesta lo expone (ADR D23); la prueba de capas verifica el hash con `BCrypt.Verify` real. V6 y V7: no aplica (ninguna credencial nueva) | Ninguna |
 | 4. Maestro → sus detalles (front) | Adoptada el 2026-10-15, después de la V7. Las 10 parejas tienen pantalla: 3 ya la tenían (#4 y #5 en `asistentes_detalle`, v3; #9 en `respuestas_detalle`, v6) y las otras 7 se resolvieron con 6 pantallas nuevas (`catedras_detalle`, `sesiones_detalle` —#2 y #3—, `encuestas_detalle`, `preguntas_detalle`, `registros_detalle`, `programas_detalle`). Además, el formulario de cada maestro agrega sus detalles: al crear, en un solo CALL (migraciones 042-044 + los SP de v2, v3 y v6); al editar, una petición por fila | Ninguna |
 
+**Subversión v7.1 (2026-10-29)** — sobre las reglas:
+- *Regla 1:* no aplica a nada nuevo (`sp_validar_clave_y_registrar_geo` y los de
+  recuperación no guardan maestro-detalle); la semilla de la `048` sí usa
+  `sp_guardar_asistente` cuando crea a la persona.
+- *Regla 2:* cumple; `ESTUDIANTE` y `PONENTE` aparecen solos en el `<select>`
+  de roles de `/admin/roles-usuario`.
+- *Regla 3 (BCrypt):* cumple. El hash de cambiar y recuperar la clave se calcula
+  solo en `ServicioUsuario` (se amplió, sigue siendo el único archivo que llama
+  a BCrypt). **Única excepción:** la `048` siembra la clave temporal del
+  estudiante con `crypt(..., gen_salt('bf'))` de pgcrypto porque es un script SQL
+  sin API, igual que el administrador sembrado del script provisto; BCrypt.Net
+  lo verifica (mismo algoritmo, prefijo `$2a$`).
+- *Regla 4:* sin cambios; el panel de estudiante no es un maestro-detalle de
+  `/admin`.
+
+Detalle y decisiones: [Versiones/version7_1/v7_1_subversion.md](Versiones/version7_1/v7_1_subversion.md).
+
 Guía específica de la V4 (orden de lectura, prompts por fase, trampas):
 [Versiones/version4/guia_ia_v4.md](Versiones/version4/guia_ia_v4.md).
 

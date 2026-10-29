@@ -10,19 +10,30 @@
 #  el de la persona autenticada (su 'fk_asistente'). La búsqueda se
 #  conserva para consultar el de otra persona (la API sigue abierta,
 #  ADR D28-D29: se autentica, no se autoriza).
+#  v7.1 (RF-S3): la pantalla ya no es pública; exige el rol PONENTE o ADMIN.
+#  v7.1 (D47): un PONENTE solo ve SU calendario; buscar a otra persona o abrir
+#  '?asistente=<otro>' es solo de ADMIN (un ponente no ve la agenda de los demás).
 #
 #  Es el único lugar del front que usa el filtro 'fkAsistente' de
 #  GET /api/Ponencia (RF127): "¿en qué sesiones participa esta persona?".
 # ==========================================================================
 
-from flask import Blueprint, flash, render_template, request
+from flask import Blueprint, abort, flash, render_template, request
 
-from auth_helpers import sesion_activa, usuario_actual
+from auth_helpers import ROL_ADMIN, ROL_PONENTE, exigir_rol, sesion_activa, tiene_rol, usuario_actual
 from servicios.api_catedras import ErrorApi, listar, obtener
 from servicios.fechas import ZONA_COLOMBIA, a_local
 from datetime import datetime
 
 ponente_bp = Blueprint('ponente', __name__)
+
+
+@ponente_bp.before_request
+def _solo_ponentes():
+    """v7.1 · RF-S3: el calendario exige sesión con el rol PONENTE (o ADMIN, que
+    lo enlaza desde su panel y consulta el de cualquier persona). Antes era
+    público (v4, cuando no había login); sin sesión -> /login, sin rol -> 403."""
+    return exigir_rol(ROL_PONENTE, ROL_ADMIN)
 
 # Cuántas personas se muestran en el resultado de la búsqueda.
 RESULTADOS_BUSQUEDA = 20
@@ -59,13 +70,19 @@ def _calendario_de(id_asistente):
 
 @ponente_bp.route('/')
 def inicio():
-    texto = request.args.get('q', '').strip()
+    mi_asistente = usuario_actual()['fk_asistente'] if sesion_activa() else None
+    es_admin = tiene_rol(ROL_ADMIN)
+
+    # D47: solo un ADMIN busca o abre el calendario de otra persona. Un PONENTE
+    # que pida el de otro (?asistente=) recibe 403 y '?q=' se ignora.
+    texto = request.args.get('q', '').strip() if es_admin else ''
     id_asistente = request.args.get('asistente', type=int)   # None si no llega o no es número
+    if not es_admin and id_asistente is not None and id_asistente != mi_asistente:
+        abort(403)
 
     # v5+: con sesión y sin persona elegida, se abre el calendario propio.
     # Sin ninguna búsqueda en curso: si el usuario está buscando a otra
     # persona ('?q='), no se le impone el suyo.
-    mi_asistente = usuario_actual()['fk_asistente'] if sesion_activa() else None
     if id_asistente is None and not texto and mi_asistente:
         id_asistente = mi_asistente
 
@@ -87,4 +104,4 @@ def inicio():
 
     return render_template('ponente_calendario.html', q=texto, personas=personas,
                            asistente=asistente, calendario=calendario,
-                           mi_asistente=mi_asistente)
+                           mi_asistente=mi_asistente, puede_buscar=es_admin)

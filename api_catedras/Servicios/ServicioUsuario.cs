@@ -36,13 +36,20 @@ public class ServicioUsuario : IServicioUsuario
 
     private readonly IRepositorioUsuario _repositorio;
     private readonly IRepositorioRolPorUsuario _repositorioRoles;
+    private readonly IRepositorioCodigoRecuperacion _repositorioCodigos;
 
     // El login necesita los roles vigentes del usuario: por eso este servicio
     // recibe TAMBIÉN el repositorio de 'rol_por_usuario' (Fase 40).
-    public ServicioUsuario(IRepositorioUsuario repositorio, IRepositorioRolPorUsuario repositorioRoles)
+    // v7.1: y el de 'codigo_recuperacion', porque recuperar la clave también
+    // acaba en un hash BCrypt y ESTE es el único archivo que lo calcula.
+    public ServicioUsuario(
+        IRepositorioUsuario repositorio,
+        IRepositorioRolPorUsuario repositorioRoles,
+        IRepositorioCodigoRecuperacion repositorioCodigos)
     {
         _repositorio = repositorio;
         _repositorioRoles = repositorioRoles;
+        _repositorioCodigos = repositorioCodigos;
     }
 
     // Único punto de hash del proyecto. El factor de costo es el que trae
@@ -154,5 +161,56 @@ public class ServicioUsuario : IServicioUsuario
 
         var roles = await _repositorioRoles.ObtenerVigentesAsync(usuario.IdUsuario);
         return (usuario, roles);
+    }
+
+    // ----------------------------------------------------------------------
+    //  v7.1 · RF-S5 · Cambiar la clave sabiendo la actual
+    // ----------------------------------------------------------------------
+    public async Task<bool> CambiarClaveAsync(long idUsuario, UsuarioCambiarClave peticion)
+    {
+        var usuario = await _repositorio.ObtenerPorIdAsync(idUsuario)
+            ?? throw new NoEncontradoExcepcion($"No existe el usuario '{idUsuario}'.");
+
+        // ObtenerPorId no trae el hash (ADR D23); el único camino que lo trae
+        // es el del login, de uso interno justamente para esto.
+        var conHash = await _repositorio.ObtenerPorLoginAsync(usuario.NombreUsuario);
+
+        if (conHash is null
+            || !conHash.Activo
+            || !BCrypt.Net.BCrypt.Verify(peticion.ClaveActual!, conHash.ClaveHash))
+            return false;
+
+        if (peticion.ClaveNueva == peticion.ClaveActual)
+            throw new ArgumentException("La clave nueva debe ser distinta de la actual.");
+
+        await _repositorio.ActualizarAsync(idUsuario,
+            new Dictionary<string, object?> { ["clave_hash"] = Hashear(peticion.ClaveNueva!) });
+        return true;
+    }
+
+    // ----------------------------------------------------------------------
+    //  v7.1 · RF-S5 / RF-S6 · Recuperar una clave olvidada
+    // ----------------------------------------------------------------------
+    public async Task<(long IdCodigo, string Codigo, string EnviadoA, string Usuario)?> SolicitarRecuperacionAsync(
+        RecuperacionSolicitar peticion)
+    {
+        string? ip = null;
+        if (peticion.Ip is not null)
+        {
+            if (!System.Net.IPAddress.TryParse(peticion.Ip, out var direccion))
+                throw new ArgumentException("El campo 'ip' no es una dirección IP válida.");
+            ip = direccion.ToString();
+        }
+
+        return await _repositorioCodigos.SolicitarAsync(peticion.Identificador!.Trim(), ip);
+    }
+
+    public async Task RestablecerClaveAsync(RecuperacionRestablecer peticion)
+    {
+        string estado = await _repositorioCodigos.RestablecerAsync(
+            peticion.IdCodigo!.Value, peticion.Codigo!, Hashear(peticion.ClaveNueva!));
+
+        if (estado != "OK")
+            throw new CodigoRecuperacionInvalidoExcepcion(estado);
     }
 }

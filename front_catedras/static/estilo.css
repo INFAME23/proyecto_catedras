@@ -458,3 +458,52 @@ main {
         font-size: 1.8rem;
     }
 }
+
+/* ============================================
+   ADMIN · CATEGORÍAS DESPLEGABLES DEL PANEL (v7.1)
+   Cada categoría de templates/admin/panel.html es un <details>: cerrada por
+   defecto para que el panel no llene la pantalla. Sin JavaScript.
+   ============================================ */
+.admin-grupo {
+    border: 1px solid rgba(0, 0, 0, 0.125);
+    border-radius: 0.5rem;
+    background: #fff;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+}
+
+.admin-grupo > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1.1rem;
+    cursor: pointer;
+    list-style: none;
+    font-weight: 700;
+    user-select: none;
+}
+
+.admin-grupo > summary::-webkit-details-marker { display: none; }
+.admin-grupo > summary i { width: 1.25rem; text-align: center; }
+.admin-grupo > summary .badge { margin-left: 0.25rem; }
+.admin-grupo > summary:hover { background: rgba(0, 0, 0, 0.03); }
+.admin-grupo > summary:focus-visible { outline: 2px solid var(--primary, #0d6efd); outline-offset: -2px; }
+
+.admin-grupo > summary::after {
+    content: "";
+    margin-left: auto;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+    transition: transform 0.2s ease;
+}
+
+.admin-grupo[open] > summary::after { transform: rotate(-135deg); }
+.admin-grupo[open] > summary { border-bottom: 1px solid rgba(0, 0, 0, 0.125); }
+.admin-grupo-cuerpo { padding: 1rem; }
+
+@media (prefers-reduced-motion: reduce) {
+    .admin-grupo > summary::after { transition: none; }
+}

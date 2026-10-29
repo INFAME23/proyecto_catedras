@@ -1,4 +1,5 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
+{% import 'partials/macros_geo.html' as geo %}
 {# Maestro-detalle #8: REGISTRO DE ASISTENCIA -> su RESPUESTA DE ENCUESTA
    (a lo sumo una: uq_respuesta_registro; la respuesta cuelga del REGISTRO,
    no de la encuesta). Se muestran también los ítems de esa respuesta (#9).
@@ -43,6 +44,11 @@
             <dt class="col-sm-3">IP</dt>
             <dd class="col-sm-9 small">{{ registro.ip }}</dd>
             {% endif %}
+            <dt class="col-sm-3">Ubicación</dt>
+            <dd class="col-sm-9 small">
+                {{ geo.ubicacion(registro, true) }}
+                {% if registro.latitud is none %}<span class="text-muted">(sin ubicación: registro manual, importado o anterior a la v7.1)</span>{% endif %}
+            </dd>
         </dl>
     </div>
 </div>
