@@ -17,9 +17,20 @@
 <h1 class="h3 fw-bold mb-1"><i class="fas fa-book-open text-primary-custom me-2"></i>Nueva cátedra</h1>
 <p class="text-muted">Quedas como ponente en todas las sesiones que agregues. Si otro ponente participa también, que se asigne desde «Cátedras»: no la dupliques.</p>
 
+{% if choques %}
+{# v7.1 · D52 · no es un flash: se queda hasta que se corrija el horario. #}
+<div class="alert alert-danger" role="alert" id="choques">
+    <strong><i class="fas fa-exclamation-triangle me-1"></i>No se creó la cátedra: hay sesiones que se cruzan.</strong>
+    <ul class="mb-1 mt-2">{% for c in choques %}<li>{{ c }}</li>{% endfor %}</ul>
+    <span class="small">Cambia el horario o el lugar de esas sesiones. Con «Ver ocupación de una fecha» puedes elegir un hueco libre.</span>
+</div>
+{% endif %}
+
 <div class="card shadow-sm">
     <div class="card-body">
-        <form method="post" action="{{ url_for('ponente_catedras.nueva') }}">
+        <form method="post" id="form-catedra" action="{{ url_for('ponente_catedras.nueva') }}"
+              data-url-disponibilidad="{{ url_for('ponente_catedras.disponibilidad') }}"
+              data-url-agenda="{{ url_for('ponente_catedras.agenda') }}">
             <div class="row g-3 mb-3">
                 <div class="col-md-4">
                     <label class="form-label" for="id_evento_asis">Código ASIS (9 dígitos)</label>
@@ -49,6 +60,25 @@
                         <option value="{{ d.id_dependencia }}" {% if catedra and catedra.fk_dependencia == d.id_dependencia %}selected{% endif %}>{{ d.id_dependencia }} · {{ d.nombre }}</option>
                         {% endfor %}
                     </select>
+                </div>
+            </div>
+
+            {# v7.1 · D52 · ¿qué hay ocupado ese día? (lo pinta static/ponente_disponibilidad.js) #}
+            <div class="card mb-3 border-info">
+                <div class="card-body">
+                    <h2 class="h6 fw-bold"><i class="fas fa-calendar-day me-1"></i>Ver ocupación de una fecha</h2>
+                    <p class="form-text mt-0 mb-2">Antes de escribir las sesiones, mira qué hay ya programado ese día para elegir un hueco libre. No se pueden cruzar dos sesiones en el mismo salón, ni tú estar en dos a la vez.</p>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-sm-4"><label class="form-label small mb-1" for="ocupacion-fecha">Fecha</label>
+                            <input type="date" class="form-control form-control-sm" id="ocupacion-fecha"></div>
+                        <div class="col-sm-4"><label class="form-label small mb-1" for="ocupacion-sede">Sede</label>
+                            <select class="form-select form-select-sm" id="ocupacion-sede">
+                                <option value="">Todas las sedes</option>
+                                {% for s in sedes %}<option value="{{ s.id_sede }}">{{ s.nombre }}</option>{% endfor %}
+                            </select></div>
+                        <div class="col-sm-4"><button type="button" class="btn btn-sm btn-outline-info" id="ver-ocupacion"><i class="fas fa-search me-1"></i>Ver ocupación</button></div>
+                    </div>
+                    <div id="ocupacion-resultado" role="status" aria-live="polite"></div>
                 </div>
             </div>
 
@@ -89,13 +119,14 @@
                         </select></label>
                 </div>
                 <div class="col-md-9">
-                    <label class="w-100"><span class="form-label small d-block mb-1">Lugar <span class="text-muted">(opcional)</span></span>
+                    <label class="w-100"><span class="form-label small d-block mb-1">Lugar / salón <span class="text-muted">(recomendado: sin él se asume que ocupa toda la sede)</span></span>
                         <input type="text" class="form-control form-control-sm" name="ses_lugar" maxlength="200" value="{{ f.lugar if f else '' }}"></label>
                 </div>
                 <div class="col-md-3">
                     <label class="w-100"><span class="form-label small d-block mb-1">Cupo <span class="text-muted">(opcional)</span></span>
                         <input type="number" class="form-control form-control-sm" name="ses_cupo" min="1" value="{{ f.cupo if f else '' }}"></label>
                 </div>
+                <div class="col-12"><div data-disponibilidad role="status" aria-live="polite"></div></div>
             </div>
             {% endcall %}
 
@@ -112,4 +143,8 @@
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='ponente_disponibilidad.js') }}"></script>
 {% endblock %}

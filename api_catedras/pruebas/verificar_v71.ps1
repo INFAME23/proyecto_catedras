@@ -245,6 +245,44 @@ Verificar "Volver a inscribirse la reactiva -> 200 'inscrita'" ($ir.Codigo -eq 2
 $null = Llamar POST "/api/InscripcionCatedra/cancelar" @{ fk_catedra = 5498; fk_asistente = $idAsistente }   # se deja sin inscripcion
 
 # --------------------------------------------------------------------------
+Titulo "8. D52: disponibilidad de horario (que no se crucen dos sesiones)"
+# Una catedra de prueba con una sesion el ${dia} de 14:00 a 16:00 (Colombia), SAN_BENITO, 'Aula 101'.
+$dia = (Get-Date "2032-01-01").AddDays((Get-Random -Maximum 3000))
+$dia1 = $dia.AddDays(1).ToString("yyyy-MM-dd"); $dia2 = $dia.AddDays(2).ToString("yyyy-MM-dd"); $dia40 = $dia.AddDays(40).ToString("yyyy-MM-dd"); $dia = $dia.ToString("yyyy-MM-dd")
+# El codigo ASIS es aleatorio para poder repetir el script sin chocar con la corrida anterior.
+$codigoDisp = "{0:D9}" -f (Get-Random -Minimum 800000000 -Maximum 899999999)
+$tipoEv = (Llamar GET "/api/TipoEvento").Json.datos[0].id_tipo_evento
+$catDisp = Llamar POST "/api/Catedra" @{
+    id_evento_asis = $codigoDisp; nombre = "Catedra de prueba de disponibilidad"; fk_tipo_evento = $tipoEv; activo = $true
+    sesiones = @(@{ inicio = "${dia}T14:00:00-05:00"; fin = "${dia}T16:00:00-05:00"; fk_modalidad = "PRESENCIAL"
+                    fk_sede = "SAN_BENITO"; fk_periodo = "2026-2"; lugar = "Aula 101" })
+}
+Verificar "Se crea la catedra de prueba con una sesion" ($catDisp.Codigo -eq 200) $catDisp
+$sesDisp = (Llamar GET "/api/Sesion?fkCatedra=$($catDisp.Json.id_catedra)").Json.datos[0].id_sesion
+$null = Llamar POST "/api/Ponencia" @{ fk_sesion = $sesDisp; fk_asistente = $idAsistente; rol = "PONENTE" }
+
+function Conflictos($ini, $fin, $extra = "") { Llamar GET ("/api/Disponibilidad/conflictos?inicio=" + [uri]::EscapeDataString($ini) + "&fin=" + [uri]::EscapeDataString($fin) + $extra) }
+$d1 = Conflictos "${dia}T15:00:00-05:00" "${dia}T17:00:00-05:00" "&fkSede=SAN_BENITO&lugar=Aula%20101"
+Verificar "Mismo salon y horario traslapado -> NO disponible por LUGAR" ($d1.Codigo -eq 200 -and $d1.Json.disponible -eq $false -and $d1.Json.conflictos[0].motivos -contains "LUGAR") $d1
+$d2 = Conflictos "${dia}T15:00:00-05:00" "${dia}T17:00:00-05:00" "&fkSede=SAN_BENITO&lugar=Aula%20202"
+Verificar "Misma sede, otro salon -> disponible" ($d2.Codigo -eq 200 -and $d2.Json.disponible -eq $true) $d2
+$d3 = Conflictos "${dia}T16:00:00-05:00" "${dia}T18:00:00-05:00" "&fkSede=SAN_BENITO&lugar=Aula%20101"
+Verificar "Empezar justo cuando termina la otra -> disponible (no cruza)" ($d3.Codigo -eq 200 -and $d3.Json.disponible -eq $true) $d3
+$d4 = Conflictos "${dia}T15:00:00-05:00" "${dia}T17:00:00-05:00" "&fkSede=BELLO&lugar=Salon%20X&fkAsistente=$idAsistente"
+Verificar "Otra sede pero el ponente ya esta en esa franja -> NO disponible por PONENTE" ($d4.Codigo -eq 200 -and $d4.Json.disponible -eq $false -and $d4.Json.conflictos[0].motivos -contains "PONENTE") $d4
+$d5 = Conflictos "${dia}T15:00:00-05:00" "${dia}T17:00:00-05:00" "&fkSede=VIRTUAL"
+Verificar "Sede virtual (sin salon) y sin ponente -> disponible" ($d5.Codigo -eq 200 -and $d5.Json.disponible -eq $true) $d5
+$d6 = Conflictos "${dia}T15:00:00-05:00" "${dia}T17:00:00-05:00" "&fkAsistente=$idAsistente&excluirSesion=$sesDisp"
+Verificar "excluirSesion deja fuera la sesion que se esta asignando" ($d6.Codigo -eq 200 -and $d6.Json.disponible -eq $true) $d6
+Verificar "Rango invalido (fin antes de inicio) -> 400" ((Conflictos "${dia}T17:00:00-05:00" "${dia}T15:00:00-05:00" "&fkSede=SAN_BENITO").Codigo -eq 400)
+Verificar "Rango de mas de 24 h -> 400" ((Conflictos "${dia}T00:00:00-05:00" "${dia2}T00:00:00-05:00" "&fkSede=SAN_BENITO").Codigo -eq 400)
+$ag = Llamar GET ("/api/Disponibilidad/agenda?desde=" + [uri]::EscapeDataString("${dia}T00:00:00-05:00") + "&hasta=" + [uri]::EscapeDataString("${dia1}T00:00:00-05:00"))
+Verificar "Agenda del dia: trae la sesion con el nombre de la catedra y de la sede" ($ag.Codigo -eq 200 -and $ag.Json.total -ge 1 -and $ag.Json.datos[0].nombre_catedra -and $ag.Json.datos[0].nombre_sede) $ag
+$ag2 = Llamar GET ("/api/Disponibilidad/agenda?desde=" + [uri]::EscapeDataString("${dia1}T00:00:00-05:00") + "&hasta=" + [uri]::EscapeDataString("${dia2}T00:00:00-05:00"))
+Verificar "Agenda de un dia sin sesiones -> 200 con total 0" ($ag2.Codigo -eq 200 -and $ag2.Json.total -eq 0) $ag2
+Verificar "Agenda de mas de 31 dias -> 400" ((Llamar GET ("/api/Disponibilidad/agenda?desde=" + [uri]::EscapeDataString("${dia}T00:00:00-05:00") + "&hasta=" + [uri]::EscapeDataString("${dia40}T00:00:00-05:00"))).Codigo -eq 400)
+
+# --------------------------------------------------------------------------
 Write-Host ""
 $color = if ($script:fallidas -eq 0) { "Green" } else { "Red" }
 Write-Host "$($script:pasadas) pasadas, $($script:fallidas) fallidas." -ForegroundColor $color

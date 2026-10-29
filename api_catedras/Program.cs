@@ -359,6 +359,11 @@ builder.Services.AddScoped<IRepositorioInscripcionCatedra>(
     _ => new RepositorioInscripcionCatedraPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioInscripcionCatedra, ServicioInscripcionCatedra>();
 
+// v7.1 · D52: disponibilidad de horario (consultas de solo lectura sobre 'sesion').
+builder.Services.AddScoped<IRepositorioDisponibilidad>(
+    _ => new RepositorioDisponibilidadPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioDisponibilidad, ServicioDisponibilidad>();
+
 // IRepositorioRolPorUsuario -> RepositorioRolPorUsuarioPostgres (llave
 // compuesta CON vigencia, ADR D16: se abre con POST y se cierra con PATCH),
 // IServicioRolPorUsuario -> ServicioRolPorUsuario. Este mismo repositorio

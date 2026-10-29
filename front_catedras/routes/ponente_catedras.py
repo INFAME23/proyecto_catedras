@@ -20,13 +20,16 @@
 #  esa cátedra. Asignar a TERCEROS sigue siendo del administrador.
 # ==========================================================================
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from datetime import datetime, timedelta
+
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
 from auth_helpers import ROL_ADMIN, ROL_PONENTE, exigir_rol, usuario_actual
 from routes.admin import (CAMPOS_SESION_FILA, _catalogos_sesion, _filas, _opciones,
                           _sesion_de_fila)
 from routes.ponente import _avisar, _calendario_de
-from servicios.api_catedras import ErrorApi, crear, eliminar, listar, llave, obtener
+from servicios.api_catedras import ErrorApi, consultar, crear, eliminar, listar, llave, obtener
+from servicios.fechas import ZONA_COLOMBIA, desde_input, fecha_hora
 
 ponente_catedras_bp = Blueprint('ponente_catedras', __name__)
 
@@ -65,8 +68,58 @@ def _asignar_a_sesiones(sesiones):
     return hechas, None
 
 
-def _render_nueva(datos, errores, filas=()):
-    return render_template('ponente_catedra_nueva.html', catedra=datos, errores=errores,
+# --------------------------------------------------------------------------
+#  v7.1 · D52 · DISPONIBILIDAD DE HORARIO: que no se crucen dos sesiones.
+#  Un horario NO está disponible si otra sesión se traslapa con él y
+#    · LUGAR: es en la misma sede física y el mismo salón (sin salón escrito
+#      se cuenta como choque, es lo prudente), o
+#    · PONENTE: ya participas tú en esa otra sesión (nadie está en dos a la vez).
+#  La regla la calcula la BD (sp_sesiones_en_conflicto, migración 050); aquí solo
+#  se consulta y se avisa. Si NO se puede consultar, no se crea nada (se falla
+#  cerrado: mejor pedir reintentar que cruzar dos sesiones).
+# --------------------------------------------------------------------------
+_MOTIVO = {'LUGAR': 'el mismo salón en esa sede', 'PONENTE': 'ya participas tú en esa sesión'}
+
+
+def _describe(c):
+    """Una sesión que choca, en una línea legible (hora de Colombia)."""
+    motivos = ' y '.join(_MOTIVO.get(m, m) for m in (c.get('motivos') or []))
+    donde = ', '.join(x for x in (c.get('fk_sede'), c.get('lugar')) if x)
+    return (f"«{c['nombre_catedra']}» (reunión {c['numero_reunion']}, "
+            f"{fecha_hora(c['inicio'], '%Y-%m-%d %H:%M')}–{fecha_hora(c['fin'], '%H:%M')}"
+            f"{', ' + donde if donde else ''}): {motivos}")
+
+
+def _conflictos(inicio, fin, sede=None, lugar=None, excluir_sesion=None):
+    """Sesiones que chocan con ese horario (para MÍ como ponente y, si hay sede, por salón).
+    'inicio'/'fin': texto ISO con zona. Lanza ErrorApi si no se pudo consultar."""
+    r = consultar('Disponibilidad/conflictos', inicio=inicio, fin=fin, fkSede=sede or None,
+                  lugar=lugar or None, fkAsistente=_mi_asistente(), excluirSesion=excluir_sesion)
+    return r['conflictos']
+
+
+def _choques_del_formulario(filas):
+    """Lista de textos con los choques de las sesiones escritas: contra la BD y entre ellas
+    mismas (quien las crea queda en todas, así que dos que se traslapan se cruzan siempre)."""
+    avisos = []
+    rangos = []
+    for n, f in enumerate(filas, start=1):
+        inicio, fin = desde_input(f['inicio']), desde_input(f['fin'])
+        for c in _conflictos(inicio, fin, f.get('fk_sede'), f.get('lugar')):
+            avisos.append(f"Sesión {n} choca con {_describe(c)}.")
+        try:
+            rangos.append((n, datetime.fromisoformat(inicio), datetime.fromisoformat(fin)))
+        except (TypeError, ValueError):
+            pass        # fecha ilegible: la API la rechaza con su 422 al crear
+    for i, (n1, a1, b1) in enumerate(rangos):
+        for n2, a2, b2 in rangos[i + 1:]:
+            if a1 < b2 and b1 > a2:
+                avisos.append(f"Las sesiones {n1} y {n2} de esta misma cátedra se cruzan en el horario.")
+    return avisos
+
+
+def _render_nueva(datos, errores, filas=(), choques=()):
+    return render_template('ponente_catedra_nueva.html', catedra=datos, errores=errores, choques=list(choques),
                            filas_sesiones=list(filas), tipos_evento=_opciones('TipoEvento'),
                            dependencias=_opciones('Dependencia'), **_catalogos_sesion())
 
@@ -88,6 +141,16 @@ def nueva():
         # Sin sesiones no habría a qué asignarse: la participación es por sesión.
         flash('Agrega al menos una sesión: es a ellas a las que te asignas como ponente.', 'error')
         return _render_nueva(datos, [], filas)
+    # v7.1 · D52: antes de guardar nada, que ninguna sesión se cruce con otra.
+    try:
+        choques = _choques_del_formulario(filas)
+    except ErrorApi as ex:
+        flash('No se pudo verificar la disponibilidad del horario, así que no se creó nada. '
+              f"Intenta de nuevo en un momento. {ex.detalle or ''}".strip(), 'error')
+        return _render_nueva(datos, [], filas)
+    if choques:
+        # Fijos en la página (no flash: un flash se borra a los 5 s y esto hay que poder leerlo).
+        return _render_nueva(datos, [], filas, choques)
     datos['sesiones'] = [_sesion_de_fila(f) for f in filas]
 
     try:
@@ -153,20 +216,26 @@ def _catedra_y_sesiones(id_catedra):
     return catedra, sorted(sesiones, key=lambda s: s['inicio'])
 
 
-@ponente_catedras_bp.route('/<int:id_catedra>')
-def detalle(id_catedra):
+def _pagina_detalle(id_catedra, avisos=()):
+    """La pantalla de una cátedra; 'avisos' son textos FIJOS (no flash) que se leen con calma."""
     try:
         catedra, sesiones = _catedra_y_sesiones(id_catedra)
         mias = _mis_sesiones()
     except ErrorApi as ex:
         _avisar(ex)
-        return render_template('ponente_catedra_detalle.html', catedra=None, sesiones=[], mias=set()), 502
+        return render_template('ponente_catedra_detalle.html', catedra=None, sesiones=[], mias=set(),
+                               avisos=list(avisos)), 502
     try:
         inscritos = len(listar('InscripcionCatedra', limite=5000, fkCatedra=id_catedra))
     except ErrorApi:
         inscritos = None
     return render_template('ponente_catedra_detalle.html', catedra=catedra, sesiones=sesiones, mias=mias,
-                           inscritos=inscritos)
+                           inscritos=inscritos, avisos=list(avisos))
+
+
+@ponente_catedras_bp.route('/<int:id_catedra>')
+def detalle(id_catedra):
+    return _pagina_detalle(id_catedra)
 
 
 def _sesiones_elegidas(sesiones):
@@ -188,11 +257,27 @@ def asignarme(id_catedra):
     if not nuevas:
         flash('No marcaste ninguna sesión nueva (las que ya tienes no se repiten).', 'error')
     else:
-        hechas, ex = _asignar_a_sesiones(nuevas)
+        # v7.1 · D52: no te asignas a una sesión que se cruza con otra tuya.
+        libres = []
+        avisos = []
+        for s in nuevas:
+            try:
+                choques = _conflictos(s['inicio'], s['fin'], excluir_sesion=s['id_sesion'])
+            except ErrorApi as ex:
+                _avisar(ex)
+                return redirect(url_for('ponente_catedras.detalle', id_catedra=id_catedra))
+            if choques:
+                avisos.append(f"No te asignaste a la reunión {s['numero_reunion']} "
+                              f"({fecha_hora(s['inicio'])}): se cruza con {_describe(choques[0])}.")
+            else:
+                libres.append(s)
+        hechas, ex = _asignar_a_sesiones(libres)
         if ex is not None:
             _avisar(ex)
         if hechas:
             flash(f"Quedaste como ponente en {hechas} sesion{'' if hechas == 1 else 'es'} de «{catedra['nombre']}».", 'exito')
+        if avisos:
+            return _pagina_detalle(id_catedra, avisos)      # sin redirigir: los avisos quedan visibles
     return redirect(url_for('ponente_catedras.detalle', id_catedra=id_catedra))
 
 
@@ -215,3 +300,41 @@ def quitarme(id_catedra):
     elif not quitar:
         flash('Marca las sesiones de las que quieres salir (solo las tuyas).', 'error')
     return redirect(url_for('ponente_catedras.detalle', id_catedra=id_catedra))
+
+
+# --------------------------------------------------------------------------
+#  v7.1 · D52 · JSON para la pantalla «Nueva cátedra» (lo llama static/ponente_disponibilidad.js).
+#  Mismo guardia de rol que el resto del blueprint. Las horas llegan y salen en hora de Colombia.
+# --------------------------------------------------------------------------
+def _hora(c):
+    return {**c, 'hora': f"{fecha_hora(c['inicio'], '%H:%M')}–{fecha_hora(c['fin'], '%H:%M')}",
+            'fecha': fecha_hora(c['inicio'], '%Y-%m-%d'),
+            'texto': _describe(c) if c.get('motivos') else None}
+
+
+@ponente_catedras_bp.route('/disponibilidad')
+def disponibilidad():
+    """¿Está libre este horario? ?inicio=&fin= (datetime-local) &sede= &lugar= ."""
+    inicio, fin = desde_input(request.args.get('inicio')), desde_input(request.args.get('fin'))
+    if not inicio or not fin:
+        return jsonify(error='Escribe el inicio y el fin para consultar.'), 400
+    try:
+        conflictos = _conflictos(inicio, fin, request.args.get('sede'), request.args.get('lugar'))
+    except ErrorApi as ex:
+        return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), (400 if ex.codigo in (400, 422) else 502)
+    return jsonify(disponible=not conflictos, conflictos=[_hora(c) for c in conflictos])
+
+
+@ponente_catedras_bp.route('/agenda')
+def agenda():
+    """Qué hay ocupado en una fecha: ?fecha=AAAA-MM-DD &sede= (opcional)."""
+    try:
+        dia = datetime.strptime(request.args.get('fecha', ''), '%Y-%m-%d').replace(tzinfo=ZONA_COLOMBIA)
+    except ValueError:
+        return jsonify(error='Elige una fecha.'), 400
+    try:
+        r = consultar('Disponibilidad/agenda', desde=dia.isoformat(), hasta=(dia + timedelta(days=1)).isoformat(),
+                      fkSede=request.args.get('sede') or None)
+    except ErrorApi as ex:
+        return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), 502
+    return jsonify(fecha=dia.strftime('%Y-%m-%d'), sesiones=[_hora(c) for c in r['datos']])

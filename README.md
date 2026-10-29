@@ -12,7 +12,7 @@ estructura académica de la v2 y la arquitectura en capas de la v1.
 
 Sin tablas de negocio nuevas en el mapa (sigue en 37 recursos) y sin romper el
 orden de versiones; sus requisitos se numeran `RF-S1`…`RF-S7`. Documento
-completo, con las decisiones (D38–D51), lo verificado y lo pendiente:
+completo, con las decisiones (D38–D52), lo verificado y lo pendiente:
 [docs/spec_kit/Versiones/version7_1/v7_1_subversion.md](docs/spec_kit/Versiones/version7_1/v7_1_subversion.md).
 
 - **Geolocalización obligatoria** al autorregistrar la asistencia: el navegador
@@ -27,18 +27,18 @@ completo, con las decisiones (D38–D51), lo verificado y lo pendiente:
   solo uso enviado por correo (`/recuperar`).
 - **Panel de `/admin` con categorías desplegables** (cerradas por defecto, sin barra lateral).
 
-> **Si ya tienes el volumen de PostgreSQL creado**, las migraciones 045-049 no
+> **Si ya tienes el volumen de PostgreSQL creado**, las migraciones 045-050 no
 > corren solas (initdb solo corre con el volumen vacío). Aplícalas **en orden**:
 >
 > ```bash
-> for n in 045_geolocalizacion_registro 046_roles_estudiante_ponente 047_codigo_recuperacion 048_semilla_estudiante 049_inscripcion_catedra; do
+> for n in 045_geolocalizacion_registro 046_roles_estudiante_ponente 047_codigo_recuperacion 048_semilla_estudiante 049_inscripcion_catedra 050_disponibilidad_sesiones; do
 >   docker compose cp db/postgres/migraciones/$n.sql postgres:/tmp/m.sql
 >   docker compose exec -T postgres psql -U sa -d bdcatedras_postgres_local -v ON_ERROR_STOP=1 -f /tmp/m.sql
 > done
 > ```
 >
 > Sin la 045, validar una clave responde `42883: function fn_validar_clave_geo_api
-> does not exist`; sin la 047, la recuperación de clave falla; sin la 049, inscribirse a una cátedra falla.
+> does not exist`; sin la 047, la recuperación de clave falla; sin la 049, inscribirse a una cátedra falla; sin la 050, la consulta de disponibilidad falla.
 
 **Correo (RF-S6).** El código de recuperación se envía por SMTP configurado
 con variables de entorno; copia `front_catedras/env.ejemplo` como
