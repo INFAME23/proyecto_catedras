@@ -163,8 +163,9 @@ v('Anónimo: la fila «Inscripción» invita a iniciar sesión (con regreso a la
 t = cliente(['PONENTE']).get('/catedras/10').get_data(as_text=True)
 v('PONENTE: la fila dice que solo los estudiantes se inscriben', 'Solo los estudiantes se inscriben' in t)
 js = open('static/main.js', encoding='utf-8-sig').read()
-v("main.js solo quita solos los mensajes flash ('.alert.alert-dismissible'), no todos los avisos",
-  "querySelectorAll('.alert.alert-dismissible')" in js and "querySelectorAll('.alert')" not in js)
+v("main.js solo quita solos los flash de ÉXITO ('.alert-success.alert-dismissible'): ni los avisos ni los errores",
+  "querySelectorAll('.alert.alert-success.alert-dismissible')" in js and "querySelectorAll('.alert')" not in js
+  and "querySelectorAll('.alert.alert-dismissible')" not in js)
 
 # --- pedidos de limpieza: panel sin «Mis sesiones» y portada sin el texto de la API --------------------
 t = cliente(EST).get('/estudiante/').get_data(as_text=True)

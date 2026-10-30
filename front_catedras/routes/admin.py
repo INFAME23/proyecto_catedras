@@ -34,6 +34,7 @@ from auth_helpers import ROL_ADMIN, exigir_rol, usuario_actual
 from servicios.api_catedras import (ErrorApi, actualizar_parcial, crear, eliminar, listar,
                                     obtener, reemplazar)
 from servicios.fechas import a_local, desde_input
+from servicios.qr_sesiones import asegurar_qr_de_catedra
 from routes.sesiones import (ROLES_PONENCIA, asignar_ponente, buscar_candidatos, ponentes_de,
                              quitar_ponente)
 
@@ -1472,6 +1473,11 @@ def catedras_nueva():
     sufijo = f" con {len(filas)} sesion{'' if len(filas) == 1 else 'es'}" if filas else ''
     flash(f"Cátedra creada con id {respuesta['id_catedra']}{sufijo} "
           f"(nombre ASIS: '{respuesta['nombre_asis']}').", 'exito')
+    if filas:
+        # v7.1 · D53: cada sesión nace con su QR de cierre (el ponente lo ve en «Ver QR»).
+        qr_hechos, qr_total = asegurar_qr_de_catedra(respuesta['id_catedra'], usuario_actual().get('id_usuario'))
+        if qr_hechos != qr_total:
+            flash(f'Se generó el QR de {qr_hechos} de {qr_total} sesiones.', 'error')
     return redirect(url_for('admin.catedras_detalle', id_catedra=respuesta['id_catedra']))
 
 

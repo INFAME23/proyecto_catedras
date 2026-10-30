@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+{# ==========================================================================
+   ponente_sesion_qr.html  ·  v7.1 (D53)
+   El QR de cierre de una sesión para el ponente: se proyecta o se comparte al FINAL de la sesión.
+   Muestra la ventana en que sirve, y quién de los inscritos asistió (con hora y ubicación).
+   ========================================================================== #}
+{% block titulo %}QR de la sesión {{ sesion.numero_reunion }} · Cátedras USB{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('ponente.inicio') }}">Calendario del ponente</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('ponente_catedras.detalle', id_catedra=catedra.id_catedra) }}">{{ catedra.id_evento_asis }}</a></li>
+        <li class="breadcrumb-item active">QR de la reunión {{ sesion.numero_reunion }}</li>
+    </ol>
+</nav>
+
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-qrcode text-primary-custom me-2"></i>QR de asistencia · reunión {{ sesion.numero_reunion }}</h1>
+<p class="text-muted">{{ catedra.nombre }} · {{ sesion.inicio|fecha_hora('%Y-%m-%d') }}, {{ sesion.inicio|fecha_hora('%H:%M') }}–{{ sesion.fin|fecha_hora('%H:%M') }} <span class="small">(hora de Colombia)</span></p>
+
+{% if error %}
+<div class="alert alert-danger"><strong>{{ error.mensaje }}</strong> {{ error.detalle or '' }}</div>
+{% endif %}
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card shadow-sm" id="tarjeta-qr">
+            <div class="card-body text-center">
+                {% if qr %}
+                    {% if estado == 'abierto' %}
+                    <span class="badge badge-success mb-2" id="estado-ventana">Abierto: se cierra a las {{ hasta.strftime('%H:%M') }}</span>
+                    {% elif estado == 'pendiente' %}
+                    <span class="badge badge-warning mb-2" id="estado-ventana">Aún no abre: se abre a las {{ desde.strftime('%H:%M') }}</span>
+                    {% else %}
+                    <span class="badge badge-secondary mb-2" id="estado-ventana">Cerrado a las {{ hasta.strftime('%H:%M') }}</span>
+                    {% endif %}
+                    <div class="mx-auto my-2" id="qr-dibujo" style="max-width: 340px;">{{ svg|safe }}</div>
+                    <p class="small text-muted mb-2">Escanear el QR lleva a pedir la clave por correo y a registrar la asistencia con la ubicación del celular. Solo sirve a quien está <strong>inscrito</strong> en la cátedra.</p>
+                    <div class="input-group input-group-sm mb-3">
+                        <input type="text" class="form-control" id="url-registro" value="{{ url }}" readonly aria-label="Enlace del QR">
+                        <button class="btn btn-outline-secondary" type="button" id="copiar-url"><i class="fas fa-copy me-1"></i>Copiar</button>
+                    </div>
+                    <div class="d-flex flex-wrap justify-content-center gap-2">
+                        <button class="btn btn-primary btn-sm" type="button" id="ampliar"><i class="fas fa-expand me-1"></i>Proyectar en pantalla completa</button>
+                        <form method="post" action="{{ url_for('ponente_catedras.qr_sesion', id_sesion=sesion.id_sesion) }}"
+                              onsubmit="return confirm('¿Generar un QR nuevo? El anterior (el que ya compartiste) dejará de servir.');">
+                            <input type="hidden" name="regenerar" value="1">
+                            <button class="btn btn-outline-danger btn-sm" type="submit"><i class="fas fa-sync-alt me-1"></i>Regenerar QR</button>
+                        </form>
+                    </div>
+                {% else %}
+                    <p class="text-muted my-4">Esta sesión todavía no tiene QR.</p>
+                    <form method="post" action="{{ url_for('ponente_catedras.qr_sesion', id_sesion=sesion.id_sesion) }}">
+                        <button class="btn btn-primary" type="submit"><i class="fas fa-qrcode me-1"></i>Generar el QR</button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+        {% if qr %}
+        <p class="small text-muted mt-2">
+            <i class="fas fa-clock me-1"></i>El QR sirve de las <strong>{{ desde.strftime('%H:%M') }}</strong> a las <strong>{{ hasta.strftime('%H:%M') }}</strong>
+            ({{ desde.strftime('%Y-%m-%d') }}), es decir, solo en los últimos minutos antes de que termine la sesión. Compártelo al final.
+        </p>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-header fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span><i class="fas fa-clipboard-check me-2"></i>Asistencia de esta sesión</span>
+                <span class="small fw-normal">
+                    <span class="badge badge-success" id="n-asistieron">{{ contadores.asistieron }}</span> asistieron de
+                    <span class="badge badge-secondary" id="n-inscritos">{{ contadores.inscritos }}</span> inscritos
+                    <span class="text-muted" id="n-sin-insc">{% if contadores.sin_inscripcion %}· {{ contadores.sin_inscripcion }} sin inscripción{% endif %}</span>
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light"><tr><th>Persona</th><th>Código ASIS</th><th>Inscrito</th><th>Asistió</th><th>Hora</th><th>Ubicación</th></tr></thead>
+                        <tbody id="filas-asistencia">
+                        {% for f in filas %}
+                        <tr>
+                            <td>{{ f.nombres }} {{ f.apellidos }}</td>
+                            <td class="small">{{ f.id_asis or '—' }}</td>
+                            <td>{{ '✔' if f.inscrito else '✖' }}</td>
+                            <td>{% if f.asistio %}<span class="badge badge-success">Sí</span>{% else %}<span class="badge badge-secondary">No</span>{% endif %}</td>
+                            <td class="small">{{ (f.registrado_en|fecha_hora('%H:%M:%S')) if f.registrado_en else '—' }}</td>
+                            <td class="small">{% if f.latitud is not none and f.longitud is not none %}<a href="https://maps.google.com/?q={{ f.latitud }},{{ f.longitud }}" target="_blank" rel="noopener noreferrer"><i class="fas fa-map-marker-alt"></i> ver</a>{% else %}—{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-muted text-center small py-3 mb-0" id="sin-filas" {% if filas %}hidden{% endif %}>Todavía no hay estudiantes inscritos en esta cátedra.</p>
+            </div>
+            <div class="card-footer small text-muted d-flex justify-content-between align-items-center">
+                <span>Se actualiza sola cada 15 segundos.</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="actualizar"><i class="fas fa-sync me-1"></i>Actualizar ya</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    var urlAsistencia = {{ url_for('ponente_catedras.asistencia_json', id_sesion=sesion.id_sesion)|tojson }};
+
+    var copiar = document.getElementById('copiar-url');
+    if (copiar) {
+        copiar.addEventListener('click', function () {
+            var campo = document.getElementById('url-registro');
+            campo.select();
+            if (navigator.clipboard) { navigator.clipboard.writeText(campo.value); }
+            else { document.execCommand('copy'); }
+            copiar.textContent = 'Copiado';
+        });
+    }
+
+    var ampliar = document.getElementById('ampliar');
+    if (ampliar) {
+        ampliar.addEventListener('click', function () {
+            var qr = document.getElementById('tarjeta-qr');
+            if (qr.requestFullscreen) { qr.requestFullscreen(); }
+        });
+    }
+
+    function celda(texto, clase) {
+        var td = document.createElement('td');
+        if (clase) { td.className = clase; }
+        td.textContent = texto;
+        return td;
+    }
+
+    function pintar(datos) {
+        document.getElementById('n-asistieron').textContent = datos.contadores.asistieron;
+        document.getElementById('n-inscritos').textContent = datos.contadores.inscritos;
+        document.getElementById('n-sin-insc').textContent = datos.contadores.sin_inscripcion
+            ? '· ' + datos.contadores.sin_inscripcion + ' sin inscripción' : '';
+        var cuerpo = document.getElementById('filas-asistencia');
+        cuerpo.textContent = '';
+        datos.filas.forEach(function (f) {
+            var tr = document.createElement('tr');
+            tr.appendChild(celda((f.nombres || '') + ' ' + (f.apellidos || '')));
+            tr.appendChild(celda(f.id_asis || '—', 'small'));
+            tr.appendChild(celda(f.inscrito ? '✔' : '✖'));
+            var td = document.createElement('td');
+            var b = document.createElement('span');
+            b.className = 'badge ' + (f.asistio ? 'badge-success' : 'badge-secondary');
+            b.textContent = f.asistio ? 'Sí' : 'No';
+            td.appendChild(b);
+            tr.appendChild(td);
+            tr.appendChild(celda(f.hora || '—', 'small'));
+            var u = document.createElement('td');
+            u.className = 'small';
+            if (f.latitud !== null && f.longitud !== null && f.latitud !== undefined) {
+                var a = document.createElement('a');
+                a.href = 'https://maps.google.com/?q=' + encodeURIComponent(f.latitud + ',' + f.longitud);
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.textContent = 'ver';
+                u.appendChild(a);
+            } else { u.textContent = '—'; }
+            tr.appendChild(u);
+            cuerpo.appendChild(tr);
+        });
+        document.getElementById('sin-filas').hidden = datos.filas.length > 0;
+    }
+
+    function actualizar() {
+        fetch(urlAsistencia, { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) { if (d) { pintar(d); } })
+            .catch(function () { /* sin red: se reintenta en la próxima vuelta */ });
+    }
+
+    document.getElementById('actualizar').addEventListener('click', actualizar);
+    setInterval(actualizar, 15000);
+}());
+</script>
+{% endblock %}

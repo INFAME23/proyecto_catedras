@@ -7,15 +7,19 @@ import sys, datetime as dt
 import werkzeug; werkzeug.__version__ = "3"
 sys.path.insert(0, ".")
 import routes.sesiones as S, routes.carga as C, routes.encuestas as E, routes.registro as R
+import servicios.qr_sesiones as Q
+import routes.admin as AD
 import app as A
 
 ahora = dt.datetime.now(dt.timezone.utc)
 iso = lambda d: d.isoformat()
-estado = {'enlaces': [], 'llamadas': []}
+estado = {'enlaces': [], 'llamadas': [], 'qr': None, 'registros': [], 'inscritas': []}
 
 def listar(recurso, limite=None, **f):
     estado['llamadas'].append(('listar', recurso, f))
     if recurso == 'EnlaceRegistro': return estado['enlaces']
+    if recurso == 'RegistroAsistencia': return estado['registros']
+    if recurso == 'InscripcionCatedra': return estado['inscritas']
     if recurso == 'Ponencia': return [{'fk_sesion': 1, 'fk_asistente': 9, 'rol': 'PONENTE'}]
     if recurso == 'Asistente': return [{'id_asistente': 5, 'nombres': 'X', 'apellidos': 'Y', 'id_asis': '1'}]
     return []
@@ -25,9 +29,13 @@ def obtener(recurso, i):
         'fk_modalidad': 'PRESENCIAL', 'fk_sede': 'SAN_BENITO', 'fk_periodo': '2026-2', 'fk_encuesta': None}
     if recurso == 'Catedra': return {'id_catedra': 2, 'nombre': 'Cat', 'id_evento_asis': 'E'}
     return {'id_asistente': i, 'nombres': 'N', 'apellidos': 'A', 'id_asis': '9'}
+def consultar_falso(ruta, **p):
+    return estado['qr'] if ruta == 'QrSesion' else None
+Q.consultar = consultar_falso
+
 def crear(r, d): estado['llamadas'].append(('crear', r, d)); return {'mensaje': 'ok'}
 def eliminar(r, i): estado['llamadas'].append(('eliminar', r, i)); return {'mensaje': 'ok'}
-for m in (S, C, E, R):
+for m in (S, C, E, R, AD):
     for n, f in (('listar', listar), ('obtener', obtener), ('crear', crear), ('eliminar', eliminar)):
         if hasattr(m, n): setattr(m, n, f)
 
@@ -67,20 +75,34 @@ tok = '11111111-2222-3333-4444-555555555555'
 vig = {'token': tok, 'ventana_desde': iso(ahora - dt.timedelta(hours=2)), 'ventana_hasta': iso(ahora + dt.timedelta(hours=2)), 'revocado_en': None}
 estado['enlaces'] = [vig]
 h = cliente(['ESTUDIANTE']).get('/sesiones/1?q=algo').get_data(as_text=True)
-v('ESTUDIANTE ve «Registrar mi asistencia» hacia /registro/<token>', 'Registrar mi asistencia' in h and f'/registro/{tok}' in h)
+estado['qr'] = {'token': tok, 'ventana_desde': iso(ahora + dt.timedelta(minutes=45)), 'ventana_hasta': iso(ahora + dt.timedelta(hours=1)),
+                'revocado_en': None, 'requiere_inscripcion': True}
+h = cliente(['ESTUDIANTE']).get('/sesiones/1?q=algo').get_data(as_text=True)
+v('ESTUDIANTE: la sesion le explica que se registra con el QR del ponente al final', 'Cómo registrar tu asistencia' in h and 'código QR que comparte el ponente' in h)
+v('...y NUNCA aparece el token del QR ni un boton de registrarse desde ahi (si no, el QR no probaria nada)',
+  tok not in h and 'Registrar mi asistencia' not in h and f'/registro/{tok}' not in h)
+v('...sin inscripcion se le dice que primero debe inscribirse (con enlace a la catedra)', 'Antes debes inscribirte en la cátedra' in h and '#inscripcion' in h)
+estado['inscritas'] = [{'fk_catedra': 2}]
+h = cliente(['ESTUDIANTE']).get('/sesiones/1').get_data(as_text=True)
+v('...inscrito: lo confirma', 'Estás inscrito en la cátedra' in h and 'Antes debes inscribirte' not in h)
+estado['registros'] = [{'registrado_en': iso(ahora), 'latitud': 6.2, 'longitud': -75.5}]
+h = cliente(['ESTUDIANTE']).get('/sesiones/1').get_data(as_text=True)
+v('...si ya registro su asistencia: lo dice (con ubicacion) y no repite las instrucciones', 'Tu asistencia quedó registrada' in h and 'Cómo registrar tu asistencia' not in h)
+estado['registros'] = []
+estado['inscritas'] = []
 v('...no ve el formulario de asignar ni el de quitar', 'Asignar una persona' not in h and 'fa-user-minus' not in h and 'name="rol"' not in h)
 v('...y la busqueda ?q= no le lista personas', 'Persona (' not in h)
 h = cliente(None).get('/sesiones/1').get_data(as_text=True)
-v('Anonimo no ve boton de registro ni formularios', 'Registrar mi asistencia' not in h and 'Asignar una persona' not in h)
+v('Anonimo no ve ni el aviso del estudiante ni formularios', 'Cómo registrar tu asistencia' not in h and 'Asignar una persona' not in h and tok not in h)
 h = cliente(['ADMIN']).get('/sesiones/1?q=algo').get_data(as_text=True)
 v('ADMIN sigue viendo asignar/quitar y candidatos', 'Asignar una persona' in h and 'fa-user-minus' in h and 'Persona (' in h)
-v('...y no ve el boton de estudiante', 'Registrar mi asistencia' not in h)
-for caso, enlaces in (('revocado', [{**vig, 'revocado_en': iso(ahora)}]),
-                      ('vencido', [{**vig, 'ventana_hasta': iso(ahora - dt.timedelta(minutes=1))}]),
-                      ('aun no abre', [{**vig, 'ventana_desde': iso(ahora + dt.timedelta(minutes=5))}]), ('sin enlace', [])):
-    estado['enlaces'] = enlaces
-    h = cliente(['ESTUDIANTE']).get('/sesiones/1').get_data(as_text=True)
-    v(f'Enlace {caso}: sin boton, con aviso', 'Registrar mi asistencia' not in h and 'no está abierto' in h)
+v('...y no ve lo del estudiante ni el token del QR', 'Cómo registrar tu asistencia' not in h and tok not in h)
+estado['qr'] = {'token': tok, 'ventana_desde': iso(ahora + dt.timedelta(minutes=45)), 'ventana_hasta': iso(ahora + dt.timedelta(hours=1)), 'revocado_en': None}
+h = cliente(['ESTUDIANTE']).get('/sesiones/1').get_data(as_text=True)
+v('Con QR, el estudiante ve el horario en que sirve (sin el token)', 'sirve de ' in h and tok not in h)
+estado['qr'] = None
+h = cliente(['ESTUDIANTE']).get('/sesiones/1').get_data(as_text=True)
+v('Sin QR, se le dice que sirve solo en los ultimos minutos de la sesion', 'sirve solo en los últimos minutos' in h)
 r = cliente(['ADMIN']).get('/admin/ponencias?fk_sesion=1')
 h = r.get_data(as_text=True)
 v('Admin: pantalla de ponencias de /admin conserva el formulario', r.status_code == 200 and 'Asignar una persona' in h)

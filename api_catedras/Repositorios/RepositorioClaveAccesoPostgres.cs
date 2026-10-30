@@ -6,7 +6,7 @@
 //  JSON NO trae 'clave_hash' (RNF12), igual que el SELECT de antes, e
 //  'ip_solicitud' llega ya como texto ("10.0.0.1", host() en el SP).
 //
-//  SOLICITAR no cambió: sigue llamando a fn_solicitar_clave_api (ADR D24).
+//  SOLICITAR (v7.1, D53) llama a fn_solicitar_clave_insc_api: la de siempre más la regla de inscripción (ADR D24).
 //  VALIDAR (v7.1, RF-S1) llama a fn_validar_clave_geo_api, que además guarda
 //  la ubicación. La IP viaja como texto y se convierte con CAST(@ip AS inet). Si la BD rechaza
 //  algo (RAISE EXCEPTION) llega una NpgsqlException (ADR D25).
@@ -59,9 +59,11 @@ public class RepositorioClaveAccesoPostgres : IRepositorioClaveAcceso
     public async Task<(long IdClave, string Clave, string EnviadoA)> SolicitarAsync(
         string identificador, Guid token, string? ip)
     {
-        // SIN CAMBIOS: función de negocio del script provisto.
+        // v7.1 · D53: fn_solicitar_clave_insc_api (migración 051) es fn_solicitar_clave_api
+        // del script provisto MÁS la comprobación de inscripción cuando el enlace (QR de
+        // cierre) la exige. Con los enlaces de antes responde exactamente igual.
         const string sql = @"
-            SELECT * FROM catedras.fn_solicitar_clave_api(
+            SELECT * FROM catedras.fn_solicitar_clave_insc_api(
                 @identificador, @token, CAST(@ip AS inet));";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);

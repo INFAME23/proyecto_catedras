@@ -12,7 +12,7 @@
 #      powershell -ExecutionPolicy Bypass -File .\pruebas\verificar_v71.ps1
 #  Otro puerto/host:  ... -File .\pruebas\verificar_v71.ps1 -Api http://127.0.0.1:8142
 #
-#  REQUISITO: la BD debe tener las migraciones 045-049 (BD nueva con
+#  REQUISITO: la BD debe tener las migraciones 045-051 (BD nueva con
 #  'docker compose up -d --build', o aplicadas a mano; ver README).
 #
 #  IMPORTANTE: el script ESCRIBE datos (una sesion, un enlace, un registro de
@@ -281,6 +281,79 @@ Verificar "Agenda del dia: trae la sesion con el nombre de la catedra y de la se
 $ag2 = Llamar GET ("/api/Disponibilidad/agenda?desde=" + [uri]::EscapeDataString("${dia1}T00:00:00-05:00") + "&hasta=" + [uri]::EscapeDataString("${dia2}T00:00:00-05:00"))
 Verificar "Agenda de un dia sin sesiones -> 200 con total 0" ($ag2.Codigo -eq 200 -and $ag2.Json.total -eq 0) $ag2
 Verificar "Agenda de mas de 31 dias -> 400" ((Llamar GET ("/api/Disponibilidad/agenda?desde=" + [uri]::EscapeDataString("${dia}T00:00:00-05:00") + "&hasta=" + [uri]::EscapeDataString("${dia40}T00:00:00-05:00"))).Codigo -eq 400)
+
+# --------------------------------------------------------------------------
+Titulo "9. D53: QR de cierre de sesion (ventana al final, inscripcion obligatoria)"
+# Dos sesiones: una que termina en 10 minutos (su QR esta ABIERTO ahora: abre 15 min antes del fin) y otra que
+# termino hace una hora (su QR ya cerro). Codigo ASIS aleatorio para poder repetir el script.
+$ahoraQr = [DateTimeOffset]::Now
+function IsoQr($d) { $d.ToString("yyyy-MM-dd'T'HH:mm:sszzz") }
+$tipoQr = (Llamar GET "/api/TipoEvento").Json.datos[0].id_tipo_evento
+$codigoQr = "{0:D9}" -f (Get-Random -Minimum 900000000 -Maximum 999999999)
+$catQr = Llamar POST "/api/Catedra" @{
+    id_evento_asis = $codigoQr; nombre = "Catedra de prueba del QR"; fk_tipo_evento = $tipoQr; activo = $true
+    sesiones = @(
+        @{ inicio = (IsoQr $ahoraQr.AddMinutes(-50)); fin = (IsoQr $ahoraQr.AddMinutes(10)); fk_modalidad = "PRESENCIAL"; fk_sede = "SAN_BENITO"; fk_periodo = "2026-2"; lugar = "Aula QR" },
+        @{ inicio = (IsoQr $ahoraQr.AddHours(-3)); fin = (IsoQr $ahoraQr.AddHours(-2)); fk_modalidad = "PRESENCIAL"; fk_sede = "SAN_BENITO"; fk_periodo = "2026-2"; lugar = "Aula QR" })
+}
+Verificar "Se crea la catedra de prueba del QR con 2 sesiones" ($catQr.Codigo -eq 200) $catQr
+$sesQr = @((Llamar GET "/api/Sesion?fkCatedra=$($catQr.Json.id_catedra)").Json.datos | Sort-Object id_sesion)
+$sAbierta = $sesQr[0]; $sCerrada = $sesQr[1]
+
+$q1 = Llamar POST "/api/QrSesion" @{ fk_sesion = $sAbierta.id_sesion }
+Verificar "POST /api/QrSesion crea el QR (ya_existia=false, exige inscripcion)" ($q1.Codigo -eq 200 -and $q1.Json.ya_existia -eq $false -and $q1.Json.requiere_inscripcion -eq $true -and $q1.Json.token) $q1
+$finQr = [DateTimeOffset]::Parse($sAbierta.fin)
+$minAntes = ($finQr - [DateTimeOffset]::Parse($q1.Json.ventana_desde)).TotalMinutes
+$minDespues = ([DateTimeOffset]::Parse($q1.Json.ventana_hasta) - $finQr).TotalMinutes
+Verificar "La ventana abre 15 minutos antes del FIN de la sesion y cierra cuando termina" ([math]::Round($minAntes) -eq 15 -and [math]::Round($minDespues) -eq 0) $q1
+$q2 = Llamar POST "/api/QrSesion" @{ fk_sesion = $sAbierta.id_sesion }
+Verificar "Emitir otra vez es idempotente (mismo token, ya_existia=true)" ($q2.Codigo -eq 200 -and $q2.Json.token -eq $q1.Json.token -and $q2.Json.ya_existia -eq $true) $q2
+$q3 = Llamar POST "/api/QrSesion" @{ fk_sesion = $sAbierta.id_sesion; regenerar = $true }
+Verificar "Regenerar da otro token" ($q3.Codigo -eq 200 -and $q3.Json.token -ne $q1.Json.token -and $q3.Json.ya_existia -eq $false) $q3
+$qc = Llamar GET "/api/QrSesion?fkSesion=$($sAbierta.id_sesion)"
+Verificar "GET /api/QrSesion devuelve el QR vigente (el nuevo)" ($qc.Codigo -eq 200 -and $qc.Json.token -eq $q3.Json.token) $qc
+Verificar "GET de una sesion sin QR -> 204" ((Llamar GET "/api/QrSesion?fkSesion=$($sCerrada.id_sesion)").Codigo -eq 204)
+Verificar "QR de una sesion inexistente -> 404" ((Llamar POST "/api/QrSesion" @{ fk_sesion = 99999999 }).Codigo -eq 404)
+Verificar "POST sin fk_sesion -> 422" ((Llamar POST "/api/QrSesion" @{}).Codigo -eq 422)
+Verificar "GET sin fkSesion -> 400" ((Llamar GET "/api/QrSesion").Codigo -eq 400)
+
+# La inscripcion es obligatoria con el QR
+$null = Llamar POST "/api/InscripcionCatedra/cancelar" @{ fk_catedra = $catQr.Json.id_catedra; fk_asistente = $idAsistente }
+$sinInsc = Llamar POST "/api/ClaveAcceso/solicitar" @{ identificador = "30000124724"; token = $q3.Json.token }
+Verificar "SIN inscripcion: pedir la clave con el QR se rechaza y dice que falta inscribirse" ($sinInsc.Codigo -eq 500 -and $sinInsc.Texto -match "inscrit") $sinInsc
+$null = Llamar POST "/api/InscripcionCatedra" @{ fk_catedra = $catQr.Json.id_catedra; fk_asistente = $idAsistente }
+$conInsc = Llamar POST "/api/ClaveAcceso/solicitar" @{ identificador = "30000124724"; token = $q3.Json.token }
+Verificar "Inscrito: pedir la clave con el QR -> 200" ($conInsc.Codigo -eq 200 -and $conInsc.Json.clave -match '^\d{6}$') $conInsc
+$regQr = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $conInsc.Json.id_clave; clave = $conInsc.Json.clave; latitud = $lat; longitud = $lng }
+Verificar "Validar con ubicacion DENTRO de la ventana -> registro de asistencia" ($regQr.Codigo -eq 200 -and $regQr.Json.id_registro -gt 0) $regQr
+$asQr = Llamar GET "/api/QrSesion/asistencia?fkSesion=$($sAbierta.id_sesion)"
+$filaQr = @($asQr.Json.datos | Where-Object { $_.fk_asistente -eq $idAsistente })[0]
+Verificar "La asistencia de la sesion lo muestra inscrito, que asistio, con hora y ubicacion" ($asQr.Codigo -eq 200 -and $filaQr.inscrito -eq $true -and $filaQr.asistio -eq $true -and $filaQr.registrado_en -and $null -ne $filaQr.latitud) $asQr
+
+# Fuera de la ventana
+$qCerr = Llamar POST "/api/QrSesion" @{ fk_sesion = $sCerrada.id_sesion }
+$fuera = Llamar POST "/api/ClaveAcceso/solicitar" @{ identificador = "30000124724"; token = $qCerr.Json.token }
+Verificar "QR de una sesion que ya termino (fuera de ventana) -> rechazado (RN-15)" ($fuera.Codigo -eq 500 -and $fuera.Texto -match "RN-15") $fuera
+
+# La segunda barrera: cancelar la inscripcion ENTRE pedir y validar la clave
+$catQr2 = Llamar POST "/api/Catedra" @{
+    id_evento_asis = ("{0:D9}" -f (Get-Random -Minimum 900000000 -Maximum 999999999)); nombre = "Catedra de prueba del QR (2)"; fk_tipo_evento = $tipoQr; activo = $true
+    sesiones = @(@{ inicio = (IsoQr $ahoraQr.AddMinutes(-50)); fin = (IsoQr $ahoraQr.AddMinutes(10)); fk_modalidad = "PRESENCIAL"; fk_sede = "SAN_BENITO"; fk_periodo = "2026-2"; lugar = "Aula QR 2" })
+}
+$sB = (Llamar GET "/api/Sesion?fkCatedra=$($catQr2.Json.id_catedra)").Json.datos[0]
+$qB = Llamar POST "/api/QrSesion" @{ fk_sesion = $sB.id_sesion }
+$null = Llamar POST "/api/InscripcionCatedra" @{ fk_catedra = $catQr2.Json.id_catedra; fk_asistente = $idAsistente }
+$solB = Llamar POST "/api/ClaveAcceso/solicitar" @{ identificador = "30000124724"; token = $qB.Json.token }
+$null = Llamar POST "/api/InscripcionCatedra/cancelar" @{ fk_catedra = $catQr2.Json.id_catedra; fk_asistente = $idAsistente }
+$valB = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $solB.Json.id_clave; clave = $solB.Json.clave; latitud = $lat; longitud = $lng }
+Verificar "Si cancela la inscripcion entre pedir y validar la clave, el registro se rechaza (disparador)" ($valB.Codigo -eq 500 -and $valB.Texto -match "inscrito") $valB
+
+# Los enlaces de siempre (emitidos por el administrador) no cambian
+$sC = (Llamar GET "/api/Sesion?fkCatedra=$($catQr2.Json.id_catedra)").Json.datos[0]
+$enlC = Llamar POST "/api/EnlaceRegistro" @{ fk_sesion = $sC.id_sesion }
+$tokC = (Llamar GET "/api/EnlaceRegistro/$($enlC.Json.id_enlace)").Json.token
+Verificar "Un enlace emitido por el administrador (v5) NO exige inscripcion" ((Llamar POST "/api/ClaveAcceso/solicitar" @{ identificador = "30000124724"; token = $tokC }).Codigo -eq 200)
+$null = Llamar POST "/api/InscripcionCatedra/cancelar" @{ fk_catedra = $catQr.Json.id_catedra; fk_asistente = $idAsistente }   # se deja sin inscripcion
 
 # --------------------------------------------------------------------------
 Write-Host ""

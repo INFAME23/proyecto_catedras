@@ -24,12 +24,14 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
-from auth_helpers import ROL_ADMIN, ROL_PONENTE, exigir_rol, usuario_actual
+from auth_helpers import ROL_ADMIN, ROL_PONENTE, exigir_rol, tiene_rol, usuario_actual
 from routes.admin import (CAMPOS_SESION_FILA, _catalogos_sesion, _filas, _opciones,
                           _sesion_de_fila)
 from routes.ponente import _avisar, _calendario_de
 from servicios.api_catedras import ErrorApi, consultar, crear, eliminar, listar, llave, obtener
-from servicios.fechas import ZONA_COLOMBIA, desde_input, fecha_hora
+from servicios.fechas import ZONA_COLOMBIA, a_local, desde_input, fecha_hora
+from servicios.qr_sesiones import (asegurar_qr_de_catedra, emitir_qr, estado_de_ventana, qr_de_sesion,
+                                   svg_qr, url_de_registro)
 
 ponente_catedras_bp = Blueprint('ponente_catedras', __name__)
 
@@ -166,6 +168,8 @@ def nueva():
         sesiones = []
         _avisar(ex)
     hechas, ex = _asignar_a_sesiones(sesiones)
+    # v7.1 · D53: cada sesión nace con su QR de cierre (se abre al final de la sesión).
+    qr_hechos, qr_total = asegurar_qr_de_catedra(id_catedra, usuario_actual().get('id_usuario'))
     if ex is not None or hechas != len(filas):
         # La cátedra ya existe: no se borra. Se dice qué faltó y cómo terminar.
         if ex is not None:
@@ -175,6 +179,8 @@ def nueva():
     else:
         flash(f"Cátedra «{datos['nombre']}» creada con {hechas} sesion{'' if hechas == 1 else 'es'}; "
               'quedaste como ponente en todas. Otro ponente puede asignarse a ella desde «Cátedras».', 'exito')
+    if qr_hechos != qr_total:
+        flash(f'Se generó el QR de {qr_hechos} de {qr_total} sesiones. Las demás se generan desde «Ver QR».', 'error')
     return redirect(url_for('ponente_catedras.detalle', id_catedra=id_catedra))
 
 
@@ -338,3 +344,89 @@ def agenda():
     except ErrorApi as ex:
         return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), 502
     return jsonify(fecha=dia.strftime('%Y-%m-%d'), sesiones=[_hora(c) for c in r['datos']])
+
+
+# --------------------------------------------------------------------------
+#  v7.1 · D53 · QR DE CIERRE DE UNA SESIÓN
+#  El ponente de la sesión (o un administrador) ve el QR, lo proyecta o comparte al FINAL, y
+#  ve quién de los inscritos asistió (con hora y ubicación). El token del QR no se muestra a nadie más.
+# --------------------------------------------------------------------------
+ROLES_QUE_GESTIONAN = ('PONENTE', 'ORGANIZADOR')
+
+
+def _sesion_gestionable(id_sesion):
+    """(sesión, cátedra) si soy ADMIN o PONENTE/ORGANIZADOR de esa sesión; 404 si no existe, 403 si no."""
+    try:
+        sesion = obtener('Sesion', id_sesion)
+        catedra = obtener('Catedra', sesion['fk_catedra'])
+    except ErrorApi as ex:
+        if ex.codigo == 404:
+            abort(404)
+        raise
+    if not tiene_rol(ROL_ADMIN):
+        mias = [p for p in listar('Ponencia', fkSesion=id_sesion) if p['fk_asistente'] == _mi_asistente()]
+        if not any(p['rol'] in ROLES_QUE_GESTIONAN for p in mias):
+            abort(403)
+    return sesion, catedra
+
+
+def _resumen_asistencia(id_sesion):
+    """(filas, contadores) de la asistencia de la sesión."""
+    r = consultar('QrSesion/asistencia', fkSesion=id_sesion)
+    filas = r['datos'] if r else []
+    inscritos = [f for f in filas if f['inscrito']]
+    contadores = {'inscritos': len(inscritos),
+                  'asistieron': sum(1 for f in inscritos if f['asistio']),
+                  'sin_inscripcion': sum(1 for f in filas if f['asistio'] and not f['inscrito'])}
+    contadores['faltan'] = contadores['inscritos'] - contadores['asistieron']
+    return filas, contadores
+
+
+@ponente_catedras_bp.route('/sesion/<int:id_sesion>/qr', methods=['GET', 'POST'])
+def qr_sesion(id_sesion):
+    sesion, catedra = _sesion_gestionable(id_sesion)
+
+    if request.method == 'POST':
+        regenerar = request.form.get('regenerar') == '1'
+        try:
+            qr = emitir_qr(id_sesion, usuario_actual().get('id_usuario'), regenerar)
+            flash('Se generó un QR nuevo (el anterior ya no sirve).' if regenerar and not qr['ya_existia']
+                  else 'El QR de la sesión está listo.', 'exito')
+        except ErrorApi as ex:
+            _avisar(ex)
+        return redirect(url_for('ponente_catedras.qr_sesion', id_sesion=id_sesion))
+
+    error = None
+    qr = None
+    try:
+        qr = qr_de_sesion(id_sesion)
+    except ErrorApi as ex:
+        error = ex
+    filas, contadores = [], {'inscritos': 0, 'asistieron': 0, 'sin_inscripcion': 0, 'faltan': 0}
+    try:
+        filas, contadores = _resumen_asistencia(id_sesion)
+    except ErrorApi as ex:
+        error = error or ex
+
+    url = svg = None
+    if qr:
+        url = url_de_registro(qr['token'])
+        svg = svg_qr(url)
+    return render_template('ponente_sesion_qr.html', sesion=sesion, catedra=catedra, qr=qr, estado=estado_de_ventana(qr),
+                           url=url, svg=svg, filas=filas, contadores=contadores, error=error,
+                           desde=a_local(qr['ventana_desde']) if qr else None,
+                           hasta=a_local(qr['ventana_hasta']) if qr else None)
+
+
+@ponente_catedras_bp.route('/sesion/<int:id_sesion>/asistencia')
+def asistencia_json(id_sesion):
+    """JSON para refrescar la lista sin recargar la página (lo llama la pantalla del QR)."""
+    _sesion_gestionable(id_sesion)
+    try:
+        filas, contadores = _resumen_asistencia(id_sesion)
+        estado = estado_de_ventana(qr_de_sesion(id_sesion))
+    except ErrorApi as ex:
+        return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), 502
+    for f in filas:
+        f['hora'] = fecha_hora(f['registrado_en'], '%H:%M:%S') if f.get('registrado_en') else None
+    return jsonify(filas=filas, contadores=contadores, estado=estado)

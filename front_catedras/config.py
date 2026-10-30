@@ -9,6 +9,11 @@ class Config:
     # (docker-compose.yml, servicio 'api': "8142:8042").
     API_BASE_URL = os.environ.get('API_BASE_URL') or 'http://localhost:8142/api'
     DEBUG = True
+    # v7.1 · D53: dirección PÚBLICA del front que va dentro del QR de asistencia
+    # (p. ej. https://catedras.usbmed.edu.co). Vacía = la dirección con que se abre la
+    # pantalla del QR. El celular del estudiante tiene que poder abrirla, y la
+    # ubicación del navegador solo funciona en https (o localhost).
+    URL_PUBLICA = (os.environ.get('URL_PUBLICA') or '').strip()
     TEMPLATES_AUTO_RELOAD = True
 
     # v7.1 · RF-S6: correo real (servicios/correo.py). Todo por entorno; ninguna

@@ -35,9 +35,9 @@
 | RF-S6 | Correo real para el código | front (`servicios/correo.py`, `config.py`, `env.ejemplo`, compose) |
 | RF-S7 | `/admin` con barra lateral colapsable (reemplazada por categorías desplegables, D51) | front (`admin/base_admin.html`, `admin/panel.html`, `estilo.css`) |
 
-Migraciones nuevas (en orden; se montan en el compose como `z045`…`z050`):
+Migraciones nuevas (en orden; se montan en el compose como `z045`…`z051`):
 `045_geolocalizacion_registro` · `046_roles_estudiante_ponente` ·
-`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra` · `050_disponibilidad_sesiones`.
+`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra` · `050_disponibilidad_sesiones` · `051_qr_sesion`.
 
 ## 3. Decisiones (ADR de la v7.1, continúan después de D37)
 
@@ -234,6 +234,40 @@ front contra la API real (14 casos) más la pantalla en el navegador (consulta p
 
 **Limpiezas pedidas junto a D52.** Se quitó la lista «Mis sesiones» del panel del estudiante (también ya no se
 cargan sus registros para el panel) y el texto «Este front consume ApiCatedras...» de la pantalla de inicio.
+
+**D53 — QR de cierre de sesión: se genera con la cátedra, el ponente lo comparte al final y solo lo usa quien está inscrito.**
+**Qué es.** Es el enlace de registro de la v5 (`enlace_registro`) con tres reglas: (1) **ventana** que se abre
+`QR_MINUTOS_ANTES_FIN` (15) minutos **antes del fin de la sesión** y se cierra al terminar (`QR_MINUTOS_DESPUES_FIN` = 0; si se
+quiere margen después del fin, se sube ese parámetro en `/admin`); fuera de ahí el enlace no sirve (RN-15, ya existente);
+(2) **inscripción obligatoria** (`enlace_registro.requiere_inscripcion`): solo registra quien tiene inscripción ACTIVA en la cátedra
+de la sesión, se comprueba al **pedir la clave** (`fn_solicitar_clave_insc_api`, antes de mandar el correo) y otra vez al
+**guardar el registro** (disparador `trg_registro_inscripcion`, por si cancela entre un paso y otro); (3) **ubicación** obligatoria
+(RF-S1) y vinculación vigente, como siempre. Los enlaces anteriores (`requiere_inscripcion = false`) no cambian.
+**Cuándo se genera.** Al **crear una cátedra** —por el ponente o por el administrador— se emite el QR de **cada sesión**; si algo falla, la
+cátedra queda creada y el QR se genera desde «Ver QR». Un solo enlace vigente por sesión (RN-14): emitir uno revoca el anterior.
+**Qué ve el ponente.** En su calendario y en el detalle de la cátedra, «Ver QR» en cada sesión suya (`/ponente/catedras/sesion/<id>/qr`; solo
+PONENTE u ORGANIZADOR de esa sesión, o un administrador): el QR dibujado en SVG (lleva la URL `<dirección pública>/registro/<token>`),
+el estado de la ventana (aún no abre / abierto / cerrado), copiar el enlace, **proyectar en pantalla completa**, **regenerar** (el anterior deja de servir)
+y la **asistencia en vivo**: quién de los inscritos asistió, con hora y enlace al mapa de su ubicación, cuántos faltan y quién asistió sin
+inscripción (se actualiza sola cada 15 s). Cualquier otro rol recibe 403.
+**Qué ve el estudiante.** En la sesión: cómo registrarse (QR del ponente, horario en que sirve, si está inscrito o debe inscribirse y,
+si ya registró, «Tu asistencia quedó registrada»). **Se quitó el botón «Registrar mi asistencia» y el token ya no se muestra a los
+estudiantes** (D46 lo exponía): si un estudiante pudiera abrir el enlace desde la página, el QR no probaría que estuvo presente.
+**Clave por correo.** Con el correo configurado (RF-S6), la clave de un solo uso de la asistencia **se envía al correo y ya no se
+muestra en pantalla** (antes se mostraba como «simulación»: quien tuviera el QR y el código de otro lo registraba); sin correo
+configurado sigue mostrándose (desarrollo). Los errores del flujo («no estás inscrito», «el enlace está fuera de su ventana»…) ya **no
+desaparecen solos** (solo los mensajes de éxito se quitan a los 5 s).
+**API.** Controlador `QrSesion` (40.º; sin tabla propia): `POST /api/QrSesion` (idempotente, `regenerar`), `GET /api/QrSesion?fkSesion=`
+(204 sin QR) y `GET /api/QrSesion/asistencia?fkSesion=`. La BD pone la ventana (`sp_emitir_qr_sesion`, `sp_consultar_qr_sesion`, `sp_asistencia_sesion`).
+**Decisiones para confirmar.** (1) Ventana: 15 min antes del fin y cierre en el fin (parámetros editables). (2) «Asistió» = registró con el QR
+dentro de la ventana, con su ubicación; la ubicación se guarda y se muestra, pero **no se compara** con la sede (no hay coordenadas de sedes).
+(3) El ponente ve **nombres** de los inscritos de su sesión (necesario para verificar quién asistió); en la cátedra solo veía el conteo.
+(4) Para que el QR sirva en celulares hay que publicar el front **en https** y configurar `URL_PUBLICA`; con `http://IP` la ubicación se deniega.
+**No verificado:** escanear el QR con la cámara de un celular real ni el envío por un SMTP real; el dibujo del QR se comprobó en el
+navegador y que codifica la URL correcta, y todo el flujo con la API, la BD y el front reales.
+Pruebas: capas 525/1 (+12; la fallida es la de siempre), `verificar_v71.ps1` 89/0 (+17 de QR, contra la API y PostgreSQL reales; repetible),
+`front_catedras/pruebas/prueba_qr_v71.py` 42/0 (API simulada), un recorrido del front contra la API real (29 casos: ponente crea → QR → estudiante
+sin inscripción rechazado → se inscribe → registra con ubicación → el ponente lo ve) y la pantalla del QR en el navegador. `verificar_v5.ps1` sigue en 63/0.
 
 ## 4. Cómo se verificó
 
