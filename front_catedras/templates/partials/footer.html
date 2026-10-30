@@ -31,9 +31,15 @@
                 <h6 class="fw-bold text-white mb-3">Enlaces rápidos</h6>
                 <ul class="list-unstyled text-white-50 small">
                     <li class="mb-2"><a href="{{ url_for('catedras.catalogo') }}">Catálogo de cátedras</a></li>
+                    {# D54: los enlaces de administración se ofrecen solo a quien es ADMIN (antes los veía todo el mundo). #}
+                    {% if tiene_rol('ADMIN') %}
                     <li class="mb-2"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
                     <li class="mb-2"><a href="{{ url_for('admin.sedes_listar') }}">Sedes</a></li>
                     <li class="mb-2"><a href="{{ url_for('admin.encuestas_listar') }}">Encuestas</a></li>
+                    {% endif %}
+                    {% if not sesion_activa() %}
+                    <li class="mb-2"><a href="{{ url_for('auth.login') }}">Iniciar sesión</a></li>
+                    {% endif %}
                     <li class="mb-2"><a href="{{ url_for('registro.inicio') }}">Registro de asistencia</a></li>
                 </ul>
             </div>

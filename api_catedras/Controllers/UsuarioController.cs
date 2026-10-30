@@ -362,6 +362,32 @@ public class UsuarioController : ControllerBase
         }
     }
 
+    // ----------------------------------------------------------------------
+    //  v7.1 · D54 · POST /api/Usuario/{idUsuario}/exigir-cambio-clave   -> 200 | 404
+    //  El administrador obliga a esa persona a cambiar su clave en el próximo ingreso.
+    // ----------------------------------------------------------------------
+    [HttpPost("{idUsuario:long}/exigir-cambio-clave")]
+    public async Task<IActionResult> ExigirCambioClave(long idUsuario)
+    {
+        try
+        {
+            await _servicio.ExigirCambioClaveAsync(idUsuario);
+            return Ok(new { estado = "exigido", mensaje = "Deberá cambiar su clave en el próximo ingreso." });
+        }
+        catch (NoEncontradoExcepcion ex)
+        {
+            return Problema(404, "no_encontrado", "Usuario no encontrado.", ex.Message);
+        }
+        catch (NpgsqlException ex)
+        {
+            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Problema(500, "error_interno", "Error al marcar el usuario.", ex.Message);
+        }
+    }
+
     // Arma el sobre de error { estado, mensaje, detalle } con el código indicado.
     private ObjectResult Problema(int codigo, string estado, string mensaje, string? detalle)
     {

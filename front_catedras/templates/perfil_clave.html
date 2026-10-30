@@ -11,9 +11,17 @@
                     <p class="text-muted small mb-0">Cuenta: <strong>{{ usuario_actual().usuario }}</strong></p>
                 </div>
 
+                {% if primera_vez %}
+                {# D54: es un <div class="alert"> sin «dismissible»: se queda hasta que cambie la clave. #}
+                <div class="alert alert-warning" role="alert" id="primer-ingreso">
+                    <i class="fas fa-shield-alt me-1"></i><strong>Es tu primer ingreso.</strong>
+                    Por seguridad debes cambiar tu clave antes de continuar. Tu clave actual es tu <strong>código de estudiante</strong>.
+                </div>
+                {% endif %}
+
                 <form method="post" action="{{ url_for('perfil.cambiar_clave') }}">
                     <div class="mb-3">
-                        <label class="form-label" for="clave_actual">Clave actual</label>
+                        <label class="form-label" for="clave_actual">Clave actual{% if primera_vez %} (tu código de estudiante){% endif %}</label>
                         <input type="password" class="form-control" id="clave_actual" name="clave_actual" required
                                autofocus autocomplete="current-password">
                     </div>

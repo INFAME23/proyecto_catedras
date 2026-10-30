@@ -2465,8 +2465,9 @@ def ponentes_nuevo():
     try:
         asistente = crear('Asistente', datos)
         creados.append(('Asistente', asistente['id_asistente']))
+        # v7.1 · D54: la clave la eligió/generó el administrador: al primer ingreso el ponente debe cambiarla.
         usuario = crear('Usuario', {'fk_asistente': asistente['id_asistente'], 'usuario': f['usuario'],
-                                    'clave': clave, 'activo': True})
+                                    'clave': clave, 'activo': True, 'debe_cambiar_clave': True})
         creados.append(('Usuario', usuario['id_usuario']))
         crear('RolPorUsuario', {'fk_usuario': usuario['id_usuario'], 'fk_rol': 'PONENTE'})
     except ErrorApi as ex:
@@ -2497,6 +2498,17 @@ def inscripciones_listar():
         inscripciones = []
     return render_template('admin/inscripcion_lista.html', inscripciones=inscripciones,
                            fk_catedra=fk_catedra, fk_asistente=fk_asistente, todas=todas)
+
+
+@admin_bp.route('/usuarios/<int:id_usuario>/exigir-cambio-clave', methods=['POST'])
+def usuarios_exigir_cambio(id_usuario):
+    """v7.1 · D54 · Obliga a esa persona a cambiar su clave en el próximo ingreso."""
+    try:
+        crear(f'Usuario/{id_usuario}/exigir-cambio-clave', {})
+        flash('Esa persona deberá cambiar su clave la próxima vez que entre.', 'exito')
+    except ErrorApi as ex:
+        _avisar(ex)
+    return redirect(url_for('admin.usuarios_listar'))
 
 
 @admin_bp.route('/usuarios/<int:id_usuario>/editar', methods=['GET', 'POST'])

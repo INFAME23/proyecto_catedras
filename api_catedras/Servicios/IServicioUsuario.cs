@@ -45,4 +45,8 @@ public interface IServicioUsuario
     /// <summary>RF-S5/RF-S6 (v7.1). Valida el código y cambia la clave (hash BCrypt calculado aquí).
     /// Código incorrecto/usado/vencido/agotado -> CodigoRecuperacionInvalidoExcepcion (400).</summary>
     Task RestablecerClaveAsync(RecuperacionRestablecer peticion);
+
+    /// <summary>v7.1 · D54. Obliga a esa persona a cambiar su clave en el próximo ingreso (p. ej. tras entregarle
+    /// una clave temporal). Usuario inexistente -> NoEncontradoExcepcion.</summary>
+    Task ExigirCambioClaveAsync(long idUsuario);
 }

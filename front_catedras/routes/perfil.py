@@ -75,8 +75,14 @@ def cambiar_clave():
     if not sesion_activa():
         return redirect(url_for('auth.login', siguiente=url_for('perfil.cambiar_clave')))
 
+    # v7.1 · D54: primera vez (clave inicial = código de estudiante): el cambio es obligatorio.
+    primera_vez = bool(session.get('debe_cambiar'))
+
+    def pagina(**extra):
+        return render_template('perfil_clave.html', primera_vez=primera_vez, **extra), 200
+
     if request.method == 'GET':
-        return render_template('perfil_clave.html')
+        return pagina()
 
     actual = request.form.get('clave_actual', '')      # las claves NO se recortan
     nueva = request.form.get('clave_nueva', '')
@@ -85,10 +91,10 @@ def cambiar_clave():
     error = _validar_claves_nuevas(nueva, confirmacion)
     if error:
         flash(error, 'error')
-        return render_template('perfil_clave.html'), 200
+        return pagina()
     if nueva == actual:
         flash('La clave nueva debe ser distinta de la actual.', 'error')
-        return render_template('perfil_clave.html'), 200
+        return pagina()
 
     try:
         crear(f"Usuario/{usuario_actual()['id_usuario']}/cambiar-clave",
@@ -100,8 +106,9 @@ def cambiar_clave():
             flash('No se pudo contactar el servicio. Intenta de nuevo en un momento.', 'error')
         else:
             flash((ex.detalle or ex.mensaje or 'No se pudo cambiar la clave.').strip(), 'error')
-        return render_template('perfil_clave.html', errores=ex.errores), 200
+        return pagina(errores=ex.errores)
 
+    session['debe_cambiar'] = False       # ya cambió la clave: se libera el resto de la aplicación
     flash('Tu clave se actualizó.', 'exito')
     return redirect(url_for(endpoint_de_inicio()))
 

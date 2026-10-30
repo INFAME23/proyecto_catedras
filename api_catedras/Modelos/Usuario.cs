@@ -71,6 +71,10 @@ public class Usuario
     [JsonPropertyName("activo")]
     public bool Activo { get; set; } = true;
 
+    /// <summary>v7.1 · D54: true = en el próximo ingreso debe cambiar su clave (clave inicial = código de estudiante).</summary>
+    [JsonPropertyName("debe_cambiar_clave")]
+    public bool DebeCambiarClave { get; set; }
+
     /// <summary>Último login exitoso, en UTC. Null si nunca ha entrado.</summary>
     [JsonPropertyName("ultimo_acceso")]
     public DateTime? UltimoAcceso { get; set; }

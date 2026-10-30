@@ -45,4 +45,8 @@ public class UsuarioCrear
     /// <summary>¿Cuenta activa? Opcional (por defecto true).</summary>
     [JsonPropertyName("activo")]
     public bool? Activo { get; set; }
+
+    /// <summary>v7.1 · D54: true = en su primer ingreso debe cambiar la clave que le entregó el administrador. Opcional (por defecto false).</summary>
+    [JsonPropertyName("debe_cambiar_clave")]
+    public bool? DebeCambiarClave { get; set; }
 }

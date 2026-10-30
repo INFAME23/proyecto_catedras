@@ -27,11 +27,6 @@
                     </a>
                 </li>
                 {% endif %}
-                <li class="nav-item">
-                    <a class="nav-link {{ 'active' if request.endpoint == 'registro.inicio' }}" href="{{ url_for('registro.inicio') }}">
-                        <i class="fas fa-clipboard-check"></i> Registro de asistencia
-                    </a>
-                </li>
                 {# v7.1 · RF-S3: cada panel se ofrece solo a quien tiene el rol. #}
                 {% if tiene_algun_rol('PONENTE', 'ADMIN') %}
                 <li class="nav-item">

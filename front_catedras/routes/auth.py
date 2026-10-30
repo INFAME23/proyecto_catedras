@@ -59,6 +59,11 @@ def login():
         'fk_asistente': datos['fk_asistente'],
     }
     session['roles'] = list(respuesta.get('roles', []))
+    # v7.1 · D54: primer ingreso (clave inicial = código de estudiante): hasta que la cambie, el
+    # before_request de app.py solo le deja ver la pantalla de cambiar la clave.
+    session['debe_cambiar'] = bool(datos.get('debe_cambiar_clave'))
+    if session['debe_cambiar']:
+        return redirect(url_for('perfil.cambiar_clave'))
 
     flash(f"Bienvenido, {datos['usuario']}.", 'exito')
     if siguiente:

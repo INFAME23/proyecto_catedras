@@ -35,9 +35,9 @@
 | RF-S6 | Correo real para el código | front (`servicios/correo.py`, `config.py`, `env.ejemplo`, compose) |
 | RF-S7 | `/admin` con barra lateral colapsable (reemplazada por categorías desplegables, D51) | front (`admin/base_admin.html`, `admin/panel.html`, `estilo.css`) |
 
-Migraciones nuevas (en orden; se montan en el compose como `z045`…`z051`):
+Migraciones nuevas (en orden; se montan en el compose como `z045`…`z052`):
 `045_geolocalizacion_registro` · `046_roles_estudiante_ponente` ·
-`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra` · `050_disponibilidad_sesiones` · `051_qr_sesion`.
+`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra` · `050_disponibilidad_sesiones` · `051_qr_sesion` · `052_primer_ingreso_estudiante`.
 
 ## 3. Decisiones (ADR de la v7.1, continúan después de D37)
 
@@ -269,6 +269,37 @@ Pruebas: capas 525/1 (+12; la fallida es la de siempre), `verificar_v71.ps1` 89/
 `front_catedras/pruebas/prueba_qr_v71.py` 42/0 (API simulada), un recorrido del front contra la API real (29 casos: ponente crea → QR → estudiante
 sin inscripción rechazado → se inscribe → registra con ubicación → el ponente lo ve) y la pantalla del QR en el navegador. `verificar_v5.ps1` sigue en 63/0.
 
+**D54 — Usuario = correo institucional, clave inicial = código de estudiante, cambio obligatorio en el primer ingreso; portada genérica.**
+**Login.** `POST /api/Usuario/login` acepta como `usuario` el nombre de usuario de siempre **o el correo institucional** de la persona (sin importar
+mayúsculas ni espacios). La columna `usuario.usuario` no cambia (su CHECK no admite «@»): sigue siendo un nombre corto y el correo es otra forma de
+entrar. **Clave inicial = código de estudiante** (`asistente.id_asis`). **No se crean todas las cuentas de antemano** (serían miles de hashes BCrypt):
+la cuenta se crea **en el primer ingreso**: si el correo institucional es de un estudiante vigente (vinculación ESTUDIANTE sin fecha de fin, activo,
+con código) que aún no tiene cuenta, y la clave escrita es exactamente su código (comparación en tiempo constante), `ServicioUsuario` calcula el hash
+BCrypt (Regla 3) y `sp_provisionar_cuenta_estudiante` crea la cuenta con el rol `ESTUDIANTE`, el nombre corto sacado del correo (ajustado al CHECK y sin
+repetirse: `maria.lopez`, `maria.lopez2`…) y `debe_cambiar_clave = true`. Cualquier otro intento (clave que no es el código, correo desconocido, docente,
+ya tiene cuenta) da el mismo 401 de siempre (D27) y no crea nada.
+**Primer ingreso.** `usuario.debe_cambiar_clave` viaja en la respuesta del login. El front guarda `session['debe_cambiar']`, manda a `/perfil/clave` y un
+`before_request` global **no deja usar nada más** (ni la portada, ni el catálogo, ni acciones) hasta cambiarla: solo la pantalla de cambio, «Cerrar sesión»
+y los archivos estáticos. La pantalla avisa (aviso fijo) que es el primer ingreso y que la clave actual es su código; no vale dejar el mismo código ni
+menos de 8 caracteres. Al cambiarla —por «cambiar clave», por recuperación o por un PUT— el disparador `trg_usuario_clave_cambiada` apaga la exigencia solo.
+**Para otros.** El administrador puede **exigir el cambio** a cualquier cuenta (`POST /api/Usuario/{id}/exigir-cambio-clave`; botón en `/admin/usuarios`,
+que además marca «Cambio pendiente»), y «Nuevo ponente» crea la cuenta con la clave temporal ya marcada para cambiar (`UsuarioCrear.debe_cambiar_clave`).
+La cuenta semilla (`alejandro.zuleta`) pasa a esta regla mientras no haya ingresado nunca: su clave inicial es su código (`30000124724`), ya no `Cambiar-123`.
+Como esa persona no tiene correo institucional registrado (solo el personal), entra por su nombre de usuario.
+**Portada y barra.** La barra superior ya no trae **«Registro de asistencia»** (el estudiante entra por el QR o desde su panel; el enlace del pie de página se
+conservó). La portada es **genérica para todos**: qué son las cátedras, información para estudiantes y ponentes, la asistencia con QR y los pasos para
+participar; el botón de entrada depende de quién mira (visitante: catálogo e iniciar sesión; estudiante, ponente o administrador: su panel). **Se quitaron las
+tarjetas con enlaces a pantallas de `/admin` que veía cualquiera**, y el pie de página muestra los enlaces de administración solo a un ADMIN.
+**Correo.** La contraseña de aplicación de `catedracambioc@gmail.com` quedó en un `.env` **local** (no va en el zip ni en el repositorio) y se comprobó que
+Gmail la acepta (login SMTP; no se envió ningún correo). Como la contraseña se pegó en una conversación, conviene revocarla y crear otra.
+**Riesgos para decidir.** (1) El código de estudiante no es un secreto fuerte: quien conozca el correo institucional y el código de un compañero que **aún
+no ha entrado** puede activar su cuenta antes que él; el cambio obligatorio solo protege si el dueño entra primero. Mitigación posible: entregar el código
+por un canal propio o usar una clave inicial aleatoria enviada al correo. (2) No hay límite de intentos de login (como antes). (3) La persona sin correo
+institucional registrado no puede usar este camino (entra por usuario con cuenta creada a mano).
+Pruebas: capas 545/1 (+20; la fallida es la de siempre), `verificar_v71.ps1` 112/0 (+23 de D54, contra la API y PostgreSQL reales; repetible, y la migración se
+volvió a aplicar encima sin errores), `front_catedras/pruebas/prueba_primer_ingreso_v71.py` 42/0, recorrido del front contra la API real (19 casos) y
+`verificar_v5.ps1` sigue en 63/0. Un error propio se cazó con la BD real: `rpad` **recorta** los textos largos y dejaba el nombre de usuario en `est.`; corregido.
+
 ## 4. Cómo se verificó
 
 * `dotnet run --project pruebas`: **492 pasadas, 1 fallida**. La fallida
@@ -299,7 +330,7 @@ sin inscripción rechazado → se inscribe → registra con ubicación → el po
 1. **Datos del estudiante semilla marcados como provisionales** (`PENDIENTE-1…5`
    en la `048`): documento de identidad (se conserva el de relleno
    `CC 1011390488`), periodo de la matrícula (`2026-2`), inicio de la
-   vinculación, clave temporal `Cambiar-123` (usuario `alejandro.zuleta`) y qué
+   vinculación, clave inicial = su código `30000124724` con cambio obligatorio (D54; usuario `alejandro.zuleta`) y qué
    hacer con la matrícula de relleno `M0501 / 2026-1`, que se conservó.
 2. **Correo (RF-S6): remitente definido, falta la credencial.** La cuenta de envío es
    `catedracambioc@gmail.com` (Gmail, SMTP `smtp.gmail.com:587` STARTTLS; ya está en
