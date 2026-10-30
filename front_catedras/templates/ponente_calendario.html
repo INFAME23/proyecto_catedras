@@ -69,7 +69,10 @@
                     <td>{{ fila.sesion.numero_reunion }}</td>
                     <td>{% for r in fila.roles %}<span class="badge badge-primary me-1">{{ r }}</span>{% endfor %}</td>
                     <td>{{ ms.estado(fila.sesion.estado) }}</td>
-                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('sesiones.detalle', id_sesion=fila.sesion.id_sesion) }}"><i class="fas fa-eye"></i></a></td>
+                    <td class="text-end text-nowrap">
+                        {% if 'PONENTE' in fila.roles or 'ORGANIZADOR' in fila.roles %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('ponente_catedras.qr_sesion', id_sesion=fila.sesion.id_sesion) }}" title="QR de asistencia de esta sesión"><i class="fas fa-qrcode"></i></a>{% endif %}
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('sesiones.detalle', id_sesion=fila.sesion.id_sesion) }}" title="Ver la sesión"><i class="fas fa-eye"></i></a>
+                    </td>
                 </tr>
                 {% endfor %}
                 </tbody>

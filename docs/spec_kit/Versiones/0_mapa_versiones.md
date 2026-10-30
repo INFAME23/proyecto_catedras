@@ -82,9 +82,9 @@ Mantenimiento sobre V5–V7, **no es una V8** ni agrega recursos al mapa
 (37 tablas, 37 controladores): geolocalización obligatoria al autorregistrar
 la asistencia, panel de estudiante, cuentas de estudiante y ponente,
 cambio y recuperación de clave por correo, y `/admin` con categorías desplegables.
-Requisitos `RF-S1`…`RF-S7`, decisiones D38–D52 y pendientes:
+Requisitos `RF-S1`…`RF-S7`, decisiones D38–D53 y pendientes:
 [version7_1/v7_1_subversion.md](version7_1/v7_1_subversion.md). Agrega las
-migraciones `045`–`050`, una tabla de apoyo (`codigo_recuperacion`, sin CRUD) y UN recurso nuevo de la API (`InscripcionCatedra`, tabla `inscripcion_catedra`): el mapa pasa de 37 a 38 controladores (39 con `Disponibilidad`, solo consultas, sin tabla).
+migraciones `045`–`051`, una tabla de apoyo (`codigo_recuperacion`, sin CRUD) y UN recurso nuevo de la API (`InscripcionCatedra`, tabla `inscripcion_catedra`): el mapa pasa de 37 a 38 controladores (39 con `Disponibilidad`, y 40 con `QrSesion`: consultas y el QR de cierre, sin tabla propia).
 
 ## 3. Salvedad: la FK circular con `usuario`
 

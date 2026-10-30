@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from servicios.api_catedras import ErrorApi, crear, eliminar, listar, llave, obtener
 from servicios.fechas import a_local
 from auth_helpers import ROL_ADMIN, ROL_ESTUDIANTE, rol_requerido, sesion_activa, tiene_rol, usuario_actual
+from servicios.qr_sesiones import estado_de_ventana, qr_de_sesion
 from routes.encuestas import estado_encuesta_sesion   # v6: ¿se ofrece "responder encuesta"?
 
 sesiones_bp = Blueprint('sesiones', __name__)
@@ -124,26 +125,26 @@ def puede_migrar(sesion):
         return False   # si no se puede saber, no se ofrece el botón
 
 
-def enlace_para_registrarse(id_sesion):
-    """v7.1 · Token del enlace de registro VIGENTE de la sesión (no revocado y
-    dentro de su ventana), o None. Solo se busca para un ESTUDIANTE con sesión
-    iniciada: es quien ve el botón «Registrar mi asistencia» y el que llega
-    así a /registro/<token> sin tener que pegar el enlace del QR. Los demás
-    siguen entrando con el enlace que comparte el organizador."""
+def asistencia_del_estudiante(sesion):
+    """v7.1 · D53 · Lo que un ESTUDIANTE con sesión necesita saber de esta sesión: si ya registró su
+    asistencia, si está inscrito en la cátedra y cuándo se abre el QR de cierre. NO se devuelve el
+    token del QR: la asistencia se registra escaneando el QR que comparte el ponente al final, no
+    desde esta página (si no, el QR no probaría nada). Devuelve None si no es estudiante."""
     if not (sesion_activa() and tiene_rol(ROL_ESTUDIANTE)):
         return None
+    yo = usuario_actual()['fk_asistente']
+    info = {'registro': None, 'inscrito': None, 'desde': None, 'hasta': None, 'estado': 'sin_qr'}
     try:
-        enlaces = listar('EnlaceRegistro', limite=50, fkSesion=id_sesion)
+        registros = listar('RegistroAsistencia', limite=1, fkSesion=sesion['id_sesion'], fkAsistente=yo)
+        info['registro'] = registros[0] if registros else None
+        info['inscrito'] = bool(listar('InscripcionCatedra', limite=1, fkCatedra=sesion['fk_catedra'], fkAsistente=yo))
+        qr = qr_de_sesion(sesion['id_sesion'])
+        info['estado'] = estado_de_ventana(qr)
+        if qr:
+            info['desde'], info['hasta'] = a_local(qr.get('ventana_desde')), a_local(qr.get('ventana_hasta'))
     except ErrorApi:
-        return None
-    ahora = datetime.now(timezone.utc)
-    for e in enlaces:
-        desde, hasta = a_local(e.get('ventana_desde')), a_local(e.get('ventana_hasta'))
-        if e.get('revocado_en') or desde is None or hasta is None:
-            continue
-        if desde <= ahora <= hasta:
-            return str(e['token'])
-    return None
+        pass          # lo que no se pudo saber simplemente no se muestra
+    return info
 
 
 @sesiones_bp.route('/sesiones/<int:id_sesion>')
@@ -156,7 +157,7 @@ def detalle(id_sesion):
         return render_template('detalle_sesion.html', error=ex, sesion=None, catedra=None,
                                ponentes=[], candidatos=[], q='', roles=ROLES_PONENCIA,
                                mostrar_encuesta=False, motivo_encuesta=None, puede_editar=False,
-                               token_registro=None, es_estudiante=False), 502
+                               mi_asistencia=None), 502
 
     error = None
     catedra = None
@@ -178,8 +179,7 @@ def detalle(id_sesion):
                            roles=ROLES_PONENCIA, mostrar_encuesta=mostrar_encuesta,
                            motivo_encuesta=motivo_encuesta, migracion=puede_migrar(sesion),
                            puede_editar=tiene_rol(ROL_ADMIN),
-                           token_registro=enlace_para_registrarse(id_sesion),
-                           es_estudiante=sesion_activa() and tiene_rol(ROL_ESTUDIANTE))
+                           mi_asistencia=asistencia_del_estudiante(sesion))
 
 
 # v7.1: asignar y quitar personas de una sesión (con su rol) es de ADMIN. Antes

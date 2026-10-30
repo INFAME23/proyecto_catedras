@@ -30,9 +30,13 @@ import re
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
 from auth_helpers import ROL_ESTUDIANTE, sesion_activa, tiene_rol, usuario_actual
+from servicios import correo
 from servicios.api_catedras import ErrorApi, crear, obtener
 
 registro_bp = Blueprint('registro', __name__)
+
+# Vigencia de la clave (el parámetro CLAVE_VIGENCIA_MINUTOS de la BD vale 10); solo se usa para el texto del correo.
+CLAVE_VIGENCIA_MINUTOS = 10
 
 # Un token es un UUID: 8-4-4-4-12 caracteres hexadecimales.
 _UUID = re.compile(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')
@@ -126,10 +130,23 @@ def solicitar(token):
         return render_template('registro_solicitar.html', token=token,
                                identificador=identificador, errores=ex.errores)
 
+    # v7.1 · D53: la clave existe para que NADIE registre a otro: tiene que llegar al correo de la persona.
+    # Con el correo configurado se ENVÍA y no se muestra en pantalla. Sin correo configurado (desarrollo)
+    # se muestra, como simulación del envío (RNF12: se ve UNA vez).
+    clave_visible = respuesta['clave']
+    if correo.configurado():
+        try:
+            correo.enviar_clave_asistencia(respuesta['enviado_a'], respuesta['clave'], CLAVE_VIGENCIA_MINUTOS)
+            clave_visible = None
+        except (correo.ErrorEnvio, correo.CorreoNoConfigurado) as ex:
+            flash(f'{ex} Intenta de nuevo en un momento.', 'error')
+            return render_template('registro_solicitar.html', token=token, identificador=identificador)
+
     return render_template('registro_validar.html', token=token,
                            id_clave=respuesta['id_clave'],
-                           clave=respuesta['clave'],          # RNF12: se muestra UNA vez
+                           clave=clave_visible,
                            enviado_a=respuesta['enviado_a'],
+                           enviada_por_correo=clave_visible is None,
                            registrado=False)
 
 

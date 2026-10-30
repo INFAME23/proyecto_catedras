@@ -32,7 +32,7 @@
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light"><tr><th style="width:2rem"><input type="checkbox" id="todas" aria-label="Marcar todas"></th><th>Reunión</th><th>Fecha</th><th>Horario</th><th>Estado</th><th>Tú</th></tr></thead>
+                    <thead class="table-light"><tr><th style="width:2rem"><input type="checkbox" id="todas" aria-label="Marcar todas"></th><th>Reunión</th><th>Fecha</th><th>Horario</th><th>Estado</th><th>Tú</th><th>QR</th></tr></thead>
                     <tbody>
                     {% for s in sesiones %}
                     <tr>
@@ -42,6 +42,7 @@
                         <td class="small">{{ s.inicio|fecha_hora('%H:%M') }} – {{ s.fin|fecha_hora('%H:%M') }}</td>
                         <td>{{ ms.estado(s.estado) }}</td>
                         <td>{% if s.id_sesion in mias %}<span class="badge badge-success">Ponente</span>{% else %}<span class="text-muted small">—</span>{% endif %}</td>
+                        <td>{% if s.id_sesion in mias %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('ponente_catedras.qr_sesion', id_sesion=s.id_sesion) }}"><i class="fas fa-qrcode me-1"></i>Ver QR</a>{% else %}<span class="text-muted small">—</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
                     </tbody>

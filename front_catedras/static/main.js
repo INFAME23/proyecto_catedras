@@ -1,9 +1,10 @@
 ﻿document.addEventListener('DOMContentLoaded', function() {
     console.log('Catedras USB - Aplicacion cargada');
 
-    // Solo los mensajes flash (los '.alert-dismissible' de partials/mensajes.html) se quitan solos.
-    // Los demás '.alert' son avisos y acciones permanentes (inscribirse, registrar asistencia, errores...).
-    document.querySelectorAll('.alert.alert-dismissible').forEach(alert => {
+    // Solo los mensajes flash de ÉXITO (los '.alert-success.alert-dismissible' de partials/mensajes.html)
+    // se quitan solos. Los errores se quedan hasta que se cierran (hay que poder leerlos: «debes inscribirte»,
+    // «el QR ya cerró»...) y los demás '.alert' son avisos y acciones permanentes.
+    document.querySelectorAll('.alert.alert-success.alert-dismissible').forEach(alert => {
         setTimeout(() => {
             alert.style.transition = 'opacity 0.5s ease';
             alert.style.opacity = '0';

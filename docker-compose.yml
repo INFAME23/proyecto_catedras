@@ -146,6 +146,7 @@ services:
       - ./db/postgres/migraciones/048_semilla_estudiante.sql:/docker-entrypoint-initdb.d/z048_semilla_estudiante.sql:ro
       - ./db/postgres/migraciones/049_inscripcion_catedra.sql:/docker-entrypoint-initdb.d/z049_inscripcion_catedra.sql:ro
       - ./db/postgres/migraciones/050_disponibilidad_sesiones.sql:/docker-entrypoint-initdb.d/z050_disponibilidad_sesiones.sql:ro
+      - ./db/postgres/migraciones/051_qr_sesion.sql:/docker-entrypoint-initdb.d/z051_qr_sesion.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.
@@ -231,6 +232,7 @@ services:
       SMTP_CLAVE: "${SMTP_CLAVE:-}"
       SMTP_REMITENTE: "${SMTP_REMITENTE:-}"
       SMTP_NOMBRE_REMITENTE: "${SMTP_NOMBRE_REMITENTE:-Cátedras USB}"
+      URL_PUBLICA: "${URL_PUBLICA:-}"
       CORREO_MODO_CONSOLA: "${CORREO_MODO_CONSOLA:-}"
 
     # Flask escucha en 5000 dentro del contenedor; se publica como 5000.

@@ -36,6 +36,13 @@
                     <div class="fs-1 fw-bold font-monospace" style="letter-spacing: .3em;">{{ clave }}</div>
                     <div class="small text-muted">Tu clave de un solo uso</div>
                 </div>
+                {% elif enviada_por_correo %}
+                {# D53: la clave salió por correo; no se muestra aquí. Es un <div>, no un '.alert' (main.js los quita). #}
+                <div class="border border-primary rounded-3 p-3 text-center mb-3 bg-light">
+                    <i class="fas fa-envelope-open-text fa-2x text-primary-custom mb-1"></i>
+                    <div>Te enviamos la clave a <strong>{{ enviado_a }}</strong>.</div>
+                    <div class="small text-muted">Revisa tu correo (y la carpeta de no deseados) y escríbela abajo.</div>
+                </div>
                 {% endif %}
 
                 {# v7.1 · RF-S1: la ubicación es obligatoria. static/geolocalizacion.js la pide al

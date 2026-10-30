@@ -364,6 +364,11 @@ builder.Services.AddScoped<IRepositorioDisponibilidad>(
     _ => new RepositorioDisponibilidadPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioDisponibilidad, ServicioDisponibilidad>();
 
+// v7.1 · D53: QR de cierre de una sesión (enlace de registro con ventana al final + inscripción).
+builder.Services.AddScoped<IRepositorioQrSesion>(
+    _ => new RepositorioQrSesionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioQrSesion, ServicioQrSesion>();
+
 // IRepositorioRolPorUsuario -> RepositorioRolPorUsuarioPostgres (llave
 // compuesta CON vigencia, ADR D16: se abre con POST y se cierra con PATCH),
 // IServicioRolPorUsuario -> ServicioRolPorUsuario. Este mismo repositorio

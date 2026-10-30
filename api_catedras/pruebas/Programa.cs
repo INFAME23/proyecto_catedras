@@ -2406,13 +2406,47 @@ var agenda71 = await servicioDisp71.AgendaAsync(dispIni.Date, dispIni.AddDays(1)
 Afirmar("Agenda de un día devuelve las sesiones de la BD con el límite por defecto (500)",
     agenda71.Count == 1 && repoDisp71.UltimoLimite == 500);
 
+// ---------------------------------------------------------------------------
+//  v7.1 · D53 · QR de cierre de una sesión
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.1 · Prueba de capas: QR de cierre de sesión ==\n");
+var repoQr71 = new RepositorioQrSesionFalso();
+var servicioQr71 = new ServicioQrSesion(repoQr71);
+
+var qrNuevo71 = await servicioQr71.EmitirAsync(new QrSesionEmitir { FkSesion = 7, FkUsuario = 3 });
+Afirmar("Emitir el QR de una sesión lo crea: ya_existia = false y exige inscripción",
+    !qrNuevo71.YaExistia && qrNuevo71.RequiereInscripcion && qrNuevo71.Token != Guid.Empty && qrNuevo71.FkSesion == 7);
+Afirmar("...la ventana se abre ANTES de que termine la sesión y se cierra cuando termina (fin = 18:00, abre 17:45)",
+    qrNuevo71.VentanaHasta == RepositorioQrSesionFalso.FinSesion && qrNuevo71.VentanaDesde == RepositorioQrSesionFalso.FinSesion.AddMinutes(-15));
+Afirmar("...y quedó registrado quién lo emitió", repoQr71.UltimoUsuario == 3);
+var qrMismo71 = await servicioQr71.EmitirAsync(new QrSesionEmitir { FkSesion = 7 });
+Afirmar("Emitir otra vez es idempotente: devuelve el MISMO QR (ya_existia = true)", qrMismo71.YaExistia && qrMismo71.Token == qrNuevo71.Token);
+var qrOtro71 = await servicioQr71.EmitirAsync(new QrSesionEmitir { FkSesion = 7, Regenerar = true });
+Afirmar("Regenerar revoca el anterior y crea otro token distinto", !qrOtro71.YaExistia && qrOtro71.Token != qrNuevo71.Token && repoQr71.Revocados == 1);
+Afirmar("Consultar devuelve el QR vigente (el nuevo)", (await servicioQr71.ConsultarAsync(7))!.Token == qrOtro71.Token);
+Afirmar("Consultar una sesión sin QR devuelve null (204)", await servicioQr71.ConsultarAsync(8) is null);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Emitir el QR de una sesión inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioQr71.EmitirAsync(new QrSesionEmitir { FkSesion = 999 }));
+await AfirmarLanza<ArgumentException>(
+    "Consultar sin 'fkSesion' lanza ArgumentException (400)",
+    () => servicioQr71.ConsultarAsync(null));
+await AfirmarLanza<ArgumentException>(
+    "La asistencia sin 'fkSesion' lanza ArgumentException (400)",
+    () => servicioQr71.AsistenciaAsync(0));
+var asis71 = await servicioQr71.AsistenciaAsync(7);
+Afirmar("La asistencia trae inscritos y quién asistió (con la persona que asistió sin inscribirse)",
+    asis71.Count == 3 && asis71.Count(a => a.Asistio) == 2 && asis71.Count(a => a.Inscrito) == 2
+    && asis71.Any(a => a.Asistio && !a.Inscrito));
+Afirmar("QrSesionEmitir exige fk_sesion", !EsValida(new QrSesionEmitir()) && EsValida(new QrSesionEmitir { FkSesion = 7 }));
+
 // ---- Cuenta de control --------------------------------------------------------
 Console.WriteLine("\n== Cuenta de control: 37 tablas, 37 recursos ==\n");
-// v7.1: D50 agrega InscripcionCatedra (tabla de la migración 049) y D52 agrega Disponibilidad (consultas de
-// solo lectura, sin tabla propia). 37 del script + 2.
-Afirmar("La API declara 39 controladores (los 37 de bdcatedras + InscripcionCatedra + Disponibilidad de la v7.1)",
+// v7.1: D50 agrega InscripcionCatedra (tabla de la migración 049), D52 agrega Disponibilidad (consultas de
+// solo lectura) y D53 agrega QrSesion (el QR de cierre: enlace_registro + asistencia). 37 del script + 3.
+Afirmar("La API declara 40 controladores (los 37 de bdcatedras + InscripcionCatedra + Disponibilidad + QrSesion de la v7.1)",
     typeof(ApiCatedras.Controllers.BitacoraController).Assembly.GetTypes()
-        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 39);
+        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 40);
 
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
@@ -4503,4 +4537,51 @@ class RepositorioDisponibilidadFalso : IRepositorioDisponibilidad
         bool toca = desde < Ocupada.AddHours(2) && hasta > Ocupada;
         return Task.FromResult(toca ? new List<SesionOcupada> { Sesion(null) } : new List<SesionOcupada>());
     }
+}
+
+// ==========================================================================
+//  v7.1 · D53 · Repositorio FALSO de 'QrSesion'. La sesión 7 existe y termina a las
+//  18:00 UTC del 20-oct-2026; emitir crea un QR con ventana [17:45, 18:00); regenerar
+//  revoca el vigente. La asistencia simulada: 2 inscritos (1 asistió) + 1 que asistió sin inscribirse.
+// ==========================================================================
+class RepositorioQrSesionFalso : IRepositorioQrSesion
+{
+    public static readonly DateTime FinSesion = new(2026, 10, 20, 18, 0, 0, DateTimeKind.Utc);
+
+    private QrSesion? _vigente;
+    private long _siguiente = 1;
+
+    public long? UltimoUsuario { get; private set; }
+    public int Revocados { get; private set; }
+
+    public Task<QrSesion?> EmitirAsync(long fkSesion, long? fkUsuario, bool regenerar)
+    {
+        if (fkSesion != 7) return Task.FromResult<QrSesion?>(null);
+        UltimoUsuario = fkUsuario ?? UltimoUsuario;
+
+        if (_vigente is not null && !regenerar)
+        {
+            _vigente.YaExistia = true;
+            return Task.FromResult<QrSesion?>(_vigente);
+        }
+        if (_vigente is not null) Revocados++;
+
+        _vigente = new QrSesion
+        {
+            IdEnlace = _siguiente++, FkSesion = 7, Token = Guid.NewGuid(),
+            VentanaDesde = FinSesion.AddMinutes(-15), VentanaHasta = FinSesion,
+            RequiereInscripcion = true, YaExistia = false,
+        };
+        return Task.FromResult<QrSesion?>(_vigente);
+    }
+
+    public Task<QrSesion?> ConsultarAsync(long fkSesion) =>
+        Task.FromResult(fkSesion == 7 ? _vigente : null);
+
+    public Task<List<AsistenciaSesion>> AsistenciaAsync(long fkSesion) => Task.FromResult(new List<AsistenciaSesion>
+    {
+        new() { FkAsistente = 1, Nombres = "Ana", Apellidos = "A", Inscrito = true, Asistio = true, RegistradoEn = FinSesion.AddMinutes(-5), Latitud = 6.24m, Longitud = -75.58m, Origen = "QR" },
+        new() { FkAsistente = 2, Nombres = "Beto", Apellidos = "B", Inscrito = true, Asistio = false },
+        new() { FkAsistente = 3, Nombres = "Cami", Apellidos = "C", Inscrito = false, Asistio = true, RegistradoEn = FinSesion.AddMinutes(-3), Origen = "QR" },
+    });
 }

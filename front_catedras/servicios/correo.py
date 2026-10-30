@@ -114,3 +114,25 @@ Si no fuiste tú, ignora este mensaje: tu clave actual sigue igual y nadie puede
 
 Cátedras USB
 """)
+
+
+def enviar_clave_asistencia(destino, codigo, minutos):
+    """v7.1 · D53 · El correo con la clave de un solo uso para registrar la asistencia (la del QR)."""
+    enviar(
+        destino,
+        'Tu clave para registrar la asistencia · Cátedras USB',
+        f"""Hola,
+
+Escaneaste el QR de asistencia de una sesión de Cátedras USB.
+
+Tu clave de un solo uso es:
+
+    {codigo}
+
+Vence en {minutos} minutos y solo sirve una vez. Escríbela en la página donde escaneaste el QR para terminar de registrar tu asistencia.
+
+Si no fuiste tú, ignora este mensaje: sin esta clave nadie puede registrar tu asistencia.
+
+Cátedras USB
+""")
+
