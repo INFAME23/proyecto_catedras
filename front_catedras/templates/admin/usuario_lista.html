@@ -31,11 +31,15 @@
                         <td class="fw-semibold">{{ u.id_usuario }}</td>
                         <td>{{ u.usuario }}</td>
                         <td><a href="{{ url_for('admin.asistentes_detalle', id_asistente=u.fk_asistente) }}">{{ u.fk_asistente }}</a></td>
-                        <td>{% if u.activo %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-danger">Inactivo</span>{% endif %}</td>
+                        <td>{% if u.activo %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-danger">Inactivo</span>{% endif %}{% if u.debe_cambiar_clave %} <span class="badge badge-warning" title="Debe cambiar su clave al entrar">Cambio pendiente</span>{% endif %}</td>
                         <td class="small">{{ (u.ultimo_acceso|fecha_hora) if u.ultimo_acceso else '—' }}</td>
                         <td class="small">{{ u.creado_en|fecha_hora }}</td>
                         <td class="text-end">
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.roles_usuario_listar', fk_usuario=u.id_usuario) }}" title="Roles"><i class="fas fa-user-shield"></i></a>
+                            <form class="d-inline" method="post" action="{{ url_for('admin.usuarios_exigir_cambio', id_usuario=u.id_usuario) }}"
+                                  onsubmit="return confirm('¿Obligar a {{ u.usuario }} a cambiar su clave la próxima vez que entre?');">
+                                <button class="btn btn-sm btn-outline-warning" type="submit" title="Exigir cambio de clave"><i class="fas fa-key"></i></button>
+                            </form>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.usuarios_editar', id_usuario=u.id_usuario) }}" title="Editar"><i class="fas fa-edit"></i></a>
                             <form class="d-inline" method="post" action="{{ url_for('admin.usuarios_eliminar', id_usuario=u.id_usuario) }}"
                                   onsubmit="return confirm('¿Eliminar el usuario {{ u.usuario }}? Si tiene roles asignados, la base de datos no lo permitirá.');">

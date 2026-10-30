@@ -26,7 +26,7 @@
             <dt class="col-sm-3">Usuario</dt><dd class="col-sm-9"><code id="cred-usuario">{{ creado.usuario }}</code></dd>
             <dt class="col-sm-3">Clave temporal</dt><dd class="col-sm-9"><code id="cred-clave">{{ creado.clave }}</code></dd>
         </dl>
-        <p class="small text-muted mb-3"><i class="fas fa-info-circle me-1"></i>Que la cambie al entrar (menú → Cambiar clave). Si la olvida, el código de recuperación llega a <strong>{{ creado.correo }}</strong>.</p>
+        <p class="small text-muted mb-3"><i class="fas fa-info-circle me-1"></i>Al entrar por primera vez se le pedirá cambiarla (no podrá usar nada más hasta hacerlo). Si la olvida, el código de recuperación llega a <strong>{{ creado.correo }}</strong>.</p>
         <button class="btn btn-outline-primary" type="button" id="copiar"><i class="fas fa-copy me-1"></i>Copiar usuario y clave</button>
         <a class="btn btn-outline-secondary" href="{{ url_for('admin.ponentes_nuevo') }}"><i class="fas fa-user-plus me-1"></i>Crear otro</a>
         <a class="btn btn-primary" href="{{ url_for('admin.asistentes_detalle', id_asistente=creado.id_asistente) }}">Ver la persona</a>

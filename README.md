@@ -12,7 +12,7 @@ estructura académica de la v2 y la arquitectura en capas de la v1.
 
 Sin tablas de negocio nuevas en el mapa (sigue en 37 recursos) y sin romper el
 orden de versiones; sus requisitos se numeran `RF-S1`…`RF-S7`. Documento
-completo, con las decisiones (D38–D53), lo verificado y lo pendiente:
+completo, con las decisiones (D38–D54), lo verificado y lo pendiente:
 [docs/spec_kit/Versiones/version7_1/v7_1_subversion.md](docs/spec_kit/Versiones/version7_1/v7_1_subversion.md).
 
 - **Geolocalización obligatoria** al autorregistrar la asistencia: el navegador
@@ -27,20 +27,22 @@ completo, con las decisiones (D38–D53), lo verificado y lo pendiente:
   solo uso enviado por correo (`/recuperar`).
 - **Panel de `/admin` con categorías desplegables** (cerradas por defecto, sin barra lateral).
 
-> **Si ya tienes el volumen de PostgreSQL creado**, las migraciones 045-051 no
+> **Si ya tienes el volumen de PostgreSQL creado**, las migraciones 045-052 no
 > corren solas (initdb solo corre con el volumen vacío). Aplícalas **en orden**:
 >
 > ```bash
-> for n in 045_geolocalizacion_registro 046_roles_estudiante_ponente 047_codigo_recuperacion 048_semilla_estudiante 049_inscripcion_catedra 050_disponibilidad_sesiones 051_qr_sesion; do
+> for n in 045_geolocalizacion_registro 046_roles_estudiante_ponente 047_codigo_recuperacion 048_semilla_estudiante 049_inscripcion_catedra 050_disponibilidad_sesiones 051_qr_sesion 052_primer_ingreso_estudiante; do
 >   docker compose cp db/postgres/migraciones/$n.sql postgres:/tmp/m.sql
 >   docker compose exec -T postgres psql -U sa -d bdcatedras_postgres_local -v ON_ERROR_STOP=1 -f /tmp/m.sql
 > done
 > ```
 >
 > Sin la 045, validar una clave responde `42883: function fn_validar_clave_geo_api
-> does not exist`; sin la 047, la recuperación de clave falla; sin la 049, inscribirse a una cátedra falla; sin la 050, la consulta de disponibilidad falla; sin la 051, el QR de asistencia y pedir la clave del QR fallan.
+> does not exist`; sin la 047, la recuperación de clave falla; sin la 049, inscribirse a una cátedra falla; sin la 050, la consulta de disponibilidad falla; sin la 051, el QR de asistencia y pedir la clave del QR fallan; sin la 052, el login con correo institucional y el primer ingreso fallan.
 
 **QR de asistencia (D53).** Cada sesión tiene un QR que el ponente comparte al final (pantalla «Ver QR»). Para que sirva en los celulares de los estudiantes, el front debe abrirse con una dirección que ellos alcancen y **en https** (el navegador solo da la ubicación en https o localhost): pon esa dirección en `URL_PUBLICA` (ver `front_catedras/env.ejemplo`). Con el correo configurado, la clave de asistencia llega por correo y no se muestra en pantalla.
+
+**Estudiantes (D54).** El usuario del estudiante es su **correo institucional**; su clave inicial es su **código de estudiante** y la primera vez que entra debe cambiarla. Su cuenta se crea en ese primer ingreso (no hace falta cargar cuentas de antemano).
 
 **Correo (RF-S6).** El código de recuperación se envía por SMTP configurado
 con variables de entorno; copia `front_catedras/env.ejemplo` como

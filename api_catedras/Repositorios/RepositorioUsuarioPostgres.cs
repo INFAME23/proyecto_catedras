@@ -146,6 +146,48 @@ public class RepositorioUsuarioPostgres : IRepositorioUsuario
         await conexion.ExecuteAsync(sql, new { idUsuario });
     }
 
+    // Forma de la fila de sp_buscar_estudiante_sin_cuenta.
+    private sealed class FilaCandidato
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("id_asistente")]
+        public long IdAsistente { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("id_asis")]
+        public string IdAsis { get; set; } = "";
+    }
+
+    public async Task<(long IdAsistente, string IdAsis)?> BuscarEstudianteSinCuentaAsync(string correo)
+    {
+        const string sql = "CALL catedras.sp_buscar_estudiante_sin_cuenta(@correo, NULL);";
+
+        await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { correo });
+
+        var fila = LectorJsonSp.Fila<FilaCandidato>(json);
+        return fila is null ? null : (fila.IdAsistente, fila.IdAsis);
+    }
+
+    public async Task<Usuario?> ProvisionarCuentaEstudianteAsync(string correo, string claveHash)
+    {
+        const string sql = "CALL catedras.sp_provisionar_cuenta_estudiante(@correo, @claveHash, NULL);";
+
+        await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new { correo, claveHash });
+
+        var creado = LectorJsonSp.Fila<Usuario>(json);
+        if (creado is not null)
+            creado.ClaveHash = claveHash;       // solo vive en memoria; no sale en ninguna respuesta ([JsonIgnore])
+        return creado;
+    }
+
+    public async Task FijarDebeCambiarClaveAsync(long idUsuario, bool valor)
+    {
+        const string sql = "CALL catedras.sp_fijar_debe_cambiar_clave(@idUsuario, @valor);";
+
+        await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        await conexion.ExecuteAsync(sql, new { idUsuario, valor });
+    }
+
     public async Task<int> EliminarAsync(long idUsuario)
     {
         const string sql = "CALL catedras.sp_eliminar_usuario(@idUsuario, NULL);";

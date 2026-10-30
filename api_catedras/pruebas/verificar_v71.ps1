@@ -17,7 +17,7 @@
 #
 #  IMPORTANTE: el script ESCRIBE datos (una sesion, un enlace, un registro de
 #  asistencia, claves de acceso y codigos de recuperacion). La clave del
-#  estudiante semilla queda como estaba ('Cambiar-123'). Para dejar la BD como
+#  estudiante semilla queda como estaba (clave = su codigo, con el cambio pendiente). Para dejar la BD como
 #  nueva:  docker compose down -v ; docker compose up -d --build
 #  (se escribe sin tildes a proposito: PowerShell 5.1 lee mal los .ps1 sin BOM)
 # ==========================================================================
@@ -75,7 +75,7 @@ function Verificar {
 
 function Titulo([string]$t) { Write-Host "`n== $t ==" -ForegroundColor Cyan }
 
-$claveSemilla = "Cambiar-123"
+$claveSemilla = "30000124724"     # clave inicial = el codigo de estudiante (D54)
 $lat = 6.244203
 $lng = -75.581211
 
@@ -93,7 +93,8 @@ Verificar "GET /api/Rol -> 200 con ESTUDIANTE y PONENTE" `
 # --------------------------------------------------------------------------
 Titulo "2. RF-S4: el estudiante semilla inicia sesion con su rol"
 $login = Llamar POST "/api/Usuario/login" @{ usuario = "alejandro.zuleta"; clave = $claveSemilla }
-Verificar "Login de alejandro.zuleta -> 200" ($login.Codigo -eq 200) $login
+Verificar "Login de alejandro.zuleta con su codigo como clave inicial -> 200" ($login.Codigo -eq 200) $login
+Verificar "...y la cuenta exige cambiar la clave en el primer ingreso (D54)" ($login.Json.usuario.debe_cambiar_clave -eq $true) $login
 Verificar "...con el rol ESTUDIANTE y sin ADMIN" (($login.Json.roles -contains "ESTUDIANTE") -and -not ($login.Json.roles -contains "ADMIN")) $login
 Verificar "...y la respuesta NO trae ningun hash" ($login.Texto -notmatch "clave_hash" -and $login.Texto -notmatch '\$2[aby]\$') $login
 $idUsuario = $login.Json.usuario.id_usuario
@@ -218,7 +219,9 @@ Verificar "...y la clave NO cambio" ((Llamar POST "/api/Usuario/login" @{ usuari
 # --------------------------------------------------------------------------
 Titulo "6. Se deja la cuenta semilla como estaba"
 $resto = Llamar POST "/api/Usuario/$idUsuario/cambiar-clave" @{ clave_actual = "Recuperada-71"; clave_nueva = $claveSemilla }
-Verificar "La clave del estudiante semilla vuelve a la temporal" ($resto.Codigo -eq 200) $resto
+Verificar "La clave del estudiante semilla vuelve a su codigo" ($resto.Codigo -eq 200) $resto
+$null = Llamar POST "/api/Usuario/$idUsuario/exigir-cambio-clave"
+Verificar "...y vuelve a quedar con el cambio pendiente (D54)" ((Llamar POST "/api/Usuario/login" @{ usuario = "alejandro.zuleta"; clave = $claveSemilla }).Json.usuario.debe_cambiar_clave -eq $true)
 Verificar "...y el login con ella funciona" ((Llamar POST "/api/Usuario/login" @{ usuario = "alejandro.zuleta"; clave = $claveSemilla }).Codigo -eq 200)
 
 # --------------------------------------------------------------------------
@@ -354,6 +357,59 @@ $enlC = Llamar POST "/api/EnlaceRegistro" @{ fk_sesion = $sC.id_sesion }
 $tokC = (Llamar GET "/api/EnlaceRegistro/$($enlC.Json.id_enlace)").Json.token
 Verificar "Un enlace emitido por el administrador (v5) NO exige inscripcion" ((Llamar POST "/api/ClaveAcceso/solicitar" @{ identificador = "30000124724"; token = $tokC }).Codigo -eq 200)
 $null = Llamar POST "/api/InscripcionCatedra/cancelar" @{ fk_catedra = $catQr.Json.id_catedra; fk_asistente = $idAsistente }   # se deja sin inscripcion
+
+# --------------------------------------------------------------------------
+Titulo "10. D54: usuario = correo institucional, clave inicial = codigo, cambio en el primer ingreso"
+# Un estudiante vigente con correo institucional y SIN cuenta: se crea al entrar la primera vez.
+$sufijo = "{0:D6}" -f (Get-Random -Minimum 0 -Maximum 999999)
+$correoEst = "est.prueba$sufijo@usbmed.edu.co"
+$codigoEst = "T9$sufijo"
+$estNuevo = Llamar POST "/api/Asistente" @{
+    id_asis = $codigoEst; nombres = "Estudiante"; apellidos = "De Prueba $sufijo"; correo_institucional = $correoEst; es_externo = $false
+    vinculaciones = @(@{ fk_tipo_vinculacion = "ESTUDIANTE" })
+}
+Verificar "Se crea el estudiante de prueba (con correo institucional y vinculacion ESTUDIANTE), SIN cuenta" ($estNuevo.Codigo -eq 200) $estNuevo
+Verificar "Antes de entrar no tiene cuenta (ningun usuario con ese asistente)" (-not (@((Llamar GET "/api/Usuario?limite=100000").Json.datos) | Where-Object { $_.fk_asistente -eq $estNuevo.Json.id_asistente })) $estNuevo
+
+$mal = Llamar POST "/api/Usuario/login" @{ usuario = $correoEst; clave = "no-es-su-codigo" }
+Verificar "Con el correo y una clave que NO es su codigo -> 401 (y no se crea la cuenta)" ($mal.Codigo -eq 401) $mal
+Verificar "...sigue sin cuenta" (-not (@((Llamar GET "/api/Usuario?limite=100000").Json.datos) | Where-Object { $_.fk_asistente -eq $estNuevo.Json.id_asistente }))
+Verificar "Un correo que no es de nadie -> 401" ((Llamar POST "/api/Usuario/login" @{ usuario = "nadie.por.aqui$sufijo@usbmed.edu.co"; clave = $codigoEst }).Codigo -eq 401)
+
+$prim = Llamar POST "/api/Usuario/login" @{ usuario = $correoEst; clave = $codigoEst }
+Verificar "PRIMER INGRESO: correo institucional + codigo de estudiante -> 200, se crea la cuenta" ($prim.Codigo -eq 200 -and $prim.Json.usuario.fk_asistente -eq $estNuevo.Json.id_asistente) $prim
+Verificar "...con el rol ESTUDIANTE y el cambio de clave pendiente" (($prim.Json.roles -contains "ESTUDIANTE") -and $prim.Json.usuario.debe_cambiar_clave -eq $true) $prim
+Verificar "...el nombre de usuario sale del correo (lo que va antes de la @)" ($prim.Json.usuario.usuario -eq "est.prueba$sufijo") $prim
+Verificar "...y la respuesta NO trae ningun hash" ($prim.Texto -notmatch "clave_hash" -and $prim.Texto -notmatch '\$2[aby]\$') $prim
+$idEst = $prim.Json.usuario.id_usuario
+
+Verificar "Segundo ingreso con el correo en MAYUSCULAS y el codigo -> 200 (login normal)" ((Llamar POST "/api/Usuario/login" @{ usuario = $correoEst.ToUpper(); clave = $codigoEst }).Codigo -eq 200)
+Verificar "Tambien entra con el nombre de usuario corto" ((Llamar POST "/api/Usuario/login" @{ usuario = "est.prueba$sufijo"; clave = $codigoEst }).Codigo -eq 200)
+Verificar "Con el codigo mal escrito -> 401" ((Llamar POST "/api/Usuario/login" @{ usuario = $correoEst; clave = $codigoEst + "x" }).Codigo -eq 401)
+
+$cam = Llamar POST "/api/Usuario/$idEst/cambiar-clave" @{ clave_actual = $codigoEst; clave_nueva = "Mi-Clave-Nueva-$sufijo" }
+Verificar "Cambiar la clave inicial por una propia -> 200" ($cam.Codigo -eq 200) $cam
+$tras = Llamar POST "/api/Usuario/login" @{ usuario = $correoEst; clave = "Mi-Clave-Nueva-$sufijo" }
+Verificar "Con la clave nueva entra y YA NO se le exige cambiarla" ($tras.Codigo -eq 200 -and $tras.Json.usuario.debe_cambiar_clave -eq $false) $tras
+Verificar "...y su codigo ya no sirve como clave (401)" ((Llamar POST "/api/Usuario/login" @{ usuario = $correoEst; clave = $codigoEst }).Codigo -eq 401)
+
+$ex = Llamar POST "/api/Usuario/$idEst/exigir-cambio-clave"
+Verificar "El administrador puede volver a exigir el cambio -> 200" ($ex.Codigo -eq 200) $ex
+Verificar "...y el siguiente ingreso lo trae pendiente" ((Llamar POST "/api/Usuario/login" @{ usuario = $correoEst; clave = "Mi-Clave-Nueva-$sufijo" }).Json.usuario.debe_cambiar_clave -eq $true)
+Verificar "Exigir el cambio a un usuario inexistente -> 404" ((Llamar POST "/api/Usuario/99999999/exigir-cambio-clave").Codigo -eq 404)
+$rec = Llamar POST "/api/Usuario/recuperacion/solicitar" @{ identificador = "est.prueba$sufijo" }
+$null = Llamar POST "/api/Usuario/recuperacion/restablecer" @{ id_codigo = $rec.Json.id_codigo; codigo = $rec.Json.codigo; clave_nueva = "Recuperada-$sufijo" }
+Verificar "Recuperar la clave por correo tambien apaga la exigencia" ((Llamar POST "/api/Usuario/login" @{ usuario = $correoEst; clave = "Recuperada-$sufijo" }).Json.usuario.debe_cambiar_clave -eq $false)
+
+# Quien NO es estudiante vigente no puede activar una cuenta con su codigo
+$ext = Llamar POST "/api/Asistente" @{ id_asis = "X9$sufijo"; nombres = "Docente"; apellidos = "De Prueba $sufijo"; correo_institucional = "doc.prueba$sufijo@usbmed.edu.co"; es_externo = $false
+    vinculaciones = @(@{ fk_tipo_vinculacion = "DOCENTE" }) }
+Verificar "Un DOCENTE (no es estudiante vigente) no puede activar cuenta con su codigo -> 401" ((Llamar POST "/api/Usuario/login" @{ usuario = "doc.prueba$sufijo@usbmed.edu.co"; clave = "X9$sufijo" }).Codigo -eq 401)
+
+# Crear una cuenta (como hace el administrador con la clave temporal de un ponente) pidiendo el cambio
+$pa = Llamar POST "/api/Asistente" @{ nombres = "Ponente"; apellidos = "De Prueba $sufijo"; correo_personal = "pon$sufijo@ejemplo.com"; es_externo = $true }
+$pu = Llamar POST "/api/Usuario" @{ fk_asistente = $pa.Json.id_asistente; usuario = "ponente.prueba$sufijo".Substring(0, 20); clave = "Temporal-$sufijo"; debe_cambiar_clave = $true }
+Verificar "Una cuenta creada con debe_cambiar_clave=true entra pidiendo el cambio" ($pu.Codigo -eq 200 -and (Llamar POST "/api/Usuario/login" @{ usuario = "ponente.prueba$sufijo".Substring(0, 20); clave = "Temporal-$sufijo" }).Json.usuario.debe_cambiar_clave -eq $true) $pu
 
 # --------------------------------------------------------------------------
 Write-Host ""

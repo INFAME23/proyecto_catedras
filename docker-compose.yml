@@ -147,6 +147,7 @@ services:
       - ./db/postgres/migraciones/049_inscripcion_catedra.sql:/docker-entrypoint-initdb.d/z049_inscripcion_catedra.sql:ro
       - ./db/postgres/migraciones/050_disponibilidad_sesiones.sql:/docker-entrypoint-initdb.d/z050_disponibilidad_sesiones.sql:ro
       - ./db/postgres/migraciones/051_qr_sesion.sql:/docker-entrypoint-initdb.d/z051_qr_sesion.sql:ro
+      - ./db/postgres/migraciones/052_primer_ingreso_estudiante.sql:/docker-entrypoint-initdb.d/z052_primer_ingreso_estudiante.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.

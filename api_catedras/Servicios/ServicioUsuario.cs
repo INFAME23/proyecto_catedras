@@ -88,7 +88,13 @@ public class ServicioUsuario : IServicioUsuario
             Activo = peticion.Activo ?? true,
         };
 
-        return await _repositorio.CrearAsync(usuario);
+        var creado = await _repositorio.CrearAsync(usuario);
+
+        // v7.1 · D54: el administrador entrega una clave temporal y pide que la cambie al entrar.
+        if (peticion.DebeCambiarClave == true)
+            await _repositorio.FijarDebeCambiarClaveAsync(creado.IdUsuario, true);
+
+        return creado;
     }
 
     public async Task<int> ReemplazarAsync(long idUsuario, UsuarioReemplazo peticion)
@@ -141,15 +147,45 @@ public class ServicioUsuario : IServicioUsuario
         return filas;
     }
 
+    // v7.1 · D54: un estudiante vigente SIN cuenta entra por primera vez con su correo institucional y su
+    // código como clave: se le crea la cuenta (rol ESTUDIANTE, debe cambiar la clave). Devuelve null si no
+    // aplica (no es un correo, no hay tal estudiante, ya tiene cuenta, o la clave no es su código): el
+    // llamador responde lo mismo de siempre (D27). El hash se calcula AQUÍ (Regla 3).
+    private async Task<Usuario?> ProvisionarPrimerIngresoAsync(string login, string clave)
+    {
+        if (!login.Contains('@'))
+            return null;
+
+        var candidato = await _repositorio.BuscarEstudianteSinCuentaAsync(login);
+        if (candidato is null)
+            return null;
+
+        // Comparación en tiempo constante: no se filtra cuántos caracteres del código acertó.
+        var escrito = System.Text.Encoding.UTF8.GetBytes(clave.Trim());
+        var esperado = System.Text.Encoding.UTF8.GetBytes(candidato.Value.IdAsis);
+        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(escrito, esperado))
+            return null;
+
+        return await _repositorio.ProvisionarCuentaEstudianteAsync(login, Hashear(candidato.Value.IdAsis));
+    }
+
     public async Task<(Usuario Usuario, List<string> Roles)?> LoginAsync(UsuarioLogin peticion)
     {
-        var usuario = await _repositorio.ObtenerPorLoginAsync(peticion.Usuario!);
+        // v7.1 · D54: 'usuario' puede ser el nombre de usuario o el CORREO INSTITUCIONAL de la persona.
+        string login = peticion.Usuario!.Trim();
+        var usuario = await _repositorio.ObtenerPorLoginAsync(login);
 
+        if (usuario is null)
+        {
+            // Primer ingreso de un estudiante (su clave es su código: ya está comprobada).
+            usuario = await ProvisionarPrimerIngresoAsync(login, peticion.Clave!);
+            if (usuario is null)
+                return null;
+        }
         // Tres causas, un solo resultado (ADR D27): no existe, está inactivo o
         // la clave no coincide. El '||' corta en la primera que se cumple; el
         // Verify solo se ejecuta si el usuario existe y está activo.
-        if (usuario is null
-            || !usuario.Activo
+        else if (!usuario.Activo
             || !BCrypt.Net.BCrypt.Verify(peticion.Clave!, usuario.ClaveHash))
             return null;
 
@@ -203,6 +239,14 @@ public class ServicioUsuario : IServicioUsuario
         }
 
         return await _repositorioCodigos.SolicitarAsync(peticion.Identificador!.Trim(), ip);
+    }
+
+    public async Task ExigirCambioClaveAsync(long idUsuario)
+    {
+        _ = await _repositorio.ObtenerPorIdAsync(idUsuario)
+            ?? throw new NoEncontradoExcepcion($"No existe el usuario '{idUsuario}'.");
+
+        await _repositorio.FijarDebeCambiarClaveAsync(idUsuario, true);
     }
 
     public async Task RestablecerClaveAsync(RecuperacionRestablecer peticion)

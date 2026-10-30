@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, redirect, render_template, request, session, url_for
 from flask_cors import CORS
 from config import Config
 from auth_helpers import registrar_en
@@ -38,6 +38,17 @@ app.register_blueprint(estudiante_bp, url_prefix='/estudiante')
 app.register_blueprint(carga_bp, url_prefix='/')
 app.register_blueprint(sesiones_bp, url_prefix='/')
 app.register_blueprint(encuestas_bp, url_prefix='/')
+
+
+# v7.1 · D54: quien entra por primera vez (clave inicial = su código) tiene que cambiar la clave ANTES de
+# usar nada más: solo se le dejan la pantalla de cambiarla, cerrar sesión y los archivos estáticos.
+_SIN_CAMBIO_PENDIENTE = {'perfil.cambiar_clave', 'auth.logout', 'static'}
+
+
+@app.before_request
+def _exigir_cambio_de_clave():
+    if session.get('debe_cambiar') and request.endpoint not in _SIN_CAMBIO_PENDIENTE:
+        return redirect(url_for('perfil.cambiar_clave'))
 
 
 @app.errorhandler(403)

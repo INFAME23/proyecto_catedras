@@ -1,59 +1,94 @@
 {% extends 'base.html' %}
+{# ==========================================================================
+   inicio.html  ·  Subversión v7.1 (D54)
+   Portada GENÉRICA para todos los usuarios: qué son las cátedras y cómo se participa.
+   No lleva atajos de administración (antes mostraba las pantallas de /admin a cualquiera).
+   Solo el botón de entrada cambia según quién mira (visitante, estudiante, ponente, administrador).
+   ========================================================================== #}
 {% block titulo %}Cátedras USB · Inicio{% endblock %}
 {% block contenido %}
 <div class="bg-secondary-custom text-white p-4 p-md-5 rounded-3 mb-4 animate-fade-in">
     <div class="d-flex align-items-center">
         <img src="{{ url_for('static', filename='img/escudo-usb.jpeg') }}" alt="Escudo USB" class="me-3 rounded" style="height:64px;width:auto;">
         <div>
-            <h1 class="fw-bold mb-1">Sistema de Cátedras</h1>
+            <h1 class="fw-bold mb-1">Cátedras USB</h1>
             <p class="text-white-50 mb-0">Universidad San Buenaventura Medellín</p>
         </div>
     </div>
 </div>
 
 <div class="card shadow-sm mb-4">
-    <div class="card-body">
-        <a class="btn btn-primary" href="{{ url_for('catedras.catalogo') }}">
-            <i class="fas fa-book-open me-1"></i>Ver el catálogo de cátedras
-        </a>
-        <a class="btn btn-outline-primary" href="{{ url_for('admin.panel') }}">
-            <i class="fas fa-cogs me-1"></i>Ir a Administración
-        </a>
+    <div class="card-body p-4">
+        <h2 class="h5 fw-bold"><i class="fas fa-book-open text-primary-custom me-2"></i>¿Qué son las cátedras?</h2>
+        <p class="mb-3">
+            Las cátedras son espacios académicos y culturales que la universidad ofrece a su comunidad. Cada cátedra
+            se organiza en <strong>sesiones</strong> (reuniones con fecha, hora, sede y modalidad: presencial, virtual o híbrida)
+            que dictan uno o varios <strong>ponentes</strong>. Aquí puedes conocer las que hay disponibles, inscribirte en las
+            que te interesan y dejar constancia de tu asistencia a cada sesión.
+        </p>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-primary" href="{{ url_for('catedras.catalogo') }}">
+                <i class="fas fa-search me-1"></i>Explorar el catálogo de cátedras
+            </a>
+            {% if not sesion_activa() %}
+            <a class="btn btn-outline-primary" href="{{ url_for('auth.login') }}">
+                <i class="fas fa-sign-in-alt me-1"></i>Iniciar sesión
+            </a>
+            {% elif tiene_rol('ADMIN') %}
+            <a class="btn btn-outline-primary" href="{{ url_for('admin.panel') }}"><i class="fas fa-cogs me-1"></i>Administración</a>
+            {% elif tiene_rol('PONENTE') %}
+            <a class="btn btn-outline-primary" href="{{ url_for('ponente.inicio') }}"><i class="fas fa-chalkboard-teacher me-1"></i>Mi panel de ponente</a>
+            {% elif tiene_rol('ESTUDIANTE') %}
+            <a class="btn btn-outline-primary" href="{{ url_for('estudiante.inicio') }}"><i class="fas fa-user-graduate me-1"></i>Mi panel</a>
+            {% endif %}
+        </div>
     </div>
 </div>
 
-<div class="row g-3">
-    <div class="col-md-3">
-        <a class="card text-center shadow-custom text-decoration-none" href="{{ url_for('admin.sedes_listar') }}">
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card h-100 shadow-custom">
             <div class="card-body">
-                <i class="fas fa-building fa-2x text-primary-custom mb-2"></i>
-                <h6 class="fw-bold mb-0">Sede</h6>
+                <i class="fas fa-user-graduate fa-2x text-primary-custom mb-2"></i>
+                <h3 class="h6 fw-bold">Para estudiantes</h3>
+                <p class="text-muted small mb-0">Ingresa con tu correo institucional, revisa el catálogo, <strong>inscríbete</strong> en las cátedras
+                    que quieras y consulta en tu panel las que sigues. Tu clave inicial es tu código de estudiante y se te pide cambiarla la
+                    primera vez que entras.</p>
             </div>
-        </a>
+        </div>
     </div>
-    <div class="col-md-3">
-        <a class="card text-center shadow-custom text-decoration-none" href="{{ url_for('admin.encuestas_listar') }}">
+    <div class="col-md-4">
+        <div class="card h-100 shadow-custom">
             <div class="card-body">
-                <i class="fas fa-clipboard-list fa-2x text-primary-custom mb-2"></i>
-                <h6 class="fw-bold mb-0">Encuesta</h6>
+                <i class="fas fa-chalkboard-teacher fa-2x text-primary-custom mb-2"></i>
+                <h3 class="h6 fw-bold">Para ponentes</h3>
+                <p class="text-muted small mb-0">Crea tu cátedra con sus sesiones, revisa la disponibilidad de fecha y lugar para que no se
+                    crucen, o súmate a una que ya exista. Cada sesión tiene su <strong>código QR</strong> para registrar la asistencia al final.</p>
             </div>
-        </a>
+        </div>
     </div>
-    <div class="col-md-3">
-        <a class="card text-center shadow-custom text-decoration-none" href="{{ url_for('admin.estados_listar') }}">
+    <div class="col-md-4">
+        <div class="card h-100 shadow-custom">
             <div class="card-body">
-                <i class="fas fa-tasks fa-2x text-primary-custom mb-2"></i>
-                <h6 class="fw-bold mb-0">Estado de proceso</h6>
+                <i class="fas fa-qrcode fa-2x text-primary-custom mb-2"></i>
+                <h3 class="h6 fw-bold">Asistencia con QR</h3>
+                <p class="text-muted small mb-0">Al final de la sesión el ponente comparte un código QR. Quien está inscrito lo escanea, recibe una clave en su
+                    correo y confirma su asistencia con su ubicación.</p>
             </div>
-        </a>
+        </div>
     </div>
-    <div class="col-md-3">
-        <a class="card text-center shadow-custom text-decoration-none" href="{{ url_for('admin.modalidades_listar') }}">
-            <div class="card-body">
-                <i class="fas fa-video fa-2x text-primary-custom mb-2"></i>
-                <h6 class="fw-bold mb-0">Modalidad</h6>
-            </div>
-        </a>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body p-4">
+        <h2 class="h5 fw-bold"><i class="fas fa-list-ol text-primary-custom me-2"></i>Cómo participar en una cátedra</h2>
+        <ol class="mb-0">
+            <li class="mb-2"><strong>Explora</strong> el catálogo y abre la cátedra que te interese para ver su información y sus sesiones.</li>
+            <li class="mb-2"><strong>Inscríbete</strong> en ella desde su ficha (necesitas haber iniciado sesión como estudiante).</li>
+            <li class="mb-2"><strong>Asiste</strong> a las sesiones en la fecha, la sede y la modalidad indicadas.</li>
+            <li class="mb-2"><strong>Registra tu asistencia</strong> al final de cada sesión escaneando el QR que muestra el ponente. Se abre solo en los últimos minutos de la sesión.</li>
+            <li><strong>Responde la encuesta</strong> de la sesión, si la tiene, para ayudar a mejorar las cátedras.</li>
+        </ol>
     </div>
 </div>
 {% endblock %}

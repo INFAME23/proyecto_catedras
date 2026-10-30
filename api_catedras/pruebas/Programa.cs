@@ -2440,6 +2440,68 @@ Afirmar("La asistencia trae inscritos y quién asistió (con la persona que asis
     && asis71.Any(a => a.Asistio && !a.Inscrito));
 Afirmar("QrSesionEmitir exige fk_sesion", !EsValida(new QrSesionEmitir()) && EsValida(new QrSesionEmitir { FkSesion = 7 }));
 
+// ---------------------------------------------------------------------------
+//  v7.1 · D54 · Usuario = correo institucional; clave inicial = código; primer ingreso
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.1 · Prueba de capas: correo institucional y primer ingreso ==\n");
+var repoUsr54 = new RepositorioUsuarioFalso();
+var servicioUsr54 = new ServicioUsuario(repoUsr54, new RepositorioRolPorUsuarioFalso(), new RepositorioCodigoRecuperacionFalso());
+
+var porCorreo54 = await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "admin.catedras@usbmed.edu.co", Clave = "Admin12345" });
+Afirmar("Login con el CORREO INSTITUCIONAL de una cuenta existente funciona (es la misma cuenta)",
+    porCorreo54 is not null && porCorreo54.Value.Usuario.NombreUsuario == "admin" && !porCorreo54.Value.Usuario.DebeCambiarClave);
+Afirmar("...sin importar mayúsculas ni espacios alrededor",
+    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "  ADMIN.Catedras@USBMED.edu.co ", Clave = "Admin12345" }) is not null);
+Afirmar("...con el correo y una clave incorrecta devuelve null (el mismo rechazo de siempre, D27)",
+    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "admin.catedras@usbmed.edu.co", Clave = "otra" }) is null);
+Afirmar("El nombre de usuario de siempre sigue funcionando",
+    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "Admin12345" }) is not null);
+
+Afirmar("Un correo que no es de ningún estudiante, con cualquier clave, devuelve null",
+    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "nadie@usbmed.edu.co", Clave = "3000999111" }) is null);
+await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "inexistente", Clave = "3000999111" });
+Afirmar("...y un 'usuario' sin @ que no existe NO busca estudiantes (no hay primer ingreso sin correo)", repoUsr54.BusquedasDeCandidato == 1);
+Afirmar("Estudiante sin cuenta con una clave que NO es su código: rechazado y NO se crea la cuenta",
+    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "12345678" }) is null
+    && await repoUsr54.ObtenerPorLoginAsync("estudiante.prueba") is null);
+
+var primero54 = await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "Estudiante.Prueba@usbmed.edu.co", Clave = "3000999111" });
+Afirmar("PRIMER INGRESO: correo institucional + código de estudiante como clave -> entra y se crea la cuenta",
+    primero54 is not null && primero54.Value.Usuario.NombreUsuario == "estudiante.prueba" && primero54.Value.Usuario.FkAsistente == 50);
+Afirmar("...marcada para cambiar la clave en este primer ingreso", primero54!.Value.Usuario.DebeCambiarClave);
+var guardado54 = await repoUsr54.ObtenerPorLoginAsync("estudiante.prueba");
+Afirmar("...con la clave inicial guardada como hash BCrypt del código, NUNCA el código en claro (Regla 3)",
+    guardado54 is not null && guardado54.ClaveHash != "3000999111" && BCrypt.Net.BCrypt.Verify("3000999111", guardado54.ClaveHash));
+Afirmar("...y se anotó el acceso", repoUsr54.LlamadasUltimoAcceso >= 1);
+var segundo54 = await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "3000999111" });
+Afirmar("El segundo ingreso ya es el login normal (BCrypt) y sigue pidiendo cambiar la clave",
+    segundo54 is not null && segundo54.Value.Usuario.DebeCambiarClave);
+Afirmar("...con una clave incorrecta se rechaza",
+    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "3000999112" }) is null);
+
+Afirmar("Al cambiar la clave, deja de exigirse el cambio",
+    await servicioUsr54.CambiarClaveAsync(segundo54!.Value.Usuario.IdUsuario,
+        new UsuarioCambiarClave { ClaveActual = "3000999111", ClaveNueva = "Mi-Clave-Nueva-54" })
+    && !(await servicioUsr54.ObtenerAsync(segundo54.Value.Usuario.IdUsuario)).DebeCambiarClave);
+var tras54 = await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "Mi-Clave-Nueva-54" });
+Afirmar("...y entra con la clave nueva sin que se le vuelva a pedir cambiarla",
+    tras54 is not null && !tras54.Value.Usuario.DebeCambiarClave);
+Afirmar("...la clave inicial (el código) ya no sirve",
+    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "3000999111" }) is null);
+
+var conFlag54 = await servicioUsr54.CrearAsync(new UsuarioCrear { FkAsistente = 70, Usuario = "ponente.nuevo", Clave = "Temporal-1234", DebeCambiarClave = true });
+Afirmar("Crear una cuenta con debe_cambiar_clave = true (lo que hace el administrador con la clave temporal de un ponente) la deja marcada",
+    (await servicioUsr54.ObtenerAsync(conFlag54.IdUsuario)).DebeCambiarClave);
+var sinFlag54 = await servicioUsr54.CrearAsync(new UsuarioCrear { FkAsistente = 71, Usuario = "ponente.otro", Clave = "Temporal-1234" });
+Afirmar("...y sin pedirlo no se marca",
+    !(await servicioUsr54.ObtenerAsync(sinFlag54.IdUsuario)).DebeCambiarClave);
+await servicioUsr54.ExigirCambioClaveAsync(sinFlag54.IdUsuario);
+Afirmar("El administrador puede exigir el cambio de clave a una cuenta existente (ExigirCambioClave)",
+    (await servicioUsr54.ObtenerAsync(sinFlag54.IdUsuario)).DebeCambiarClave);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Exigir el cambio a un usuario inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioUsr54.ExigirCambioClaveAsync(99999));
+
 // ---- Cuenta de control --------------------------------------------------------
 Console.WriteLine("\n== Cuenta de control: 37 tablas, 37 recursos ==\n");
 // v7.1: D50 agrega InscripcionCatedra (tabla de la migración 049), D52 agrega Disponibilidad (consultas de
@@ -3754,8 +3816,11 @@ class RepositorioUsuarioFalso : IRepositorioUsuario
     public Task<Usuario?> ObtenerPorIdAsync(long idUsuario) =>
         Task.FromResult(_tabla.TryGetValue(idUsuario, out var u) ? u : null);
 
+    // v7.1 · D54: por nombre de usuario O por correo institucional (como sp_consultar_usuario_por_login).
     public Task<Usuario?> ObtenerPorLoginAsync(string usuario) =>
-        Task.FromResult(_tabla.Values.FirstOrDefault(u => u.NombreUsuario == usuario));
+        Task.FromResult(_tabla.Values.FirstOrDefault(u => u.NombreUsuario == usuario
+            || (usuario.Contains('@') && _correos.TryGetValue(u.FkAsistente, out var c)
+                && c.Equals(usuario, StringComparison.OrdinalIgnoreCase))));
 
     public Task<(long IdUsuario, DateTime CreadoEn)> CrearAsync(Usuario usuario)
     {
@@ -3777,7 +3842,8 @@ class RepositorioUsuarioFalso : IRepositorioUsuario
 
         if (datos.TryGetValue("fk_asistente", out var f)) u.FkAsistente = (long)f!;
         if (datos.TryGetValue("usuario", out var n)) u.NombreUsuario = (string)n!;
-        if (datos.TryGetValue("clave_hash", out var h)) u.ClaveHash = (string)h!;
+        // Como el disparador trg_usuario_clave_cambiada: cambiar la clave apaga debe_cambiar_clave.
+        if (datos.TryGetValue("clave_hash", out var h)) { u.ClaveHash = (string)h!; u.DebeCambiarClave = false; }
         if (datos.TryGetValue("activo", out var a)) u.Activo = (bool)a!;
         return Task.FromResult(1);
     }
@@ -3792,6 +3858,45 @@ class RepositorioUsuarioFalso : IRepositorioUsuario
 
     public Task<int> EliminarAsync(long idUsuario) =>
         Task.FromResult(_tabla.Remove(idUsuario) ? 1 : 0);
+
+    // ---- v7.1 · D54: login por correo institucional y primer ingreso de un estudiante ----
+    // fk_asistente -> correo institucional (la persona 1 es el admin de la semilla).
+    private readonly Dictionary<long, string> _correos = new() { [1] = "admin.catedras@usbmed.edu.co" };
+
+    // Estudiantes vigentes: correo institucional -> (id_asistente, id_asis). El 50 no tiene cuenta todavía.
+    private readonly Dictionary<string, (long Id, string Asis)> _estudiantes =
+        new(StringComparer.OrdinalIgnoreCase) { ["estudiante.prueba@usbmed.edu.co"] = (50, "3000999111") };
+
+    public int BusquedasDeCandidato { get; private set; }
+
+    public Task<(long IdAsistente, string IdAsis)?> BuscarEstudianteSinCuentaAsync(string correo)
+    {
+        BusquedasDeCandidato++;
+        if (_estudiantes.TryGetValue(correo.Trim(), out var e) && !_tabla.Values.Any(u => u.FkAsistente == e.Id))
+            return Task.FromResult<(long, string)?>((e.Id, e.Asis));
+        return Task.FromResult<(long, string)?>(null);
+    }
+
+    public Task<Usuario?> ProvisionarCuentaEstudianteAsync(string correo, string claveHash)
+    {
+        if (!_estudiantes.TryGetValue(correo.Trim(), out var e) || _tabla.Values.Any(u => u.FkAsistente == e.Id))
+            return Task.FromResult<Usuario?>(null);
+
+        _correos[e.Id] = correo.Trim();
+        var u = new Usuario
+        {
+            IdUsuario = _siguienteId++, FkAsistente = e.Id, NombreUsuario = correo.Split('@')[0].ToLowerInvariant(),
+            ClaveHash = claveHash, Activo = true, DebeCambiarClave = true, CreadoEn = DateTime.UtcNow,
+        };
+        _tabla[u.IdUsuario] = u;
+        return Task.FromResult<Usuario?>(u);
+    }
+
+    public Task FijarDebeCambiarClaveAsync(long idUsuario, bool valor)
+    {
+        if (_tabla.TryGetValue(idUsuario, out var u)) u.DebeCambiarClave = valor;
+        return Task.CompletedTask;
+    }
 }
 
 // ==========================================================================
