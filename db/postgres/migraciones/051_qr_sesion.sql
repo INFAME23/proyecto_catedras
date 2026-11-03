@@ -133,6 +133,7 @@ CREATE OR REPLACE PROCEDURE catedras.sp_emitir_qr_sesion(
     AS $$
 DECLARE
     v_fin     timestamptz;
+    v_canal   varchar(10);
     v_id      bigint;
     v_antes   integer;
     v_desp    integer;
@@ -140,11 +141,19 @@ DECLARE
     v_token   uuid := gen_random_uuid();
     v_existia boolean := false;
 BEGIN
-    SELECT s.fin INTO v_fin FROM sesion s WHERE s.id_sesion = p_fk_sesion;
+    SELECT s.fin, m.canal_difusion INTO v_fin, v_canal
+      FROM sesion s JOIN modalidad m ON m.id_modalidad = s.fk_modalidad
+     WHERE s.id_sesion = p_fk_sesion;
     IF v_fin IS NULL THEN
         p_resultado := NULL;
         RETURN;
     END IF;
+
+    -- RN-13 (script provisto): el canal del enlace debe concordar con la modalidad de la sesión:
+    -- presencial -> QR, virtual y telepresencial -> ENLACE, híbrida (AMBOS) -> QR. Se deriva igual que
+    -- sp_emitir_enlace. A TODAS les corresponde el mismo código QR en pantalla (es la imagen del enlace);
+    -- lo que cambia es el CANAL que se registra y el 'origen' de la asistencia (QR o ENLACE).
+    v_canal := CASE WHEN v_canal = 'ENLACE' THEN 'ENLACE' ELSE 'QR' END;
 
     IF NOT coalesce(p_regenerar, false) THEN
         SELECT e.id_enlace INTO v_id
@@ -165,14 +174,14 @@ BEGIN
 
         INSERT INTO enlace_registro (fk_sesion, token, url_publica, ruta_imagen_qr, canal, ventana,
                                      fk_usuario_crea, requiere_inscripcion)
-        VALUES (p_fk_sesion, v_token, v_base || v_token::text, 'qr/' || v_token::text || '.png', 'QR',
+        VALUES (p_fk_sesion, v_token, v_base || v_token::text, 'qr/' || v_token::text || '.png', v_canal,
                 tstzrange(v_fin - make_interval(mins => v_antes), v_fin + make_interval(mins => v_desp), '[)'),
                 p_fk_usuario, true)
         RETURNING id_enlace INTO v_id;
     END IF;
 
     SELECT row_to_json(r) INTO p_resultado
-      FROM (SELECT e.id_enlace, e.fk_sesion, e.token, lower(e.ventana) AS ventana_desde,
+      FROM (SELECT e.id_enlace, e.fk_sesion, e.token, e.canal, lower(e.ventana) AS ventana_desde,
                    upper(e.ventana) AS ventana_hasta, e.revocado_en, e.requiere_inscripcion,
                    v_existia AS ya_existia
               FROM enlace_registro e WHERE e.id_enlace = v_id) r;
@@ -191,7 +200,7 @@ CREATE OR REPLACE PROCEDURE catedras.sp_consultar_qr_sesion(
     AS $$
 BEGIN
     SELECT row_to_json(r) INTO p_resultado
-      FROM (SELECT e.id_enlace, e.fk_sesion, e.token, lower(e.ventana) AS ventana_desde,
+      FROM (SELECT e.id_enlace, e.fk_sesion, e.token, e.canal, lower(e.ventana) AS ventana_desde,
                    upper(e.ventana) AS ventana_hasta, e.revocado_en, e.requiere_inscripcion,
                    true AS ya_existia
               FROM enlace_registro e

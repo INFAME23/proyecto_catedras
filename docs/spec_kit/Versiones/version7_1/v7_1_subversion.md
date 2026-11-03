@@ -35,9 +35,9 @@
 | RF-S6 | Correo real para el código | front (`servicios/correo.py`, `config.py`, `env.ejemplo`, compose) |
 | RF-S7 | `/admin` con barra lateral colapsable (reemplazada por categorías desplegables, D51) | front (`admin/base_admin.html`, `admin/panel.html`, `estilo.css`) |
 
-Migraciones nuevas (en orden; se montan en el compose como `z045`…`z052`):
+Migraciones nuevas (en orden; se montan en el compose como `z045`…`z053`):
 `045_geolocalizacion_registro` · `046_roles_estudiante_ponente` ·
-`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra` · `050_disponibilidad_sesiones` · `051_qr_sesion` · `052_primer_ingreso_estudiante`.
+`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra` · `050_disponibilidad_sesiones` · `051_qr_sesion` · `052_primer_ingreso_estudiante` · `053_qr_canal_por_modalidad`.
 
 ## 3. Decisiones (ADR de la v7.1, continúan después de D37)
 
@@ -268,6 +268,18 @@ navegador y que codifica la URL correcta, y todo el flujo con la API, la BD y el
 Pruebas: capas 525/1 (+12; la fallida es la de siempre), `verificar_v71.ps1` 89/0 (+17 de QR, contra la API y PostgreSQL reales; repetible),
 `front_catedras/pruebas/prueba_qr_v71.py` 42/0 (API simulada), un recorrido del front contra la API real (29 casos: ponente crea → QR → estudiante
 sin inscripción rechazado → se inscribe → registra con ubicación → el ponente lo ve) y la pantalla del QR en el navegador. `verificar_v5.ps1` sigue en 63/0.
+
+**Corrección de D53 (migración 053): el canal del QR sale de la modalidad (RN-13).** La `051` emitía todos los QR con canal `QR`. El script provisto
+(RN-13) exige que el canal del enlace concuerde con la modalidad de la sesión (presencial → `QR`; virtual y telepresencial → `ENLACE`; híbrida → `QR`), y con
+una sesión virtual la BD respondía `23514: RN-13: la sesion N es de modalidad que se difunde por ENLACE, no por QR` (se reprodujo con la misma sesión). Ahora
+`sp_emitir_qr_sesion` deriva el canal igual que `sp_emitir_enlace`. **Todas las sesiones tienen su código QR en pantalla** (es la imagen del enlace); lo que
+cambia es el canal que se registra y el `origen` de la asistencia (`QR` o `ENLACE`), y la pantalla del ponente avisa en las sesiones virtuales que pegue el
+enlace en el chat de la reunión (o proyecte el QR). El JSON del QR trae `canal`. **Decisión:** no se tocó RN-13 (es una regla del profesor, en el script
+provisto); si se quisiera que las sesiones virtuales cuenten como `QR`, habría que cambiar esa regla a propósito. Hay que aplicar la `053` a mano en los
+volúmenes que ya tenían la `051` (solo reemplaza dos procedimientos, no toca datos).
+Pruebas de la corrección: `verificar_v71.ps1` 119/0 (+7: una sesión de cada modalidad, y el registro de asistencia de una virtual con origen `ENLACE`),
+`prueba_qr_v71.py` 45/0 y el recorrido del front contra la API real (30/30, ahora con un servidor SMTP local que recibe el correo de la clave de asistencia
+y comprueba destinatario, asunto y acentos; no sale nada a internet).
 
 **D54 — Usuario = correo institucional, clave inicial = código de estudiante, cambio obligatorio en el primer ingreso; portada genérica.**
 **Login.** `POST /api/Usuario/login` acepta como `usuario` el nombre de usuario de siempre **o el correo institucional** de la persona (sin importar

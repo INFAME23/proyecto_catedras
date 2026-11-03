@@ -27,11 +27,11 @@ completo, con las decisiones (D38–D54), lo verificado y lo pendiente:
   solo uso enviado por correo (`/recuperar`).
 - **Panel de `/admin` con categorías desplegables** (cerradas por defecto, sin barra lateral).
 
-> **Si ya tienes el volumen de PostgreSQL creado**, las migraciones 045-052 no
+> **Si ya tienes el volumen de PostgreSQL creado**, las migraciones 045-053 no
 > corren solas (initdb solo corre con el volumen vacío). Aplícalas **en orden**:
 >
 > ```bash
-> for n in 045_geolocalizacion_registro 046_roles_estudiante_ponente 047_codigo_recuperacion 048_semilla_estudiante 049_inscripcion_catedra 050_disponibilidad_sesiones 051_qr_sesion 052_primer_ingreso_estudiante; do
+> for n in 045_geolocalizacion_registro 046_roles_estudiante_ponente 047_codigo_recuperacion 048_semilla_estudiante 049_inscripcion_catedra 050_disponibilidad_sesiones 051_qr_sesion 052_primer_ingreso_estudiante 053_qr_canal_por_modalidad; do
 >   docker compose cp db/postgres/migraciones/$n.sql postgres:/tmp/m.sql
 >   docker compose exec -T postgres psql -U sa -d bdcatedras_postgres_local -v ON_ERROR_STOP=1 -f /tmp/m.sql
 > done

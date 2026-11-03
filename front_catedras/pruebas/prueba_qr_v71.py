@@ -196,6 +196,20 @@ del db['qr'][1]
 t = cliente(['PONENTE'], 5).get(url_qr).get_data(as_text=True)
 v('Una sesión sin QR ofrece «Generar el QR» (y no dibuja nada)', 'Generar el QR' in t and '<svg viewBox' not in t)
 
+# --- 2b. sesiones que se difunden por ENLACE (virtual / telepresencial): también tienen QR y pantalla ------
+poner_qr(1, -5, 55)
+db['qr'][1]['canal'] = 'ENLACE'
+t = cliente(['PONENTE'], 5).get(url_qr).get_data(as_text=True)
+v('Sesión virtual (canal ENLACE): la pantalla SÍ dibuja el QR y además explica que se comparta el enlace en la reunión',
+  '<svg viewBox' in t and 'id="aviso-virtual"' in t and 'Sesión virtual' in t and esperado_url in t)
+db['qr'][1]['canal'] = 'QR'
+t = cliente(['PONENTE'], 5).get(url_qr).get_data(as_text=True)
+v('Sesión presencial (canal QR): sin el aviso de sesión virtual', 'id="aviso-virtual"' not in t and '<svg viewBox' in t)
+db['qr'][1].pop('canal')
+t = cliente(['PONENTE'], 5).get(url_qr).get_data(as_text=True)
+v('Con una API anterior que no trae «canal»: la pantalla funciona igual, sin aviso', '<svg viewBox' in t and 'id="aviso-virtual"' not in t)
+del db['qr'][1]
+
 # --- 3. generar y regenerar ----------------------------------------------------------------------------
 db['llamadas'].clear()
 r = cliente(['PONENTE'], 5, usuario=50).post(url_qr)
