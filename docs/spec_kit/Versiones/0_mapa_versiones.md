@@ -86,6 +86,24 @@ Requisitos `RF-S1`…`RF-S7`, decisiones D38–D54 y pendientes:
 [version7_1/v7_1_subversion.md](version7_1/v7_1_subversion.md). Agrega las
 migraciones `045`–`053`, una tabla de apoyo (`codigo_recuperacion`, sin CRUD) y UN recurso nuevo de la API (`InscripcionCatedra`, tabla `inscripcion_catedra`): el mapa pasa de 37 a 38 controladores (39 con `Disponibilidad`, y 40 con `QrSesion`: consultas y el QR de cierre, sin tabla propia).
 
+### Versiones V8–V11 (plan del 2026-11-04, en borrador)
+
+Nacen de la reunión con el cliente del 2026-11-04. **No siguen la regla de §1**
+(las 37 tablas ya están expuestas): cada una agrega una **capacidad** sobre las
+tablas existentes, más unas pocas tablas de apoyo, siempre por migración y sin
+editar el script. Plan completo: [plan_v8_v11.md](plan_v8_v11.md) · decisiones:
+[decisiones_v8_v11.md](decisiones_v8_v11.md) · historias:
+[historias_usuario_cliente.md](historias_usuario_cliente.md).
+
+| Versión | Qué agrega | Depende de | Migraciones | RF | Fases | Spec kit |
+|---|---|---|---|---|---|---|
+| **V8** | Registro de asistencia sin login por tipo de usuario (estudiante por ID, docente y externo por formulario); ubicación por modalidad y geocerca; solo el admin inicia sesión; apagado de lo de la v7.1 (D58) | v7.1 | 054–057 | RF198–RF217 | 62–68 | [version8/](version8/2_spec.md) |
+| **V9** | QR dinámico (código HMAC de 60 s + pase de 10 min) y pantalla de proyección con un enlace secreto | V8 | 058–060 | RF218–RF228 | 69–73 | [version9/](version9/2_spec.md) |
+| **V10** | Franjas por sede, calendario público, solicitud del ponente, bandeja del admin y aprobación en un `CALL` (tablas `franja_disponible`, `solicitud_catedra`, `perfil_ponente`) | V8 (en paralelo con la V9) | 061–063 | RF229–RF247 | 74–80 | [version10/](version10/2_spec.md) |
+| **V11** | Archivo ASIS configurable, generación a las 21:00 (4.º servicio `cron`), archivo general, importación, ponentes para SNIES y estadísticas | V8 y V10 | 064–066 | RF248–RF263 | 81–87 | [version11/](version11/2_spec.md) |
+
+ADR nuevos de los spec kits: D71–D73 (V8), D74–D76 (V9), D77–D80 (V10) y D81–D84 (V11).
+
 ## 3. Salvedad: la FK circular con `usuario`
 
 `lote_carga_asistente` (V3) y `enlace_registro` (V5) tienen una FK a
@@ -120,6 +138,10 @@ versiones distintas. Crece junto con la API.
 | **V5** | Login real con sesión de Flask (cierra el selector de rol de prueba), `/admin` protegido por rol `ADMIN`, 5 bloques nuevos en el panel y autorregistro público con token + clave de un solo uso (los paneles por rol más finos quedan fuera: la API no autoriza por rol, ADR D28) |
 | **V6** | Encuestas y dashboards con datos reales |
 | **V7** | Exportar ASIS y parámetros |
+| **V8** | Registro público por tipo de usuario (`/registro/<token>` con 3 botones); se apagan `/estudiante`, `/ponente` y `/ponente/catedras` |
+| **V9** | Pantalla de proyección del QR dinámico (`/proyectar/<token>`, `/admin/sesiones/<id>/qr`) |
+| **V10** | `/calendario` público, solicitud de cátedra, `/admin/franjas` y `/admin/solicitudes` |
+| **V11** | `/admin/archivos`, importación de asistencia, reporte de ponentes y `/admin/estadisticas` |
 
 ### Correcciones a la plantilla que se hacen ya en la V2
 
