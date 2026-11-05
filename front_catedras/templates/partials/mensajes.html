@@ -1,0 +1,11 @@
+{# Mensajes flash (los usan base.html y admin/base_admin.html). main.js los quita a los 5 s. #}
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+    {% if mensajes %}
+        {% for categoria, texto in mensajes %}
+            <div class="alert alert-{{ 'danger' if categoria == 'error' else 'success' }} alert-dismissible fade show" role="alert">
+                {{ texto }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}

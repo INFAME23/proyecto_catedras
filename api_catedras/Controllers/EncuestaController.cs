@@ -89,8 +89,11 @@ public class EncuestaController : ControllerBase
             return Ok(new
             {
                 estado = "creada",
-                mensaje = $"Encuesta '{peticion.Nombre}' creada.",
+                mensaje = $"Encuesta '{peticion.Nombre}' creada"
+                        + ((peticion.Preguntas?.Count ?? 0) > 0 ? $" con {peticion.Preguntas!.Count} preguntas." : "."),
                 id_encuesta = idEncuesta,
+                // Maestro-detalle (Regla 1): cuántas preguntas nacieron con ella.
+                preguntas_creadas = peticion.Preguntas?.Count ?? 0,
             });
         }
         catch (NpgsqlException ex)

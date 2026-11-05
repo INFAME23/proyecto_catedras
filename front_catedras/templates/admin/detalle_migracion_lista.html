@@ -1,0 +1,69 @@
+{% extends 'admin/base_admin.html' %}
+{# ==========================================================================
+   admin/detalle_migracion_lista.html  ·  Front Cátedras · Versión 7
+   Las filas de los lotes de migración, filtrables por lote y resultado.
+   Cada fila nace al generar su lote; su resultado se cambia desde el
+   detalle del lote (enlace "Ver en su lote").
+   ========================================================================== #}
+{% import 'admin/_macros_migracion.html' as mm %}
+{% block titulo %}Detalle de migración · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Detalle de migración</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-stream text-primary-custom me-2"></i>Detalle de migración</h1>
+<p class="text-muted small">Una fila por registro de asistencia enviado a ASIS. Un mismo registro puede ir en varios lotes, pero solo puede quedar ACEPTADO una vez.</p>
+
+<form class="row g-2 mb-3" method="get" action="{{ url_for('admin.detalles_migracion_listar') }}">
+    <div class="col-sm-6">
+        <select class="form-select" name="fk_lote_migracion" onchange="this.form.submit()">
+            <option value="">Todos los lotes</option>
+            {% for l in lotes %}
+            <option value="{{ l.id_lote_migracion }}" {% if fk_lote == l.id_lote_migracion %}selected{% endif %}>Lote {{ l.id_lote_migracion }} · sesión {{ l.fk_sesion }} · {{ l.fk_estado_proceso }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-sm-4">
+        <select class="form-select" name="resultado" onchange="this.form.submit()">
+            <option value="">Todos los resultados</option>
+            {% for r in resultados %}<option value="{{ r }}" {% if filtro == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+        </select>
+    </div>
+    {% if fk_lote or filtro %}<div class="col-sm-2"><a class="btn btn-outline-secondary w-100" href="{{ url_for('admin.detalles_migracion_listar') }}">Quitar filtros</a></div>{% endif %}
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if detalles %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Fila</th><th>Lote</th><th>Registro</th><th>ID ASIS</th><th>Programa</th><th>Reunión</th><th>Resultado</th><th class="text-end">Acciones</th></tr>
+                </thead>
+                <tbody>
+                    {% for d in detalles %}
+                    <tr>
+                        <td class="fw-semibold">{{ d.id_detalle }}</td>
+                        <td>{{ d.fk_lote_migracion }}</td>
+                        <td>{{ d.fk_registro }}</td>
+                        <td><code>{{ d.id_asis_enviado }}</code></td>
+                        <td>{{ d.programa_enviado or '—' }}</td>
+                        <td>{{ d.reunion_enviada }}</td>
+                        <td>{{ mm.resultado(d.resultado) }}{% if d.mensaje %}<div class="small text-muted">{{ d.mensaje }}</div>{% endif %}</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.lotes_migracion_detalle', id_lote=d.fk_lote_migracion) }}#fila-{{ d.id_detalle }}" title="Ver en su lote"><i class="fas fa-eye"></i></a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay filas que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

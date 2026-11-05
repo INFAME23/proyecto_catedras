@@ -14,6 +14,7 @@
 //  por eso NO llevan 'required'.
 //
 //  Nota de mapeo 'inet' -> C#: 'ip' se lee con host(ip) y viaja como string.
+//  v7.1: 'latitud' y 'longitud' (numeric(9,6)) viajan como decimal?.
 // ==========================================================================
 
 namespace ApiCatedras.Modelos;
@@ -60,4 +61,13 @@ public class RegistroAsistencia
 
     [JsonPropertyName("user_agent")]
     public string? UserAgent { get; set; }
+
+    /// <summary>RF-S1 (v7.1). Latitud que entregó el navegador al autorregistrarse.
+    /// Null en registros MANUAL / IMPORTADO y anteriores a la v7.1.</summary>
+    [JsonPropertyName("latitud")]
+    public decimal? Latitud { get; set; }
+
+    /// <summary>RF-S1 (v7.1). Longitud; va siempre junto a la latitud.</summary>
+    [JsonPropertyName("longitud")]
+    public decimal? Longitud { get; set; }
 }

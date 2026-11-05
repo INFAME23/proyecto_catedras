@@ -1,0 +1,52 @@
+{% extends 'admin/base_admin.html' %}
+{% block titulo %}Respuestas de encuesta · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Respuesta de encuesta</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-poll text-primary-custom me-2"></i>Respuestas de encuesta</h1>
+<p class="text-muted small">Solo lectura: una respuesta es un hecho auditable (nace al "responder", la encuesta queda cerrada con ella). Horas en hora de Colombia.</p>
+
+<form class="d-flex gap-2 mb-3" method="get" action="{{ url_for('admin.respuestas_listar') }}">
+    <select class="form-select" name="fk_encuesta" onchange="this.form.submit()">
+        <option value="">Todas las encuestas</option>
+        {% for e in encuestas %}
+        <option value="{{ e.id_encuesta }}" {% if fk_encuesta == e.id_encuesta %}selected{% endif %}>{{ e.nombre }} (v{{ e.version }})</option>
+        {% endfor %}
+    </select>
+    {% if fk_encuesta %}<a class="btn btn-outline-secondary" href="{{ url_for('admin.respuestas_listar') }}">Quitar filtro</a>{% endif %}
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if respuestas %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Id</th><th>Registro</th><th>Encuesta</th><th>Respondida</th><th>Completa</th><th class="text-end">Acciones</th></tr>
+                </thead>
+                <tbody>
+                    {% for r in respuestas %}
+                    <tr>
+                        <td class="fw-semibold"><a href="{{ url_for('admin.respuestas_detalle', id_respuesta=r.id_respuesta) }}">{{ r.id_respuesta }}</a></td>
+                        <td><a href="{{ url_for('admin.registros_detalle', id_registro=r.fk_registro) }}" title="Ver el registro de asistencia">{{ r.fk_registro }}</a></td>
+                        <td><a href="{{ url_for('admin.respuestas_listar', fk_encuesta=r.fk_encuesta) }}">{{ r.fk_encuesta }}</a></td>
+                        <td class="small">{{ r.respondida_en|fecha_hora }}</td>
+                        <td>{% if r.completa %}<span class="badge badge-success">Sí</span>{% else %}<span class="badge badge-secondary">No</span>{% endif %}</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.respuestas_detalle', id_respuesta=r.id_respuesta) }}" title="Ver respuestas"><i class="fas fa-eye"></i></a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay respuestas que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

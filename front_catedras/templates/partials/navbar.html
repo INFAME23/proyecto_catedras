@@ -27,21 +27,6 @@
                     </a>
                 </li>
                 {% endif %}
-                <li class="nav-item">
-                    <a class="nav-link {{ 'active' if request.endpoint == 'registro.inicio' }}" href="{{ url_for('registro.inicio') }}">
-                        <i class="fas fa-clipboard-check"></i> Registro de asistencia
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ 'active' if request.endpoint == 'ponente.inicio' }}" href="{{ url_for('ponente.inicio') }}">
-                        <i class="fas fa-chalkboard-teacher"></i> Ponente
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ 'active' if request.endpoint == 'estudiante.inicio' }}" href="{{ url_for('estudiante.inicio') }}">
-                        <i class="fas fa-user-graduate"></i> Estudiante
-                    </a>
-                </li>
             </ul>
             {# auth_helpers.py (v5): lee la sesión de Flask que llena routes/auth.py. #}
             {% if sesion_activa() %}
@@ -49,6 +34,9 @@
                 <span class="navbar-text small" title="Roles: {{ roles_actuales()|join(', ') or 'ninguno' }}">
                     <i class="fas fa-user me-1"></i>{{ usuario_actual().usuario }}
                 </span>
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('perfil.cambiar_clave') }}" title="Cambiar mi clave">
+                    <i class="fas fa-key"></i>
+                </a>
                 <form method="post" action="{{ url_for('auth.logout') }}" class="m-0">
                     <button class="btn btn-outline-primary btn-sm" type="submit">
                         <i class="fas fa-sign-out-alt me-1"></i>Cerrar sesión

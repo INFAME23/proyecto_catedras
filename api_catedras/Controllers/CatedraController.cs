@@ -101,9 +101,12 @@ public class CatedraController : ControllerBase
             return Ok(new
             {
                 estado = "creada",
-                mensaje = $"Cátedra '{peticion.IdEventoAsis}' creada.",
+                mensaje = $"Cátedra '{peticion.IdEventoAsis}' creada"
+                        + ((peticion.Sesiones?.Count ?? 0) > 0 ? $" con {peticion.Sesiones!.Count} sesiones." : "."),
                 id_catedra = idCatedra,
                 nombre_asis = nombreAsis,
+                // Maestro-detalle (Regla 1): cuántas sesiones nacieron con ella.
+                sesiones_creadas = peticion.Sesiones?.Count ?? 0,
             });
         }
         catch (ArgumentException ex)

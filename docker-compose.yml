@@ -129,6 +129,27 @@ services:
       - ./db/postgres/migraciones/039_sp_opcion_pregunta.sql:/docker-entrypoint-initdb.d/z039_sp_opcion_pregunta.sql:ro
       - ./db/postgres/migraciones/040_sp_respuesta_encuesta.sql:/docker-entrypoint-initdb.d/z040_sp_respuesta_encuesta.sql:ro
       - ./db/postgres/migraciones/041_sp_respuesta_item.sql:/docker-entrypoint-initdb.d/z041_sp_respuesta_item.sql:ro
+      # Maestro-detalle en el formulario (Guía IA, Reglas 1 y 4): el maestro y
+      # sus detalles se guardan en UN solo CALL. Reutilizan procedimientos de
+      # arriba (z004, z010, z011) y sp_emitir_enlace del script, así que van
+      # al final: 'z042_'..'z044_'.
+      - ./db/postgres/migraciones/042_sp_guardar_catedra.sql:/docker-entrypoint-initdb.d/z042_sp_guardar_catedra.sql:ro
+      - ./db/postgres/migraciones/043_sp_guardar_encuesta.sql:/docker-entrypoint-initdb.d/z043_sp_guardar_encuesta.sql:ro
+      - ./db/postgres/migraciones/044_sp_guardar_sesion.sql:/docker-entrypoint-initdb.d/z044_sp_guardar_sesion.sql:ro
+      # Subversión v7.1 (geolocalización, cuentas de estudiante/ponente,
+      # recuperar clave, estudiante semilla). 045 reemplaza los SP de 037;
+      # 048 necesita 002, 033 y 046. Con un volumen ya creado se aplican a
+      # mano (ver README, "Subversión v7.1").
+      - ./db/postgres/migraciones/045_geolocalizacion_registro.sql:/docker-entrypoint-initdb.d/z045_geolocalizacion_registro.sql:ro
+      - ./db/postgres/migraciones/046_roles_estudiante_ponente.sql:/docker-entrypoint-initdb.d/z046_roles_estudiante_ponente.sql:ro
+      - ./db/postgres/migraciones/047_codigo_recuperacion.sql:/docker-entrypoint-initdb.d/z047_codigo_recuperacion.sql:ro
+      - ./db/postgres/migraciones/048_semilla_estudiante.sql:/docker-entrypoint-initdb.d/z048_semilla_estudiante.sql:ro
+      - ./db/postgres/migraciones/049_inscripcion_catedra.sql:/docker-entrypoint-initdb.d/z049_inscripcion_catedra.sql:ro
+      - ./db/postgres/migraciones/050_disponibilidad_sesiones.sql:/docker-entrypoint-initdb.d/z050_disponibilidad_sesiones.sql:ro
+      - ./db/postgres/migraciones/051_qr_sesion.sql:/docker-entrypoint-initdb.d/z051_qr_sesion.sql:ro
+      - ./db/postgres/migraciones/052_primer_ingreso_estudiante.sql:/docker-entrypoint-initdb.d/z052_primer_ingreso_estudiante.sql:ro
+      - ./db/postgres/migraciones/053_qr_canal_por_modalidad.sql:/docker-entrypoint-initdb.d/z053_qr_canal_por_modalidad.sql:ro
+      - ./db/postgres/migraciones/054_sin_inscripcion_ni_cupo_login_admin.sql:/docker-entrypoint-initdb.d/z054_sin_inscripcion_ni_cupo_login_admin.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.
@@ -203,6 +224,19 @@ services:
       # 'api' y el puerto INTERNO 8042, igual que hace 'api' con 'postgres'.
       API_BASE_URL: "http://api:8042/api"
       FLASK_ENV: development
+      # v7.1 · RF-S6: correo real para el código de recuperación de clave.
+      # Los valores salen de un archivo '.env' junto a este compose (o de tu
+      # entorno); vacíos = correo apagado. Ver README, "Subversión v7.1" y
+      # front_catedras/env.ejemplo. Nunca pongas credenciales aquí.
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_SEGURIDAD: "${SMTP_SEGURIDAD:-starttls}"
+      SMTP_USUARIO: "${SMTP_USUARIO:-}"
+      SMTP_CLAVE: "${SMTP_CLAVE:-}"
+      SMTP_REMITENTE: "${SMTP_REMITENTE:-}"
+      SMTP_NOMBRE_REMITENTE: "${SMTP_NOMBRE_REMITENTE:-Cátedras USB}"
+      URL_PUBLICA: "${URL_PUBLICA:-}"
+      CORREO_MODO_CONSOLA: "${CORREO_MODO_CONSOLA:-}"
 
     # Flask escucha en 5000 dentro del contenedor; se publica como 5000.
     # Si choca con el proyecto del curso, súbelo a 5100 (mismo patrón +100

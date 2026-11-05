@@ -348,7 +348,23 @@ builder.Services.AddScoped<IServicioPonencia, ServicioPonencia>();
 // ServicioUsuario (hashea la clave con BCrypt y resuelve el login).
 builder.Services.AddScoped<IRepositorioUsuario>(
     _ => new RepositorioUsuarioPostgres(cadenaConexion));
+// v7.1: ServicioUsuario recibe además el repositorio de los códigos de
+// recuperación de clave (RF-S5/RF-S6); DI lo inyecta por constructor.
+builder.Services.AddScoped<IRepositorioCodigoRecuperacion>(
+    _ => new RepositorioCodigoRecuperacionPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioUsuario, ServicioUsuario>();
+
+// v7.1 · D55: la inscripción a cátedras se quitó (la asistencia por QR es pública).
+
+// v7.1 · D52: disponibilidad de horario (consultas de solo lectura sobre 'sesion').
+builder.Services.AddScoped<IRepositorioDisponibilidad>(
+    _ => new RepositorioDisponibilidadPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioDisponibilidad, ServicioDisponibilidad>();
+
+// v7.1 · D53: QR de cierre de una sesión (enlace de registro con ventana al final + inscripción).
+builder.Services.AddScoped<IRepositorioQrSesion>(
+    _ => new RepositorioQrSesionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioQrSesion, ServicioQrSesion>();
 
 // IRepositorioRolPorUsuario -> RepositorioRolPorUsuarioPostgres (llave
 // compuesta CON vigencia, ADR D16: se abre con POST y se cierra con PATCH),
@@ -424,7 +440,8 @@ builder.Services.AddScoped<IRepositorioRespuestaItem>(
 builder.Services.AddScoped<IServicioRespuestaItem, ServicioRespuestaItem>();
 
 // Retrofit criterio 3 — tablas sin código previo: configuración y auditoría.
-// 'Bitacora': lectura + POST/PUT/PATCH/DELETE (log de auditoría: ver el riesgo en BitacoraController).
+// 'Bitacora': SOLO LECTURA (v7, ADR D36/D37-A). La escriben los triggers de
+// la BD; sus SP de escritura existen en la 014 pero la API no los llama.
 builder.Services.AddScoped<IRepositorioParametro>(
     _ => new RepositorioParametroPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioParametro, ServicioParametro>();
@@ -466,8 +483,8 @@ app.UseSwaggerUI();
 app.MapGet("/", () => Results.Json(new
 {
     mensaje = "API Cátedras en línea.",
-    version = "v6",
-    contratos = "docs/spec_kit/Versiones/version6/6_contracts.md",
+    version = "v7",
+    contratos = "docs/spec_kit/Versiones/version7/6_contracts.md",
 }));
 
 // Conecta las rutas de los controladores ([Route("api/Sede")]...).

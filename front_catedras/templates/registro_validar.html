@@ -11,7 +11,13 @@
                 <div class="text-center py-3">
                     <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
                     <h1 class="h4 fw-bold">¡Asistencia registrada!</h1>
-                    <p class="text-muted">Tu clave fue validada y quedaste registrado en la sesión. Ya puedes cerrar esta página.</p>
+                    <p class="text-muted">Tu clave fue validada y quedaste registrado en la sesión.{% if not id_sesion_encuesta %} Ya puedes cerrar esta página.{% endif %}</p>
+                    {% if id_sesion_encuesta %}
+                    <p class="mb-3">Esta sesión tiene una <strong>encuesta</strong>. Ayúdanos a mejorar respondiéndola ahora (solo se puede mientras tengas abierta esta página).</p>
+                    <a class="btn btn-primary mb-2" href="{{ url_for('encuestas.responder', id_sesion=id_sesion_encuesta) }}">
+                        <i class="fas fa-clipboard-list me-1"></i>Responder la encuesta
+                    </a><br>
+                    {% endif %}
                     <a class="btn btn-outline-primary" href="{{ url_for('catedras.inicio') }}">
                         <i class="fas fa-home me-1"></i>Ir al inicio
                     </a>
@@ -36,10 +42,21 @@
                     <div class="fs-1 fw-bold font-monospace" style="letter-spacing: .3em;">{{ clave }}</div>
                     <div class="small text-muted">Tu clave de un solo uso</div>
                 </div>
+                {% elif enviada_por_correo %}
+                {# D53: la clave salió por correo; no se muestra aquí. Es un <div>, no un '.alert' (main.js los quita). #}
+                <div class="border border-primary rounded-3 p-3 text-center mb-3 bg-light">
+                    <i class="fas fa-envelope-open-text fa-2x text-primary-custom mb-1"></i>
+                    <div>Te enviamos la clave a <strong>{{ enviado_a }}</strong>.</div>
+                    <div class="small text-muted">Revisa tu correo (y la carpeta de no deseados) y escríbela abajo.</div>
+                </div>
                 {% endif %}
 
-                <form method="post" action="{{ url_for('registro.validar', token=token) }}">
+                {# v7.1 · RF-S1: la ubicación es obligatoria. static/geolocalizacion.js la pide al
+                   cargar y mantiene bloqueado el botón hasta tenerla. #}
+                <form method="post" action="{{ url_for('registro.validar', token=token) }}" data-requiere-ubicacion>
                     <input type="hidden" name="id_clave" value="{{ id_clave }}">
+                    <input type="hidden" name="latitud" value="">
+                    <input type="hidden" name="longitud" value="">
                     <div class="mb-3">
                         <label class="form-label" for="clave">Clave recibida</label>
                         <input type="text" class="form-control form-control-lg text-center font-monospace"
@@ -55,10 +72,28 @@
                     </div>
                     {% endif %}
 
+                    {# Estado de la ubicación. NO lleva la clase 'alert': main.js borra los '.alert' a los 5 s. #}
+                    <div data-ubicacion-estado aria-live="polite" class="small rounded-3 p-2 mb-3 border text-muted bg-light">
+                        Solicitando tu ubicación…
+                    </div>
+                    <noscript>
+                        <div class="border border-danger rounded-3 p-2 mb-3 small text-danger">
+                            Activa JavaScript: sin él no se puede obtener la ubicación, que es obligatoria para registrar la asistencia.
+                        </div>
+                    </noscript>
+
                     <div class="d-flex gap-2 flex-wrap">
-                        <button class="btn btn-primary" type="submit"><i class="fas fa-check me-1"></i>Registrar mi asistencia</button>
+                        <button class="btn btn-primary" type="submit" data-ubicacion-enviar disabled>
+                            <i class="fas fa-check me-1"></i>Registrar mi asistencia
+                        </button>
+                        <button class="btn btn-outline-primary" type="button" data-ubicacion-reintentar hidden>
+                            <i class="fas fa-location-crosshairs me-1"></i>Intentar de nuevo
+                        </button>
                         <a class="btn btn-outline-secondary" href="{{ url_for('registro.solicitar', token=token) }}">Pedir otra clave</a>
                     </div>
+                    <p class="form-text mt-2 mb-0">
+                        <i class="fas fa-map-marker-alt me-1"></i>Guardamos la ubicación desde la que te registras junto con tu asistencia.
+                    </p>
                 </form>
                 {% endif %}
 
@@ -66,4 +101,7 @@
         </div>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+{% if not registrado %}<script src="{{ url_for('static', filename='geolocalizacion.js') }}"></script>{% endif %}
 {% endblock %}

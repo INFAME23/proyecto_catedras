@@ -97,8 +97,11 @@ public class SesionController : ControllerBase
             return Ok(new
             {
                 estado = "creada",
-                mensaje = $"Sesión {numeroReunion} de la cátedra {peticion.FkCatedra} creada.",
+                mensaje = $"Sesión {numeroReunion} de la cátedra {peticion.FkCatedra} creada"
+                        + (peticion.Enlace is not null ? " con su enlace de registro." : "."),
                 id_sesion = idSesion,
+                // Maestro-detalle (Regla 1): ¿se emitió el enlace en el mismo CALL?
+                enlace_emitido = peticion.Enlace is not null,
                 numero_reunion = numeroReunion,   // calculado por el trigger si no se envió (ADR D20)
                 creado_en = creadoEn,
             });

@@ -13,6 +13,9 @@
 //  'inicio' y 'fin' son DateTimeOffset: aceptan la hora CON su zona
 //  ("2026-10-20T14:00:00-05:00"). El servicio la convierte a UTC (ADR D21).
 //
+//  Maestro-detalle en el formulario: objeto OPCIONAL 'enlace' (ver
+//  EnlaceInicial) para emitir el enlace / QR de registro al crear.
+//
 //  Lo que NO está aquí a propósito: la regla "fin > inicio". Cruza DOS
 //  campos del mismo body, así que es de negocio y la valida el SERVICIO
 //  (400), no una anotación (RF125). Las anotaciones solo miran la FORMA de
@@ -97,14 +100,16 @@ public class SesionCrear
     [JsonPropertyName("enlace_virtual")]
     public string? EnlaceVirtual { get; set; }
 
-    /// <summary>Cupo. Opcional; si llega, mayor que 0 (refleja chk_sesion_cupo).</summary>
-    [Range(1, int.MaxValue, ErrorMessage = "El campo 'cupo' debe ser mayor que 0.")]
-    [JsonPropertyName("cupo")]
-    public int? Cupo { get; set; }
 
     /// <summary>Estado. Opcional (por defecto PROGRAMADA); lista cerrada (refleja chk_sesion_estado).</summary>
     [RegularExpression("^(PROGRAMADA|ABIERTA|CERRADA|MIGRADA)$",
         ErrorMessage = "El campo 'estado' debe ser PROGRAMADA, ABIERTA, CERRADA o MIGRADA.")]
     [JsonPropertyName("estado")]
     public string? Estado { get; set; }
+
+    /// <summary>Maestro-detalle (Guía IA, Regla 1): si llega, se emite el primer enlace
+    /// de registro de la sesión en la MISMA transacción ('sp_guardar_sesion',
+    /// migración 044). Opcional: ausente = sesión sin enlace, como antes.</summary>
+    [JsonPropertyName("enlace")]
+    public EnlaceInicial? Enlace { get; set; }
 }

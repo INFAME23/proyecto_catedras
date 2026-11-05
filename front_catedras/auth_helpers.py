@@ -19,6 +19,10 @@ from functools import wraps
 from flask import abort, redirect, request, session, url_for
 
 ROL_ADMIN = 'ADMIN'
+# v7.1 · RF-S3: cuentas reales de estudiante y de ponente. Los códigos son los
+# de catedras.rol (migración 046); el login es el mismo para los tres.
+ROL_ESTUDIANTE = 'ESTUDIANTE'
+ROL_PONENTE = 'PONENTE'
 
 
 def sesion_activa():
@@ -42,30 +46,47 @@ def tiene_rol(rol):
     return sesion_activa() and rol in session.get('roles', [])
 
 
-def exigir_rol(rol):
+def tiene_algun_rol(*roles):
+    """¿El usuario autenticado tiene AL MENOS UNO de estos roles?"""
+    return any(tiene_rol(rol) for rol in roles)
+
+
+def exigir_rol(*roles):
     """Regla de acceso, reutilizable por un before_request:
 
-      - sin sesión            -> redirige a /login (recordando a dónde iba)
-      - con sesión, sin el rol -> 403
-      - con sesión y el rol    -> None (Flask sigue con la ruta)
+      - sin sesión                  -> redirige a /login (recordando a dónde iba)
+      - con sesión, sin ningún rol  -> 403
+      - con sesión y algún rol      -> None (Flask sigue con la ruta)
+
+    v7.1: acepta uno o varios roles ('exigir_rol(ROL_ADMIN, ROL_PONENTE)' deja
+    pasar a quien tenga cualquiera de los dos). Con uno solo se comporta igual
+    que antes.
     """
     if not sesion_activa():
         return redirect(url_for('auth.login', siguiente=request.full_path.rstrip('?')))
-    if not tiene_rol(rol):
+    if not tiene_algun_rol(*roles):
         abort(403)
     return None
 
 
-def rol_requerido(rol):
+def rol_requerido(*roles):
     """Decorador para proteger UNA ruta suelta con la misma regla de
     'exigir_rol'. (Para todo '/admin' se usa el before_request del blueprint.)"""
     def decorador(vista):
         @wraps(vista)
         def envuelta(*args, **kwargs):
-            respuesta = exigir_rol(rol)
+            respuesta = exigir_rol(*roles)
             return respuesta if respuesta is not None else vista(*args, **kwargs)
         return envuelta
     return decorador
+
+
+def endpoint_de_inicio():
+    """A dónde llevar al usuario recién autenticado. v7.1 · D55: solo el ADMINISTRADOR
+    inicia sesión, así que va al panel de administración; cualquier otro caso, al inicio público."""
+    if tiene_rol(ROL_ADMIN):
+        return 'admin.panel'
+    return 'catedras.inicio'
 
 
 def registrar_en(app):
@@ -82,4 +103,5 @@ def registrar_en(app):
             'usuario_actual': usuario_actual,
             'roles_actuales': roles_actuales,
             'tiene_rol': tiene_rol,
+            'tiene_algun_rol': tiene_algun_rol,
         }

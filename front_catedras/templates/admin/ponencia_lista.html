@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
 {% import 'partials/macros_sesion.html' as ms %}
 {% block titulo %}Ponencias · Administración{% endblock %}
 {% block contenido %}
@@ -27,7 +27,8 @@
 {{ ms.ponentes(sesion.id_sesion, ponencias, candidatos, q, roles,
                url_for('admin.ponencias_listar', fk_sesion=sesion.id_sesion),
                url_for('admin.ponencias_asignar', fk_sesion=sesion.id_sesion),
-               url_for('admin.ponencias_quitar', fk_sesion=sesion.id_sesion)) }}
+               url_for('admin.ponencias_quitar', fk_sesion=sesion.id_sesion),
+               True) }}
 
 {% else %}
 <form class="row g-2 mb-3" method="get" action="{{ url_for('admin.ponencias_listar') }}">

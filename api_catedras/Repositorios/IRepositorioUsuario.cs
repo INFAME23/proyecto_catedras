@@ -45,4 +45,7 @@ public interface IRepositorioUsuario
     /// <summary>Borra. ⚠ 'rol_por_usuario' se borra en CASCADA; las referencias de
     /// 'enlace_registro' y otras tablas pasan a NULL (SET NULL).</summary>
     Task<int> EliminarAsync(long idUsuario);
+
+    /// <summary>v7.1 · D54. Marca o desmarca la exigencia de cambiar la clave en el próximo ingreso.</summary>
+    Task FijarDebeCambiarClaveAsync(long idUsuario, bool valor);
 }

@@ -63,7 +63,48 @@ public class ServicioCatedra : IServicioCatedra
             // NombreAsis NO se asigna: lo calcula la BD (RNF7).
         };
 
-        return await _repositorio.CrearAsync(catedra);
+        // Maestro-detalle (Guía IA, Regla 1): las sesiones que llegaron en el
+        // mismo body se convierten en filas de 'sesion' y viajan JUNTO con la
+        // cátedra al repositorio (un solo CALL a 'sp_guardar_catedra').
+        //  · "fin > inicio" se valida AQUÍ, con la misma regla de
+        //    ServicioSesion (RF125): con una sesión al revés, la BD ni se
+        //    entera y no se crea nada (400).
+        //  · 'FkCatedra' va en 0: el id real todavía no existe; el SP lo fija.
+        //  · 'NumeroReunion' ausente -> 0: el trigger pone el consecutivo.
+        var sesionesIniciales = new List<Sesion>();
+        foreach (var (s, i) in (peticion.Sesiones ?? []).Select((elemento, posicion) => (elemento, posicion)))
+        {
+            DateTime inicio = s.Inicio!.Value.UtcDateTime;
+            DateTime fin = s.Fin!.Value.UtcDateTime;
+            try
+            {
+                ServicioSesion.ValidarRango(inicio, fin);
+            }
+            catch (ArgumentException ex)
+            {
+                // Se dice CUÁL sesión: el formulario puede traer varias.
+                throw new ArgumentException($"Sesión {i + 1}: {ex.Message}");
+            }
+
+            sesionesIniciales.Add(new Sesion
+            {
+                FkCatedra = 0,
+                NumeroReunion = s.NumeroReunion ?? 0,
+                NumeroReunionAsis = s.NumeroReunionAsis,
+                Titulo = s.Titulo,
+                Inicio = inicio,
+                Fin = fin,
+                FkModalidad = s.FkModalidad!,
+                FkSede = s.FkSede!,
+                FkPeriodo = s.FkPeriodo!,
+                FkEncuesta = s.FkEncuesta,
+                Lugar = s.Lugar,
+                EnlaceVirtual = s.EnlaceVirtual,
+                Estado = s.Estado ?? "PROGRAMADA",
+            });
+        }
+
+        return await _repositorio.CrearAsync(catedra, sesionesIniciales);
     }
 
     public async Task<int> ReemplazarAsync(long idCatedra, CatedraReemplazo peticion)

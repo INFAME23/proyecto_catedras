@@ -22,7 +22,13 @@
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
+from datetime import datetime, timezone
+
 from servicios.api_catedras import ErrorApi, crear, eliminar, listar, llave, obtener
+from servicios.fechas import a_local
+from auth_helpers import ROL_ADMIN, rol_requerido, tiene_rol
+from servicios.qr_sesiones import estado_de_ventana, qr_de_sesion
+from routes.encuestas import estado_encuesta_sesion   # v6: ¿se ofrece "responder encuesta"?
 
 sesiones_bp = Blueprint('sesiones', __name__)
 
@@ -101,6 +107,38 @@ def quitar_ponente(id_sesion, formulario):
         _avisar(ex)
 
 
+def puede_migrar(sesion):
+    """v7 · ¿Se ofrece "Generar migración" en el detalle de la sesión?
+    Solo a un ADMIN (la acción vive bajo /admin, D37-E), si la sesión ya
+    terminó y tiene al menos un registro de asistencia. No se revisa aquí
+    si los registros son migrables (con ID de ASIS y programa, no
+    externos): esa regla es de la base de datos, y si no hay ninguno la
+    API lo dice al generar (D9)."""
+    if not tiene_rol(ROL_ADMIN):
+        return False
+    fin = a_local(sesion.get('fin'))
+    if fin is None or fin > datetime.now(timezone.utc):
+        return False
+    try:
+        return bool(listar('RegistroAsistencia', limite=1, fkSesion=sesion['id_sesion']))
+    except ErrorApi:
+        return False   # si no se puede saber, no se ofrece el botón
+
+
+def ventana_del_qr(sesion):
+    """v7.1 · D55 · Lo que cualquiera puede saber del QR de cierre de esta sesión: desde y hasta qué hora sirve y
+    en qué estado está. NO se devuelve el token: la asistencia se registra escaneando el QR que muestra el ponente
+    al final (si el token se publicara aquí, el QR no probaría que se estuvo presente)."""
+    try:
+        qr = qr_de_sesion(sesion['id_sesion'])
+    except ErrorApi:
+        return None
+    if not qr:
+        return None
+    return {'desde': a_local(qr.get('ventana_desde')), 'hasta': a_local(qr.get('ventana_hasta')),
+            'estado': estado_de_ventana(qr)}
+
+
 @sesiones_bp.route('/sesiones/<int:id_sesion>')
 def detalle(id_sesion):
     try:
@@ -109,7 +147,9 @@ def detalle(id_sesion):
         if ex.codigo == 404:
             abort(404)   # sesión inexistente -> página 404 del front
         return render_template('detalle_sesion.html', error=ex, sesion=None, catedra=None,
-                               ponentes=[], candidatos=[], q='', roles=ROLES_PONENCIA), 502
+                               ponentes=[], candidatos=[], q='', roles=ROLES_PONENCIA,
+                               mostrar_encuesta=False, motivo_encuesta=None, puede_editar=False,
+                               ventana_qr=None), 502
 
     error = None
     catedra = None
@@ -121,13 +161,24 @@ def detalle(id_sesion):
         # La sesión se muestra igual; el dato secundario que falló, se avisa.
         error = ex
 
+    # v6: ¿se ofrece el enlace "responder encuesta" (criterio 7)?
+    mostrar_encuesta, motivo_encuesta = estado_encuesta_sesion(sesion)
+
     texto = request.args.get('q', '').strip()
     return render_template('detalle_sesion.html', error=error, sesion=sesion, catedra=catedra,
-                           ponentes=ponentes, candidatos=buscar_candidatos(texto), q=texto,
-                           roles=ROLES_PONENCIA)
+                           ponentes=ponentes, q=texto,
+                           candidatos=buscar_candidatos(texto) if tiene_rol(ROL_ADMIN) else [],
+                           roles=ROLES_PONENCIA, mostrar_encuesta=mostrar_encuesta,
+                           motivo_encuesta=motivo_encuesta, migracion=puede_migrar(sesion),
+                           puede_editar=tiene_rol(ROL_ADMIN),
+                           ventana_qr=ventana_del_qr(sesion))
 
 
+# v7.1: asignar y quitar personas de una sesión (con su rol) es de ADMIN. Antes
+# estas dos rutas no pedían sesión: cualquiera, incluido un estudiante, podía
+# darle a cualquier persona el rol que quisiera.
 @sesiones_bp.route('/sesiones/<int:id_sesion>/ponentes', methods=['POST'])
+@rol_requerido(ROL_ADMIN)
 def asignar(id_sesion):
     asignar_ponente(id_sesion, request.form)
     # Post/Redirect/Get: al volver, la lista ya incluye al nuevo ponente.
@@ -135,6 +186,7 @@ def asignar(id_sesion):
 
 
 @sesiones_bp.route('/sesiones/<int:id_sesion>/ponentes/quitar', methods=['POST'])
+@rol_requerido(ROL_ADMIN)
 def quitar(id_sesion):
     quitar_ponente(id_sesion, request.form)
     return redirect(url_for('sesiones.detalle', id_sesion=id_sesion) + '#ponentes')

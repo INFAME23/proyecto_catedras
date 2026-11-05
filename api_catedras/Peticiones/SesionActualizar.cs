@@ -72,9 +72,6 @@ public class SesionActualizar
     [JsonPropertyName("enlace_virtual")]
     public string? EnlaceVirtual { get; set; }
 
-    [Range(1, int.MaxValue, ErrorMessage = "El campo 'cupo' debe ser mayor que 0.")]
-    [JsonPropertyName("cupo")]
-    public int? Cupo { get; set; }
 
     [RegularExpression("^(PROGRAMADA|ABIERTA|CERRADA|MIGRADA)$",
         ErrorMessage = "El campo 'estado' debe ser PROGRAMADA, ABIERTA, CERRADA o MIGRADA.")]
@@ -103,7 +100,6 @@ public class SesionActualizar
         if (FkEncuesta is not null) datos["fk_encuesta"] = FkEncuesta;
         if (Lugar is not null) datos["lugar"] = Lugar;
         if (EnlaceVirtual is not null) datos["enlace_virtual"] = EnlaceVirtual;
-        if (Cupo is not null) datos["cupo"] = Cupo;
         if (Estado is not null) datos["estado"] = Estado;
 
         return datos;

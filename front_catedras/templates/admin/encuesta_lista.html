@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
 {% block titulo %}Encuestas · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -26,13 +26,14 @@
                 <tbody>
                     {% for enc in encuestas %}
                     <tr>
-                        <td class="fw-semibold">{{ enc.id_encuesta }}</td>
-                        <td>{{ enc.nombre }}</td>
+                        <td class="fw-semibold"><a href="{{ url_for('admin.encuestas_detalle', id_encuesta=enc.id_encuesta) }}">{{ enc.id_encuesta }}</a></td>
+                        <td><a href="{{ url_for('admin.encuestas_detalle', id_encuesta=enc.id_encuesta) }}">{{ enc.nombre }}</a></td>
                         <td><span class="badge badge-secondary">v{{ enc.version }}</span></td>
                         <td>{{ enc.vigente_desde }}</td>
                         <td>{{ enc.vigente_hasta or '—' }}</td>
                         <td><span class="badge {{ 'badge-success' if enc.activa else 'badge-danger' }}">{{ 'Sí' if enc.activa else 'No' }}</span></td>
-                        <td class="text-end">
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.encuestas_detalle', id_encuesta=enc.id_encuesta) }}" title="Ver la encuesta con sus preguntas"><i class="fas fa-eye"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.encuestas_editar', id_encuesta=enc.id_encuesta) }}">
                                 <i class="fas fa-edit"></i>
                             </a>

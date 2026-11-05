@@ -83,9 +83,6 @@ public class SesionReemplazo
     [JsonPropertyName("enlace_virtual")]
     public string? EnlaceVirtual { get; set; }
 
-    [Range(1, int.MaxValue, ErrorMessage = "El campo 'cupo' debe ser mayor que 0.")]
-    [JsonPropertyName("cupo")]
-    public int? Cupo { get; set; }
 
     [Required(ErrorMessage = "El campo 'estado' es obligatorio.")]
     [RegularExpression("^(PROGRAMADA|ABIERTA|CERRADA|MIGRADA)$",

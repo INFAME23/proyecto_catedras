@@ -25,8 +25,11 @@ public interface IRepositorioSesion
     Task<Sesion?> ObtenerPorIdAsync(long idSesion);
 
     /// <summary>Inserta y devuelve (id_sesion, numero_reunion, creado_en) tal como
-    /// los dejó la BD. FK inexistente o número repetido -> NpgsqlException (500).</summary>
-    Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(Sesion sesion);
+    /// los dejó la BD. Si 'enlaceInicial' no es null, emite además el primer
+    /// enlace de registro en la MISMA transacción (Guía IA, Regla 1:
+    /// 'sp_guardar_sesion'). FK inexistente o número repetido -> NpgsqlException (500).</summary>
+    Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(
+        Sesion sesion, (int? MinutosAntes, int? MinutosDespues, long? FkUsuario)? enlaceInicial);
 
     /// <summary>Actualiza las columnas de 'datos'. Devuelve filas afectadas (0 = no existe).</summary>
     Task<int> ActualizarAsync(long idSesion, Dictionary<string, object?> datos);

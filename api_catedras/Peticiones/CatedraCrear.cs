@@ -9,6 +9,9 @@
 //
 //  'id_evento_asis' se valida como TEXTO de exactamente 9 dígitos con
 //  [RegularExpression] (refleja el CHECK chk_catedra_asis). "123" -> 422.
+//
+//  Maestro-detalle en el formulario: lista OPCIONAL 'sesiones' (ver
+//  SesionInicial). Si una sesión falla, no se crea ni la cátedra.
 // ==========================================================================
 
 namespace ApiCatedras.Peticiones;
@@ -51,4 +54,10 @@ public class CatedraCrear
     /// <summary>¿Está activa? Opcional (por defecto true).</summary>
     [JsonPropertyName("activo")]
     public bool? Activo { get; set; }
+
+    /// <summary>Maestro-detalle (Guía IA, Regla 1): primeras sesiones de la cátedra.
+    /// Opcional: null o [] = cátedra sin sesiones. Se guardan JUNTO con la
+    /// cátedra en una sola transacción ('sp_guardar_catedra', migración 042).</summary>
+    [JsonPropertyName("sesiones")]
+    public List<SesionInicial>? Sesiones { get; set; }
 }

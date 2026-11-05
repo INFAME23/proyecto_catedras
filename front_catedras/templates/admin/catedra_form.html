@@ -1,4 +1,5 @@
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
+{% import 'partials/filas_detalle.html' as fd %}
 {% block titulo %}{{ 'Nueva cátedra' if modo == 'nueva' else 'Editar cátedra' }} · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -10,9 +11,20 @@
 </nav>
 <h1 class="h3 fw-bold mb-3"><i class="fas fa-book-open text-primary-custom me-2"></i>{{ 'Nueva cátedra' if modo == 'nueva' else 'Editar cátedra ' ~ catedra.id_catedra }}</h1>
 
+{% if choques %}
+{# v7.1 · D52 · no es un flash: se queda hasta que se corrija el horario. #}
+<div class="alert alert-danger" role="alert" id="choques">
+    <strong><i class="fas fa-exclamation-triangle me-1"></i>No se creó la cátedra: hay sesiones que se cruzan.</strong>
+    <ul class="mb-1 mt-2">{% for c in choques %}<li>{{ c }}</li>{% endfor %}</ul>
+    <span class="small">Cambia el horario o el salón de esas sesiones. Con «Ver ocupación de una fecha» puedes elegir un hueco libre.</span>
+</div>
+{% endif %}
+
 <div class="card shadow-sm">
     <div class="card-body">
-        <form method="post"
+        <form method="post" id="form-catedra"
+              data-url-disponibilidad="{{ url_for('admin.catedras_disponibilidad') }}"
+              data-url-agenda="{{ url_for('admin.catedras_agenda') }}"
               action="{{ url_for('admin.catedras_nueva') if modo == 'nueva' else url_for('admin.catedras_editar', id_catedra=catedra.id_catedra) }}">
 
             <div class="mb-3">
@@ -54,6 +66,87 @@
                 <label class="form-check-label" for="activo">Activa</label>
             </div>
 
+            {# ---- Maestro-detalle #1: las sesiones, en el MISMO formulario ---- #}
+            <hr class="my-4">
+            {% set existentes %}{% if sesiones_existentes %}
+                Ya tiene {{ sesiones_existentes|length }} sesion{{ '' if sesiones_existentes|length == 1 else 'es' }}:
+                {% for s in sesiones_existentes %}<a href="{{ url_for('admin.sesiones_detalle', id_sesion=s.id_sesion) }}">reunión {{ s.numero_reunion }}</a> ({{ s.inicio|fecha_hora('%Y-%m-%d') }}){{ ', ' if not loop.last }}{% endfor %}.
+                Se editan o borran en su propia pantalla; aquí solo se agregan nuevas.
+            {% endif %}{% endset %}
+            {# v7.1 · D52 · ¿qué hay ocupado ese día? (lo pinta static/disponibilidad.js) #}
+            <div class="card mb-3 border-info">
+                <div class="card-body">
+                    <h2 class="h6 fw-bold"><i class="fas fa-calendar-day me-1"></i>Ver ocupación de una fecha</h2>
+                    <p class="form-text mt-0 mb-2">Antes de escribir las sesiones, mira qué hay ya programado ese día para elegir un hueco libre. No se pueden cruzar dos sesiones en la misma sede y el mismo salón.</p>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-sm-4"><label class="form-label small mb-1" for="ocupacion-fecha">Fecha</label>
+                            <input type="date" class="form-control form-control-sm" id="ocupacion-fecha"></div>
+                        <div class="col-sm-4"><label class="form-label small mb-1" for="ocupacion-sede">Sede</label>
+                            <select class="form-select form-select-sm" id="ocupacion-sede">
+                                <option value="">Todas las sedes</option>
+                                {% for s in sedes %}<option value="{{ s.id_sede }}">{{ s.nombre }}</option>{% endfor %}
+                            </select></div>
+                        <div class="col-sm-4"><button type="button" class="btn btn-sm btn-outline-info" id="ver-ocupacion"><i class="fas fa-search me-1"></i>Ver ocupación</button></div>
+                    </div>
+                    <div id="ocupacion-resultado" role="status" aria-live="polite"></div>
+                </div>
+            </div>
+
+            {% call(f) fd.bloque('sesiones', 'Sesiones', 'fa-calendar-check', filas_sesiones, 'Agregar sesión',
+                                 ayuda=('Se guardan JUNTO con la cátedra, en una sola operación: si una sesión falla, no se crea nada.'
+                                        if modo == 'nueva' else
+                                        'Cada sesión nueva se guarda por su cuenta: si una falla, vuelve aquí con el motivo y las demás quedan.')
+                                       ~ ' El número de reunión lo pone la base de datos (1, 2, 3…). Horas de Colombia.',
+                                 existentes=existentes) %}
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Título <span class="text-muted">(opcional)</span></span>
+                        <input type="text" class="form-control form-control-sm" name="ses_titulo" maxlength="200" value="{{ f.titulo if f else '' }}"></label>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Inicio</span>
+                        <input type="datetime-local" class="form-control form-control-sm" name="ses_inicio" required value="{{ f.inicio if f else '' }}"></label>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Fin</span>
+                        <input type="datetime-local" class="form-control form-control-sm" name="ses_fin" required value="{{ f.fin if f else '' }}"></label>
+                </div>
+                <div class="col-md-3">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Modalidad</span>
+                        <select class="form-select form-select-sm" name="ses_fk_modalidad" required>
+                            <option value="">-- Selecciona --</option>
+                            {% for m in modalidades %}<option value="{{ m.id_modalidad }}" {% if f and f.fk_modalidad == m.id_modalidad %}selected{% endif %}>{{ m.nombre }}</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-md-3">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Sede</span>
+                        <select class="form-select form-select-sm" name="ses_fk_sede" required>
+                            <option value="">-- Selecciona --</option>
+                            {% for s in sedes %}<option value="{{ s.id_sede }}" {% if f and f.fk_sede == s.id_sede %}selected{% endif %}>{{ s.nombre }}</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-md-2">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Periodo</span>
+                        <select class="form-select form-select-sm" name="ses_fk_periodo" required>
+                            <option value="">--</option>
+                            {% for p in periodos %}<option value="{{ p.id_periodo }}" {% if f and f.fk_periodo == p.id_periodo %}selected{% endif %}>{{ p.id_periodo }}</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-md-4">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Encuesta al cierre <span class="text-muted">(opcional)</span></span>
+                        <select class="form-select form-select-sm" name="ses_fk_encuesta">
+                            <option value="">— Ninguna —</option>
+                            {% for e in encuestas %}<option value="{{ e.id_encuesta }}" {% if f and f.fk_encuesta == e.id_encuesta|string %}selected{% endif %}>{{ e.nombre }} (v{{ e.version }})</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-md-9">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Lugar / salón <span class="text-muted">(recomendado: sin él se asume que ocupa toda la sede)</span></span>
+                        <input type="text" class="form-control form-control-sm" name="ses_lugar" maxlength="200" value="{{ f.lugar if f else '' }}"></label>
+                </div>
+                <div class="col-12"><div data-disponibilidad role="status" aria-live="polite"></div></div>
+            </div>
+            {% endcall %}
+
             {% if errores %}
             <div class="alert alert-danger py-2">
                 <ul class="mb-0 small">{% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}</ul>
@@ -62,9 +155,13 @@
 
             <div class="d-flex gap-2">
                 <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
-                <a class="btn btn-outline-secondary" href="{{ url_for('admin.catedras_listar') }}">Cancelar</a>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.catedras_detalle', id_catedra=catedra.id_catedra) if modo == 'editar' else url_for('admin.catedras_listar') }}">Cancelar</a>
             </div>
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='disponibilidad.js') }}"></script>
 {% endblock %}

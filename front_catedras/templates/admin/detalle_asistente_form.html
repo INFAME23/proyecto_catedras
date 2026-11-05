@@ -3,7 +3,7 @@
       documento · documento_editar · vinculacion · programa · consentimiento
     El 'fk_asistente' NUNCA es un campo: viaja en la URL de la acción
     (Guía IA, Regla 2: una FK no se digita). Las demás FK son <select>. #}
-{% extends 'base.html' %}
+{% extends 'admin/base_admin.html' %}
 {% block titulo %}{% set titulos = {
     'documento': 'Nuevo documento', 'documento_editar': 'Editar documento',
     'vinculacion': 'Abrir vinculación', 'programa': 'Matricular en un programa',

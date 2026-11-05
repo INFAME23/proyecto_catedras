@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block titulo %}Recuperar mi clave · Cátedras USB{% endblock %}
+{% block contenido %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow-sm animate-fade-in">
+            <div class="card-body p-4">
+                <div class="text-center mb-3">
+                    <i class="fas fa-envelope-open-text fa-3x text-primary-custom mb-2"></i>
+                    <h1 class="h4 fw-bold mb-1">Recuperar mi clave</h1>
+                    <p class="text-muted small mb-0">Paso 1 de 2 · Te enviamos un código de un solo uso a tu correo.</p>
+                </div>
+
+                <form method="post" action="{{ url_for('perfil.recuperar') }}">
+                    <div class="mb-3">
+                        <label class="form-label" for="identificador">Tu usuario o tu correo</label>
+                        <input type="text" class="form-control" id="identificador" name="identificador" required autofocus
+                               autocomplete="username" autocapitalize="none" value="{{ identificador }}">
+                    </div>
+                    <button class="btn btn-primary w-100" type="submit"><i class="fas fa-paper-plane me-1"></i>Enviarme el código</button>
+                </form>
+
+                <hr>
+                <p class="small text-muted mb-0 text-center">
+                    <a href="{{ url_for('auth.login') }}">Volver a iniciar sesión</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

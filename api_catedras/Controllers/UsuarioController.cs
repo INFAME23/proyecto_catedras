@@ -247,6 +247,147 @@ public class UsuarioController : ControllerBase
         }
     }
 
+    // ----------------------------------------------------------------------
+    //  v7.1 · RF-S5 · POST /api/Usuario/{idUsuario}/cambiar-clave
+    //          -> 200 { estado, mensaje } | 400 | 401 | 404 | 422
+    //  Cambiar la clave SABIENDO la actual. Cuenta inactiva o clave actual
+    //  incorrecta -> el mismo 401 (ADR D27).
+    // ----------------------------------------------------------------------
+    [HttpPost("{idUsuario:long}/cambiar-clave")]
+    public async Task<IActionResult> CambiarClave(long idUsuario, [FromBody] UsuarioCambiarClave peticion)
+    {
+        try
+        {
+            if (!await _servicio.CambiarClaveAsync(idUsuario, peticion))
+            {
+                return Unauthorized(new
+                {
+                    estado = "no_autorizado",
+                    mensaje = "La clave actual no es correcta",
+                });
+            }
+
+            return Ok(new { estado = "cambiada", mensaje = "Clave actualizada." });
+        }
+        catch (ArgumentException ex)
+        {
+            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
+        }
+        catch (NoEncontradoExcepcion ex)
+        {
+            return Problema(404, "no_encontrado", "Usuario no encontrado.", ex.Message);
+        }
+        catch (NpgsqlException ex)
+        {
+            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Problema(500, "error_interno", "Error al cambiar la clave.", ex.Message);
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    //  v7.1 · RF-S5/RF-S6 · POST /api/Usuario/recuperacion/solicitar
+    //          -> 200 { estado, mensaje, id_codigo?, codigo?, enviado_a?, usuario? } | 400 | 422
+    //  SEGURIDAD (RNF12): como "ClaveAcceso/solicitar", esta respuesta es de
+    //  las pocas donde un secreto viaja en texto plano: el FRONT lo recibe
+    //  para ENVIARLO POR CORREO y no se lo muestra a quien lo pidió.
+    //  Sin cuenta activa con ese usuario o correo se responde 200 igual, sin
+    //  id_codigo ni codigo (estado "sin_cuenta"): el front muestra el mismo
+    //  mensaje en ambos casos y no se puede averiguar qué usuarios existen (D27).
+    // ----------------------------------------------------------------------
+    [HttpPost("recuperacion/solicitar")]
+    public async Task<IActionResult> SolicitarRecuperacion([FromBody] RecuperacionSolicitar peticion)
+    {
+        try
+        {
+            var resultado = await _servicio.SolicitarRecuperacionAsync(peticion);
+
+            if (resultado is null)
+                return Ok(new { estado = "sin_cuenta", mensaje = "No se generó ningún código." });
+
+            var (idCodigo, codigo, enviadoA, usuario) = resultado.Value;
+            return Ok(new
+            {
+                estado = "solicitada",
+                mensaje = $"Código enviado a {enviadoA}.",
+                id_codigo = idCodigo,
+                codigo,                 // texto plano: única vez que existe (RNF12)
+                enviado_a = enviadoA,
+                usuario,
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
+        }
+        catch (NpgsqlException ex)
+        {
+            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Problema(500, "error_interno", "Error al solicitar el código.", ex.Message);
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    //  v7.1 · RF-S5/RF-S6 · POST /api/Usuario/recuperacion/restablecer
+    //          -> 200 { estado, mensaje } | 400 | 422
+    //  Código incorrecto, usado, vencido o con intentos agotados -> 400. A
+    //  diferencia de "ClaveAcceso/validar" (D25, 500), aquí la BD NO lanza: devuelve
+    //  un estado, porque una excepción deshace el contador de intentos (RF153) y
+    //  en una recuperación de clave ese tope tiene que cumplirse.
+    // ----------------------------------------------------------------------
+    [HttpPost("recuperacion/restablecer")]
+    public async Task<IActionResult> RestablecerClave([FromBody] RecuperacionRestablecer peticion)
+    {
+        try
+        {
+            await _servicio.RestablecerClaveAsync(peticion);
+            return Ok(new { estado = "restablecida", mensaje = "Clave actualizada." });
+        }
+        catch (CodigoRecuperacionInvalidoExcepcion ex)
+        {
+            return Problema(400, "codigo_invalido", "El código no es válido.", ex.Message);
+        }
+        catch (NpgsqlException ex)
+        {
+            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Problema(500, "error_interno", "Error al restablecer la clave.", ex.Message);
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    //  v7.1 · D54 · POST /api/Usuario/{idUsuario}/exigir-cambio-clave   -> 200 | 404
+    //  El administrador obliga a esa persona a cambiar su clave en el próximo ingreso.
+    // ----------------------------------------------------------------------
+    [HttpPost("{idUsuario:long}/exigir-cambio-clave")]
+    public async Task<IActionResult> ExigirCambioClave(long idUsuario)
+    {
+        try
+        {
+            await _servicio.ExigirCambioClaveAsync(idUsuario);
+            return Ok(new { estado = "exigido", mensaje = "Deberá cambiar su clave en el próximo ingreso." });
+        }
+        catch (NoEncontradoExcepcion ex)
+        {
+            return Problema(404, "no_encontrado", "Usuario no encontrado.", ex.Message);
+        }
+        catch (NpgsqlException ex)
+        {
+            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Problema(500, "error_interno", "Error al marcar el usuario.", ex.Message);
+        }
+    }
+
     // Arma el sobre de error { estado, mensaje, detalle } con el código indicado.
     private ObjectResult Problema(int codigo, string estado, string mensaje, string? detalle)
     {

@@ -63,6 +63,29 @@ fallidas) y prueba de capas (345 pasadas, 0 fallidas, 29 entidades). Solo
 falta el commit con el tag `v5` (Fase 46 de `version5/8_tasks.md`). Guía:
 [version5/guia_ia_v5.md](version5/guia_ia_v5.md).
 
+### Estado de la V7 (2026-10-15)
+
+Última versión del mapa: la API expone las **37 tablas**. Las capas de
+`lote_migracion`, `detalle_migracion`, `bitacora` y `parametro` nacieron en
+el retrofit a procedimientos (`013`, `014`, `031`, `032`); la v7 revisó su
+borrador contra el código (decisiones en ADR D37: bitácora de solo
+lectura, como dice el Supuesto 3 de abajo), y construyó la prueba de capas
+de las 37 entidades (452 pasadas, 0 fallidas) y el front (`/admin`).
+Verificada contra PostgreSQL real y la API real por HTTP
+(`verificar_v7.ps1`: 71/0). Falta la corrida de
+`pruebas/correr_todo_v7.ps1` contra Docker y el tag `v7` (Fase 61 de
+`version7/8_tasks.md`). Guía: [version7/guia_ia_v7.md](version7/guia_ia_v7.md).
+
+### Subversión v7.1 (2026-10-29)
+
+Mantenimiento sobre V5–V7, **no es una V8** ni agrega recursos al mapa
+(37 tablas, 37 controladores): geolocalización obligatoria al autorregistrar
+la asistencia, panel de estudiante, cuentas de estudiante y ponente,
+cambio y recuperación de clave por correo, y `/admin` con categorías desplegables.
+Requisitos `RF-S1`…`RF-S7`, decisiones D38–D55 y pendientes:
+[version7_1/v7_1_subversion.md](version7_1/v7_1_subversion.md). Agrega las
+migraciones `045`–`054`, una tabla de apoyo (`codigo_recuperacion`, sin CRUD) y UN recurso nuevo de la API (`InscripcionCatedra`, tabla `inscripcion_catedra`): el mapa pasa de 37 a 38 controladores (39 con `Disponibilidad`, y 40 con `QrSesion`: consultas y el QR de cierre, sin tabla propia).
+
 ## 3. Salvedad: la FK circular con `usuario`
 
 `lote_carga_asistente` (V3) y `enlace_registro` (V5) tienen una FK a

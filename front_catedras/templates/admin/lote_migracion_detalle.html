@@ -1,0 +1,111 @@
+{% extends 'admin/base_admin.html' %}
+{# ==========================================================================
+   admin/lote_migracion_detalle.html  ·  Front Cátedras · Versión 7
+   Un lote de migración con sus filas. Dos formularios distintos:
+     · el del LOTE: estado (catálogo de estados de proceso) y observaciones;
+     · el de cada FILA: resultado (lista cerrada) y mensaje — simula lo que
+       ASIS contestaría por cada registro enviado.
+   ========================================================================== #}
+{% import 'admin/_macros_migracion.html' as mm %}
+{% block titulo %}Lote {{ lote.id_lote_migracion }} · Migración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.lotes_migracion_listar') }}">Lotes de migración</a></li>
+        <li class="breadcrumb-item active">Lote {{ lote.id_lote_migracion }}</li>
+    </ol>
+</nav>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h1 class="h4 fw-bold mb-3"><i class="fas fa-file-export text-primary-custom me-2"></i>Lote {{ lote.id_lote_migracion }} {{ mm.estado_lote(lote.fk_estado_proceso) }}</h1>
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-4">Archivo</dt><dd class="col-sm-8"><code>{{ lote.nombre_archivo }}</code></dd>
+                    <dt class="col-sm-4">Sesión</dt><dd class="col-sm-8"><a href="{{ url_for('sesiones.detalle', id_sesion=lote.fk_sesion) }}">{{ lote.fk_sesion }}</a></dd>
+                    <dt class="col-sm-4">Generado</dt><dd class="col-sm-8">{{ lote.generado_en|fecha_hora }} <span class="text-muted">(hora de Colombia)</span>{% if lote.fk_usuario %} · usuario {{ lote.fk_usuario }}{% endif %}</dd>
+                    <dt class="col-sm-4">Filas enviadas</dt><dd class="col-sm-8">{{ lote.total_filas }} <span class="text-muted">(solo registros migrables: con ID de ASIS y programa, sin externos)</span></dd>
+                    <dt class="col-sm-4">Resultado</dt>
+                    <dd class="col-sm-8">
+                        {% for r, n in conteo.items() %}{{ mm.resultado(r) }} {{ n }}&nbsp;&nbsp;{% endfor %}
+                    </dd>
+                    {% if lote.observaciones %}<dt class="col-sm-4">Observaciones</dt><dd class="col-sm-8">{{ lote.observaciones }}</dd>{% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card shadow-sm h-100">
+            <div class="card-header fw-bold"><i class="fas fa-tasks me-2"></i>Estado del lote</div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('admin.lotes_migracion_estado', id_lote=lote.id_lote_migracion) }}">
+                    <div class="mb-2">
+                        <label class="form-label small" for="fk_estado_proceso">Estado</label>
+                        <select class="form-select" id="fk_estado_proceso" name="fk_estado_proceso" required>
+                            {% for e in estados %}
+                            <option value="{{ e.id_estado }}" {% if e.id_estado == lote.fk_estado_proceso %}selected{% endif %}>{{ e.id_estado }} · {{ e.nombre }}{% if e.es_final %} (final){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small" for="observaciones">Observaciones</label>
+                        <textarea class="form-control" id="observaciones" name="observaciones" rows="2" maxlength="2000"
+                                  placeholder="Lo que respondió ASIS (opcional)">{{ lote.observaciones or '' }}</textarea>
+                    </div>
+                    <button class="btn btn-primary btn-sm" type="submit"><i class="fas fa-save me-1"></i>Guardar estado</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span class="fw-bold"><i class="fas fa-list me-2"></i>Filas del lote ({{ detalles|length }}{% if filtro %} de {{ total_detalles }}{% endif %})</span>
+        <form class="d-flex gap-2" method="get" action="{{ url_for('admin.lotes_migracion_detalle', id_lote=lote.id_lote_migracion) }}">
+            <select class="form-select form-select-sm" name="resultado" onchange="this.form.submit()">
+                <option value="">Todos los resultados</option>
+                {% for r in resultados %}<option value="{{ r }}" {% if filtro == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+            </select>
+        </form>
+    </div>
+    <div class="card-body p-0">
+        {% if detalles %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Fila</th><th>Registro</th><th>ID ASIS</th><th>Programa</th><th>Reunión</th><th>Resultado</th><th>Respuesta de ASIS</th></tr>
+                </thead>
+                <tbody>
+                    {% for d in detalles %}
+                    <tr id="fila-{{ d.id_detalle }}">
+                        <td class="fw-semibold">{{ d.id_detalle }}</td>
+                        <td>{{ d.fk_registro }}</td>
+                        <td><code>{{ d.id_asis_enviado }}</code></td>
+                        <td>{{ d.programa_enviado or '—' }}</td>
+                        <td>{{ d.reunion_enviada }}</td>
+                        <td>{{ mm.resultado(d.resultado) }}{% if d.mensaje %}<div class="small text-muted">{{ d.mensaje }}</div>{% endif %}</td>
+                        <td>
+                            <form class="d-flex gap-1" method="post"
+                                  action="{{ url_for('admin.lotes_migracion_resultado', id_lote=lote.id_lote_migracion, id_detalle=d.id_detalle) }}">
+                                <input type="hidden" name="filtro" value="{{ filtro or '' }}">
+                                <select class="form-select form-select-sm" name="resultado" aria-label="Resultado de la fila {{ d.id_detalle }}">
+                                    {% for r in resultados %}<option value="{{ r }}" {% if r == d.resultado %}selected{% endif %}>{{ r }}</option>{% endfor %}
+                                </select>
+                                <input class="form-control form-control-sm" type="text" name="mensaje" maxlength="300" placeholder="Mensaje (opcional)" aria-label="Mensaje de la fila {{ d.id_detalle }}">
+                                <button class="btn btn-sm btn-outline-primary" type="submit" title="Guardar"><i class="fas fa-check"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay filas que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

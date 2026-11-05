@@ -146,6 +146,14 @@ public class RepositorioUsuarioPostgres : IRepositorioUsuario
         await conexion.ExecuteAsync(sql, new { idUsuario });
     }
 
+    public async Task FijarDebeCambiarClaveAsync(long idUsuario, bool valor)
+    {
+        const string sql = "CALL catedras.sp_fijar_debe_cambiar_clave(@idUsuario, @valor);";
+
+        await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        await conexion.ExecuteAsync(sql, new { idUsuario, valor });
+    }
+
     public async Task<int> EliminarAsync(long idUsuario)
     {
         const string sql = "CALL catedras.sp_eliminar_usuario(@idUsuario, NULL);";

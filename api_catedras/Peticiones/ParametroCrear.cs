@@ -17,6 +17,13 @@ public class ParametroCrear
     [Required(ErrorMessage = "El campo 'clave' es obligatorio.")]
     [StringLength(60, MinimumLength = 1,
         ErrorMessage = "El campo 'clave' debe tener entre 1 y 60 caracteres.")]
+    // Forma de la llave (ADR D37-D de la v7): empieza por una letra mayúscula
+    // y sigue con mayúsculas, dígitos o '_' — como las 9 claves sembradas
+    // (CLAVE_LONGITUD, URL_BASE...). Las funciones de la BD buscan la clave
+    // por texto exacto: 'clave_longitud' sería OTRO parámetro, uno que
+    // ninguna función lee. Por eso se rechaza en la forma (422).
+    [RegularExpression("^[A-Z][A-Z0-9_]*$",
+        ErrorMessage = "El campo 'clave' debe empezar por una letra mayúscula y contener solo mayúsculas, dígitos o '_' (p. ej. VENTANA_MINUTOS_ANTES).")]
     [JsonPropertyName("clave")]
     public string? Clave { get; set; }
 

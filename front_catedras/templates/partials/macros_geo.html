@@ -1,0 +1,14 @@
+{# ==========================================================================
+   macros_geo.html  ·  Subversión v7.1 · RF-S1
+   Cómo se muestra la ubicación de un registro de asistencia. Los registros
+   MANUAL / IMPORTADO y los anteriores a la v7.1 no la tienen: se ve «—».
+   El enlace abre el punto en un mapa (nueva pestaña, sin 'opener').
+   ========================================================================== #}
+{% macro ubicacion(r, con_coordenadas=false) -%}
+{%- if r.latitud is not none and r.longitud is not none -%}
+<a href="https://maps.google.com/?q={{ r.latitud }},{{ r.longitud }}" target="_blank" rel="noopener noreferrer"
+   title="Ver en el mapa ({{ r.latitud }}, {{ r.longitud }})"><i class="fas fa-map-marker-alt me-1"></i>{% if con_coordenadas %}{{ '%.6f'|format(r.latitud) }}, {{ '%.6f'|format(r.longitud) }}{% else %}Ver mapa{% endif %}</a>
+{%- else -%}
+<span class="text-muted">—</span>
+{%- endif -%}
+{%- endmacro %}

@@ -36,13 +36,20 @@ public class ServicioUsuario : IServicioUsuario
 
     private readonly IRepositorioUsuario _repositorio;
     private readonly IRepositorioRolPorUsuario _repositorioRoles;
+    private readonly IRepositorioCodigoRecuperacion _repositorioCodigos;
 
     // El login necesita los roles vigentes del usuario: por eso este servicio
     // recibe TAMBIÉN el repositorio de 'rol_por_usuario' (Fase 40).
-    public ServicioUsuario(IRepositorioUsuario repositorio, IRepositorioRolPorUsuario repositorioRoles)
+    // v7.1: y el de 'codigo_recuperacion', porque recuperar la clave también
+    // acaba en un hash BCrypt y ESTE es el único archivo que lo calcula.
+    public ServicioUsuario(
+        IRepositorioUsuario repositorio,
+        IRepositorioRolPorUsuario repositorioRoles,
+        IRepositorioCodigoRecuperacion repositorioCodigos)
     {
         _repositorio = repositorio;
         _repositorioRoles = repositorioRoles;
+        _repositorioCodigos = repositorioCodigos;
     }
 
     // Único punto de hash del proyecto. El factor de costo es el que trae
@@ -81,7 +88,13 @@ public class ServicioUsuario : IServicioUsuario
             Activo = peticion.Activo ?? true,
         };
 
-        return await _repositorio.CrearAsync(usuario);
+        var creado = await _repositorio.CrearAsync(usuario);
+
+        // v7.1 · D54: el administrador entrega una clave temporal y pide que la cambie al entrar.
+        if (peticion.DebeCambiarClave == true)
+            await _repositorio.FijarDebeCambiarClaveAsync(creado.IdUsuario, true);
+
+        return creado;
     }
 
     public async Task<int> ReemplazarAsync(long idUsuario, UsuarioReemplazo peticion)
@@ -134,16 +147,25 @@ public class ServicioUsuario : IServicioUsuario
         return filas;
     }
 
+    // v7.1 · D55: SOLO EL ADMINISTRADOR INICIA SESIÓN. Estudiantes y ponentes ya no tienen cuenta que entre: la
+    // asistencia es pública (por el QR) y todo lo demás lo gestiona el administrador. Se exige el rol ADMIN
+    // VIGENTE; quien tenga usuario y clave correctos pero no sea administrador recibe el mismo rechazo (D27), y no
+    // se le anota acceso.
     public async Task<(Usuario Usuario, List<string> Roles)?> LoginAsync(UsuarioLogin peticion)
     {
-        var usuario = await _repositorio.ObtenerPorLoginAsync(peticion.Usuario!);
+        string login = peticion.Usuario!.Trim();
+        var usuario = await _repositorio.ObtenerPorLoginAsync(login);
 
-        // Tres causas, un solo resultado (ADR D27): no existe, está inactivo o
-        // la clave no coincide. El '||' corta en la primera que se cumple; el
-        // Verify solo se ejecuta si el usuario existe y está activo.
+        // Cuatro causas, un solo resultado (ADR D27): no existe, está inactivo, la clave no coincide o no es
+        // administrador. El '||' corta en la primera que se cumple; el Verify solo se ejecuta si el usuario
+        // existe y está activo.
         if (usuario is null
             || !usuario.Activo
             || !BCrypt.Net.BCrypt.Verify(peticion.Clave!, usuario.ClaveHash))
+            return null;
+
+        var roles = await _repositorioRoles.ObtenerVigentesAsync(usuario.IdUsuario);
+        if (!roles.Contains("ADMIN"))
             return null;
 
         await _repositorio.ActualizarUltimoAccesoAsync(usuario.IdUsuario);
@@ -152,7 +174,65 @@ public class ServicioUsuario : IServicioUsuario
         // la respuesta muestre el acceso que acaba de ocurrir.
         usuario.UltimoAcceso = DateTime.UtcNow;
 
-        var roles = await _repositorioRoles.ObtenerVigentesAsync(usuario.IdUsuario);
         return (usuario, roles);
+    }
+
+    // ----------------------------------------------------------------------
+    //  v7.1 · RF-S5 · Cambiar la clave sabiendo la actual
+    // ----------------------------------------------------------------------
+    public async Task<bool> CambiarClaveAsync(long idUsuario, UsuarioCambiarClave peticion)
+    {
+        var usuario = await _repositorio.ObtenerPorIdAsync(idUsuario)
+            ?? throw new NoEncontradoExcepcion($"No existe el usuario '{idUsuario}'.");
+
+        // ObtenerPorId no trae el hash (ADR D23); el único camino que lo trae
+        // es el del login, de uso interno justamente para esto.
+        var conHash = await _repositorio.ObtenerPorLoginAsync(usuario.NombreUsuario);
+
+        if (conHash is null
+            || !conHash.Activo
+            || !BCrypt.Net.BCrypt.Verify(peticion.ClaveActual!, conHash.ClaveHash))
+            return false;
+
+        if (peticion.ClaveNueva == peticion.ClaveActual)
+            throw new ArgumentException("La clave nueva debe ser distinta de la actual.");
+
+        await _repositorio.ActualizarAsync(idUsuario,
+            new Dictionary<string, object?> { ["clave_hash"] = Hashear(peticion.ClaveNueva!) });
+        return true;
+    }
+
+    // ----------------------------------------------------------------------
+    //  v7.1 · RF-S5 / RF-S6 · Recuperar una clave olvidada
+    // ----------------------------------------------------------------------
+    public async Task<(long IdCodigo, string Codigo, string EnviadoA, string Usuario)?> SolicitarRecuperacionAsync(
+        RecuperacionSolicitar peticion)
+    {
+        string? ip = null;
+        if (peticion.Ip is not null)
+        {
+            if (!System.Net.IPAddress.TryParse(peticion.Ip, out var direccion))
+                throw new ArgumentException("El campo 'ip' no es una dirección IP válida.");
+            ip = direccion.ToString();
+        }
+
+        return await _repositorioCodigos.SolicitarAsync(peticion.Identificador!.Trim(), ip);
+    }
+
+    public async Task ExigirCambioClaveAsync(long idUsuario)
+    {
+        _ = await _repositorio.ObtenerPorIdAsync(idUsuario)
+            ?? throw new NoEncontradoExcepcion($"No existe el usuario '{idUsuario}'.");
+
+        await _repositorio.FijarDebeCambiarClaveAsync(idUsuario, true);
+    }
+
+    public async Task RestablecerClaveAsync(RecuperacionRestablecer peticion)
+    {
+        string estado = await _repositorioCodigos.RestablecerAsync(
+            peticion.IdCodigo!.Value, peticion.Codigo!, Hashear(peticion.ClaveNueva!));
+
+        if (estado != "OK")
+            throw new CodigoRecuperacionInvalidoExcepcion(estado);
     }
 }

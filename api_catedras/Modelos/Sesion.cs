@@ -91,9 +91,6 @@ public class Sesion
     [JsonPropertyName("enlace_virtual")]
     public string? EnlaceVirtual { get; set; }
 
-    /// <summary>Cupo máximo. Null = sin cupo.</summary>
-    [JsonPropertyName("cupo")]
-    public int? Cupo { get; set; }
 
     /// <summary>PROGRAMADA, ABIERTA, CERRADA o MIGRADA. Por defecto PROGRAMADA.</summary>
     [JsonPropertyName("estado")]

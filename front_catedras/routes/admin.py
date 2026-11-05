@@ -1,12 +1,13 @@
 # ==========================================================================
 #  routes/admin.py  ·  Front Cátedras
 # --------------------------------------------------------------------------
-#  Panel de administración: las 24 tablas que ya expone ApiCatedras
+#  Panel de administración: las tablas que expone ApiCatedras
 #  (las 10 sin FK de la v1; las 5 de la v2: Facultad, Dependencia,
 #  ProgramaAcademico, AliasPrograma y Catedra; las 7 de la v3: personas
 #  y lotes de carga; las 2 de la v4: Sesion y Ponencia; y las 5 de la v5:
-#  Usuario, RolPorUsuario, EnlaceRegistro, ClaveAcceso y RegistroAsistencia,
-#  al final del archivo). Cada sección usa
+#  Usuario, RolPorUsuario, EnlaceRegistro, ClaveAcceso y RegistroAsistencia;
+#  las 4 de la v6: encuestas; y las 4 de la v7: Parametro, LoteMigracion,
+#  DetalleMigracion y Bitacora, al final del archivo — 37 en total). Cada sección usa
 #  formularios HTML normales (los navegadores no mandan PUT/DELETE, así que
 #  el botón "Guardar" hace POST y esta ruta traduce a PUT/DELETE contra la
 #  API con 'requests').
@@ -22,14 +23,17 @@
 #  exigir nada (ADR D28).
 # ==========================================================================
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
 from auth_helpers import ROL_ADMIN, exigir_rol, usuario_actual
 from servicios.api_catedras import (ErrorApi, actualizar_parcial, crear, eliminar, listar,
                                     obtener, reemplazar)
-from servicios.fechas import a_local, desde_input
+from servicios.fechas import ZONA_COLOMBIA, a_local, desde_input, fecha_hora
+from servicios.api_catedras import consultar
+from servicios.qr_sesiones import (asegurar_qr_de_catedra, emitir_qr, estado_de_ventana, qr_de_sesion,
+                                   svg_qr, url_de_registro)
 from routes.sesiones import (ROLES_PONENCIA, asignar_ponente, buscar_candidatos, ponentes_de,
                              quitar_ponente)
 
@@ -46,6 +50,138 @@ def _solo_administradores():
 @admin_bp.route('/')
 def panel():
     return render_template('admin/panel.html')
+
+
+# ==========================================================================
+#  MAESTRO-DETALLE EN EL FRONT  (navegación: "entro al maestro y veo sus detalles")
+# --------------------------------------------------------------------------
+#  Cada maestro tiene una pantalla de DETALLE (/admin/<maestro>/<id>) que
+#  muestra su ficha y, debajo, las tablas de sus detalles, con los botones
+#  para agregar uno nuevo (la FK del maestro la fija la URL, Regla 2):
+#
+#     #  Maestro              Detalle(s)                         Pantalla
+#     1  catedra              sesion                             catedras_detalle
+#     2  sesion               enlace_registro                    sesiones_detalle
+#     3  sesion               registro_asistencia                sesiones_detalle
+#     4  asistente            documento_asistente                asistentes_detalle (v3)
+#     5  asistente            consentimiento_datos               asistentes_detalle (v3)
+#     6  encuesta             pregunta                           encuestas_detalle
+#     7  pregunta             opcion_pregunta                    preguntas_detalle
+#     8  registro_asistencia  respuesta_encuesta                 registros_detalle
+#     9  respuesta_encuesta   respuesta_item                     respuestas_detalle (v6)
+#    10  programa_academico   alias_programa                     programas_detalle
+#
+#  Reglas de la navegación:
+#    · Al CREAR o EDITAR un maestro se aterriza en su pantalla de detalle
+#      (así se ven enseguida sus detalles y se pueden agregar más).
+#    · En las listas, el id / nombre del maestro y el botón del ojo llevan
+#      a esa pantalla.
+#    · Cuando un detalle se crea, edita o borra DESDE la pantalla del
+#      maestro, el formulario manda 'volver=<ruta del maestro>' y la acción
+#      regresa ahí. Sin 'volver', cada acción conserva su destino de siempre
+#      (las listas filtradas siguen funcionando igual).
+# ==========================================================================
+
+def _destino_volver():
+    """La ruta a la que hay que regresar ('volver' del formulario o de la
+    URL), solo si es una ruta INTERNA de /admin. Cualquier otra cosa
+    (http://..., //otro-sitio, javascript:...) se ignora: no es una
+    redirección abierta."""
+    destino = (request.values.get('volver') or '').strip()
+    if destino.startswith('/admin/') and '//' not in destino and '\\' not in destino:
+        return destino
+    return None
+
+
+@admin_bp.context_processor
+def _contexto_volver():
+    """'volver' queda disponible en TODAS las plantillas de /admin: los
+    formularios de detalle lo reenvían (campo oculto) y su botón Cancelar
+    regresa ahí. Si la vista pasa su propio 'volver', gana el de la vista."""
+    return {'volver': _destino_volver()}
+
+
+def _redirigir(endpoint, **valores):
+    """Redirige a 'volver' si llegó uno válido; si no, al destino de siempre."""
+    return redirect(_destino_volver() or url_for(endpoint, **valores))
+
+
+def _lista_de(recurso, **filtros):
+    """listar() para una tabla de detalle: si la API falla, se avisa y la
+    pantalla del maestro se muestra igual, con la tabla vacía."""
+    try:
+        return listar(recurso, **filtros)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return []
+
+
+# --------------------------------------------------------------------------
+#  Filas de detalle DENTRO del formulario del maestro
+# --------------------------------------------------------------------------
+#  El formulario de cada maestro trae un bloque de filas (ver
+#  templates/partials/filas_detalle.html): cada campo se llama
+#  '<prefijo>_<campo>' y llega UNA vez por fila, en orden. Dos momentos:
+#
+#   · AL CREAR el maestro: las filas viajan en el MISMO POST y la API guarda
+#     maestro + detalles en UNA transacción (Guía IA, Regla 1: un SP). Si
+#     algo falla, no se guarda nada y el formulario vuelve con todo lo
+#     escrito (maestro y filas).
+#   · AL EDITAR: el maestro ya existe, así que cada fila nueva es su propia
+#     petición al recurso del detalle (el caso "No aplica" de la Regla 1:
+#     el detalle se agrega en otro momento). Las que fallan vuelven a
+#     aparecer en el formulario con su motivo; las demás ya quedaron.
+# --------------------------------------------------------------------------
+
+def _filas(prefijo, campos, clave):
+    """Lee las filas de un bloque de detalle del formulario.
+
+    'campos': nombres de los campos de UNA fila (sin el prefijo).
+    'clave':  el campo que hace que una fila "cuente": una fila con la
+              clave vacía se descarta (p. ej. una sesión sin fecha de
+              inicio). No se puede usar "todos vacíos" porque los <select>
+              siempre traen algún valor.
+    Devuelve una lista de dicts {campo: texto}, en el orden del formulario."""
+    columnas = {c: request.form.getlist(f'{prefijo}_{c}') for c in campos}
+    total = max((len(v) for v in columnas.values()), default=0)
+    filas = []
+    for i in range(total):
+        fila = {c: (columnas[c][i].strip() if i < len(columnas[c]) else '') for c in campos}
+        if fila.get(clave):
+            filas.append(fila)
+    return filas
+
+
+def _crear_detalles(recurso, filas, a_cuerpo, nombre, plural):
+    """AL EDITAR: crea cada fila nueva con su propia petición (y su propia
+    transacción). 'a_cuerpo(fila, n)' arma el body de la API (n = posición
+    1, 2, 3... para calcular 'orden' cuando hace falta). Avisa cuántas se
+    guardaron y, de las que no, el motivo. Devuelve las filas que FALLARON,
+    para volver a mostrarlas en el formulario."""
+    fallidas, creadas = [], 0
+    for n, fila in enumerate(filas, start=1):
+        try:
+            crear(recurso, a_cuerpo(fila, n))
+            creadas += 1
+        except ErrorApi as ex:
+            flash(f"{nombre} {n}: {ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+            fallidas.append(fila)
+    if creadas:
+        flash(f"Se agregó 1 {nombre.lower()}." if creadas == 1 else f"Se agregaron {creadas} {plural}.", 'exito')
+    return fallidas
+
+
+@admin_bp.route('/asistentes/buscar')
+def asistentes_buscar():
+    """Búsqueda de personas para las filas de un formulario (JSON). Regla 2:
+    el asistente no se digita, se busca y se elige de la lista. Mismo
+    criterio que 'buscar_candidatos' (la API filtra con ?q=, máx. 20)."""
+    texto = request.args.get('q', '').strip()
+    personas = [{'id_asistente': a['id_asistente'],
+                 'texto': f"{a['id_asistente']} · {a['nombres']} {a['apellidos']}"
+                          + (f" · {a['id_asis']}" if a.get('id_asis') else '')}
+                for a in buscar_candidatos(texto)]
+    return jsonify(personas)
 
 
 # ==========================================================================
@@ -305,21 +441,82 @@ def _leer_form_encuesta():
     }
 
 
+# Maestro-detalle #6 (y #7) en el formulario de la encuesta: las preguntas
+# en filas, y en cada fila sus opciones (una por línea, "etiqueta;valor").
+# El 'orden' de cada pregunta lo pone su posición (nada que numerar a mano).
+CAMPOS_PREGUNTA_FILA = ('enunciado', 'fk_tipo_pregunta', 'obligatoria', 'valor_min', 'valor_max', 'opciones')
+
+
+def _pregunta_de_fila(fila, orden):
+    pregunta = {
+        'enunciado': fila['enunciado'],
+        'orden': orden,
+        'fk_tipo_pregunta': fila['fk_tipo_pregunta'],
+        'obligatoria': fila['obligatoria'] == 'si',
+        'valor_min': _entero_o_none(fila['valor_min']),
+        'valor_max': _entero_o_none(fila['valor_max']),
+    }
+    opciones = _opciones_de_texto(fila['opciones'])
+    if opciones:
+        pregunta['opciones'] = opciones
+    return pregunta
+
+
+def _render_encuesta_form(modo, encuesta, errores, filas_preguntas=(), id_encuesta=None):
+    existentes = []
+    if modo == 'editar' and id_encuesta:
+        existentes = sorted(_lista_de('Pregunta', limite=500, fkEncuesta=id_encuesta), key=lambda p: p['orden'])
+    return render_template('admin/encuesta_form.html', modo=modo, encuesta=encuesta, errores=errores,
+                           filas_preguntas=list(filas_preguntas), preguntas_existentes=existentes,
+                           tipos=_opciones('TipoPregunta'))
+
+
 @admin_bp.route('/encuestas/nueva', methods=['GET', 'POST'])
 def encuestas_nueva():
     if request.method == 'GET':
-        return render_template('admin/encuesta_form.html', modo='nueva', encuesta=None, errores=[])
+        return _render_encuesta_form('nueva', None, [])
 
     datos = _leer_form_encuesta()
+    # Regla 1: preguntas (y sus opciones) en el MISMO POST: la API guarda
+    # todo en un solo CALL (sp_guardar_encuesta). Si una falla, no queda nada.
+    filas = _filas('pre', CAMPOS_PREGUNTA_FILA, clave='enunciado')
+    if filas:
+        datos['preguntas'] = [_pregunta_de_fila(f, n) for n, f in enumerate(filas, start=1)]
     try:
         respuesta = crear('Encuesta', datos)
     except ErrorApi as ex:
         # Aquí llega, por ejemplo, "vigente_hasta no puede ser anterior a vigente_desde" (400).
         flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
-        return render_template('admin/encuesta_form.html', modo='nueva', encuesta=datos, errores=ex.errores)
+        return _render_encuesta_form('nueva', datos, ex.errores, filas)
 
-    flash(f"Encuesta '{datos['nombre']}' creada (id {respuesta['id_encuesta']}).", 'exito')
-    return redirect(url_for('admin.encuestas_listar'))
+    sufijo = f" con {len(filas)} pregunta{'' if len(filas) == 1 else 's'}" if filas else ''
+    flash(f"Encuesta '{datos['nombre']}' creada{sufijo} (id {respuesta['id_encuesta']}).", 'exito')
+    return redirect(url_for('admin.encuestas_detalle', id_encuesta=respuesta['id_encuesta']))
+
+
+@admin_bp.route('/encuestas/<int:id_encuesta>')
+def encuestas_detalle(id_encuesta):
+    """Maestro-detalle #6: la encuesta con sus preguntas (en su orden)."""
+    try:
+        encuesta = obtener('Encuesta', id_encuesta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.encuestas_listar'))
+
+    preguntas = sorted(_lista_de('Pregunta', limite=500, fkEncuesta=id_encuesta),
+                       key=lambda p: p['orden'])
+    # Cuántas opciones tiene cada pregunta: UNA llamada a OpcionPregunta
+    # (sin filtro) y se cuentan aquí, en vez de una llamada por pregunta.
+    ids = {p['id_pregunta'] for p in preguntas}
+    conteo = {}
+    if ids:
+        for o in _lista_de('OpcionPregunta', limite=5000):
+            if o['fk_pregunta'] in ids:
+                conteo[o['fk_pregunta']] = conteo.get(o['fk_pregunta'], 0) + 1
+    for p in preguntas:
+        p['cantidad_opciones'] = conteo.get(p['id_pregunta'], 0)
+
+    return render_template('admin/encuesta_detalle.html', encuesta=encuesta, preguntas=preguntas)
 
 
 @admin_bp.route('/encuestas/<int:id_encuesta>/editar', methods=['GET', 'POST'])
@@ -330,18 +527,29 @@ def encuestas_editar(id_encuesta):
         except ErrorApi as ex:
             flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
             return redirect(url_for('admin.encuestas_listar'))
-        return render_template('admin/encuesta_form.html', modo='editar', encuesta=encuesta, errores=[])
+        return _render_encuesta_form('editar', encuesta, [], id_encuesta=id_encuesta)
 
     datos = _leer_form_encuesta()
+    filas = _filas('pre', CAMPOS_PREGUNTA_FILA, clave='enunciado')
     try:
         reemplazar('Encuesta', id_encuesta, datos)
     except ErrorApi as ex:
         flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
         datos['id_encuesta'] = id_encuesta
-        return render_template('admin/encuesta_form.html', modo='editar', encuesta=datos, errores=ex.errores)
+        return _render_encuesta_form('editar', datos, ex.errores, filas, id_encuesta)
 
     flash(f"Encuesta '{id_encuesta}' actualizada.", 'exito')
-    return redirect(url_for('admin.encuestas_listar'))
+    datos['id_encuesta'] = id_encuesta
+    # Preguntas nuevas: cada una con su propio POST /api/Pregunta, que a su vez
+    # guarda la pregunta y SUS opciones juntas (sp_guardar_pregunta, v6). El
+    # orden sigue después de la última pregunta que ya tiene la encuesta.
+    ultimo = max((p['orden'] for p in _lista_de('Pregunta', limite=500, fkEncuesta=id_encuesta)), default=0)
+    fallidas = _crear_detalles('Pregunta', filas,
+                               lambda f, n: {**_pregunta_de_fila(f, ultimo + n), 'fk_encuesta': id_encuesta},
+                               'Pregunta', 'preguntas')
+    if fallidas:
+        return _render_encuesta_form('editar', datos, [], fallidas, id_encuesta)
+    return redirect(url_for('admin.encuestas_detalle', id_encuesta=id_encuesta))
 
 
 @admin_bp.route('/encuestas/<int:id_encuesta>/eliminar', methods=['POST'])
@@ -1005,9 +1213,15 @@ def _leer_form_programa():
     }
 
 
-def _render_programa_form(modo, programa, errores):
+# Maestro-detalle #10 en el formulario del programa: los alias en filas.
+CAMPOS_ALIAS_FILA = ('texto_normalizado',)
+
+
+def _render_programa_form(modo, programa, errores, filas_alias=(), codigo=None):
+    existentes = _alias_de(codigo) if modo == 'editar' and codigo else []
     return render_template('admin/programa_form.html', modo=modo, programa=programa, errores=errores,
-                           facultades=_opciones('Facultad'), niveles=NIVELES_PROGRAMA)
+                           facultades=_opciones('Facultad'), niveles=NIVELES_PROGRAMA,
+                           filas_alias=list(filas_alias), alias_existentes=existentes)
 
 
 @admin_bp.route('/programas')
@@ -1027,15 +1241,11 @@ def programas_nuevo():
 
     datos = _leer_form_programa()
     datos['codigo'] = request.form.get('codigo', '').strip()
-    # Retrofit V2 (Guía IA, Regla 1): alias iniciales, UNO POR LÍNEA en el
-    # <textarea>. Se mandan en el MISMO POST que el programa, así la API los
-    # guarda juntos en una sola transacción (SP sp_guardar_programa_academico).
-    # splitlines() parte el texto por renglones; se descartan los vacíos.
-    datos['alias'] = [
-        {'texto_normalizado': linea.strip()}
-        for linea in request.form.get('alias', '').splitlines()
-        if linea.strip()
-    ]
+    # Retrofit V2 (Guía IA, Regla 1): los alias de las FILAS del formulario
+    # se mandan en el MISMO POST que el programa, así la API los guarda
+    # juntos en una sola transacción (SP sp_guardar_programa_academico).
+    filas = _filas('ali', CAMPOS_ALIAS_FILA, clave='texto_normalizado')
+    datos['alias'] = [{'texto_normalizado': f['texto_normalizado']} for f in filas]
     try:
         crear('ProgramaAcademico', datos)
     except ErrorApi as ex:
@@ -1043,12 +1253,32 @@ def programas_nuevo():
         # 500 de un alias que ya existe (y entonces NO se creó nada: ni el
         # programa ni ningún alias).
         _avisar(ex)
-        return _render_programa_form('nueva', datos, ex.errores)
+        return _render_programa_form('nueva', datos, ex.errores, filas)
 
     cantidad = len(datos['alias'])
     sufijo = f" con {cantidad} alias" if cantidad else ''
     flash(f"Programa '{datos['codigo']}' creado{sufijo}.", 'exito')
-    return redirect(url_for('admin.programas_listar'))
+    return redirect(url_for('admin.programas_detalle', codigo=datos['codigo']))
+
+
+def _alias_de(codigo):
+    """Los alias de UN programa. La API no filtra AliasPrograma por
+    programa (RF80: solo '?limite='), así que se filtra aquí. La tabla es
+    pequeña (un puñado de alias por programa), mismo criterio que
+    '_ya_respondida' en routes/encuestas.py."""
+    return [a for a in _lista_de('AliasPrograma', limite=5000) if a['fk_programa'] == codigo]
+
+
+@admin_bp.route('/programas/<codigo>')
+def programas_detalle(codigo):
+    """Maestro-detalle #10: el programa con sus alias (nombres alternos)."""
+    try:
+        programa = obtener('ProgramaAcademico', codigo)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.programas_listar'))
+    return render_template('admin/programa_detalle.html', programa=programa,
+                           alias=sorted(_alias_de(codigo), key=lambda a: a['id_alias']))
 
 
 @admin_bp.route('/programas/<codigo>/editar', methods=['GET', 'POST'])
@@ -1059,18 +1289,26 @@ def programas_editar(codigo):
         except ErrorApi as ex:
             _avisar(ex)
             return redirect(url_for('admin.programas_listar'))
-        return _render_programa_form('editar', programa, [])
+        return _render_programa_form('editar', programa, [], codigo=codigo)
 
     datos = _leer_form_programa()
+    filas = _filas('ali', CAMPOS_ALIAS_FILA, clave='texto_normalizado')
     try:
         reemplazar('ProgramaAcademico', codigo, datos)
     except ErrorApi as ex:
         _avisar(ex)
         datos['codigo'] = codigo
-        return _render_programa_form('editar', datos, ex.errores)
+        return _render_programa_form('editar', datos, ex.errores, filas, codigo)
 
     flash(f"Programa '{codigo}' actualizado.", 'exito')
-    return redirect(url_for('admin.programas_listar'))
+    datos['codigo'] = codigo
+    # Alias nuevos: cada uno con su POST /api/AliasPrograma (el programa ya existe).
+    fallidas = _crear_detalles('AliasPrograma', filas,
+                               lambda f, n: {'texto_normalizado': f['texto_normalizado'], 'fk_programa': codigo},
+                               'Alias', 'alias')
+    if fallidas:
+        return _render_programa_form('editar', datos, [], fallidas, codigo)
+    return redirect(url_for('admin.programas_detalle', codigo=codigo))
 
 
 @admin_bp.route('/programas/<codigo>/eliminar', methods=['POST'])
@@ -1102,7 +1340,10 @@ def alias_listar():
 @admin_bp.route('/alias-programa/nuevo', methods=['GET', 'POST'])
 def alias_nuevo():
     if request.method == 'GET':
-        return render_template('admin/alias_form.html', alias=None, errores=[],
+        # Desde la pantalla del programa llega '?fk_programa=': queda preseleccionado.
+        fk_programa = request.args.get('fk_programa')
+        return render_template('admin/alias_form.html', errores=[],
+                               alias={'fk_programa': fk_programa} if fk_programa else None,
                                programas=_opciones('ProgramaAcademico'))
 
     datos = {
@@ -1120,7 +1361,7 @@ def alias_nuevo():
                                programas=_opciones('ProgramaAcademico'))
 
     flash(f"Alias creado con id {respuesta['id_alias']}.", 'exito')
-    return redirect(url_for('admin.alias_listar'))
+    return _redirigir('admin.alias_listar')
 
 
 @admin_bp.route('/alias-programa/<int:id_alias>/eliminar', methods=['POST'])
@@ -1130,7 +1371,7 @@ def alias_eliminar(id_alias):
         flash(f"Alias {id_alias} eliminado.", 'exito')
     except ErrorApi as ex:
         _avisar(ex)
-    return redirect(url_for('admin.alias_listar'))
+    return _redirigir('admin.alias_listar')
 
 
 # ==========================================================================
@@ -1153,9 +1394,32 @@ def _leer_form_catedra():
     }
 
 
-def _render_catedra_form(modo, catedra, errores):
-    return render_template('admin/catedra_form.html', modo=modo, catedra=catedra, errores=errores,
-                           tipos_evento=_opciones('TipoEvento'), dependencias=_opciones('Dependencia'))
+# Maestro-detalle #1 en el formulario: las sesiones de la cátedra.
+CAMPOS_SESION_FILA = ('titulo', 'inicio', 'fin', 'fk_modalidad', 'fk_sede', 'fk_periodo',
+                      'fk_encuesta', 'lugar')
+
+
+def _sesion_de_fila(fila):
+    """Una fila del formulario -> una sesión para la API (sin 'fk_catedra':
+    al crear la fija el SP; al editar se agrega aparte). Las horas del
+    datetime-local se envían con la zona de Colombia (ADR D21)."""
+    return {
+        'titulo': fila['titulo'] or None,
+        'inicio': desde_input(fila['inicio']),
+        'fin': desde_input(fila['fin']),
+        'fk_modalidad': fila['fk_modalidad'],
+        'fk_sede': fila['fk_sede'],
+        'fk_periodo': fila['fk_periodo'],
+        'fk_encuesta': _entero_o_none(fila['fk_encuesta']),
+        'lugar': fila['lugar'] or None,
+    }
+
+
+def _render_catedra_form(modo, catedra, errores, filas_sesiones=(), sesiones_existentes=None, choques=()):
+    return render_template('admin/catedra_form.html', modo=modo, catedra=catedra, errores=errores, choques=list(choques),
+                           tipos_evento=_opciones('TipoEvento'), dependencias=_opciones('Dependencia'),
+                           filas_sesiones=list(filas_sesiones), sesiones_existentes=sesiones_existentes or [],
+                           **_catalogos_sesion())
 
 
 @admin_bp.route('/catedras')
@@ -1192,37 +1456,86 @@ def catedras_nueva():
         return _render_catedra_form('nueva', None, [])
 
     datos = _leer_form_catedra()
+    # Regla 1: las sesiones escritas en el formulario viajan en el MISMO POST
+    # y la API guarda cátedra + sesiones en un solo CALL (sp_guardar_catedra).
+    filas = _filas('ses', CAMPOS_SESION_FILA, clave='inicio')
+    if filas:
+        # v7.1 · D52/D55: que ninguna sesión se cruce con otra en el mismo salón (si no se puede consultar, no se crea nada).
+        try:
+            choques = _choques_del_formulario(filas)
+        except ErrorApi as ex:
+            flash('No se pudo verificar la disponibilidad del horario, así que no se creó nada. '
+                  f"Intenta de nuevo en un momento. {ex.detalle or ''}".strip(), 'error')
+            return _render_catedra_form('nueva', datos, [], filas)
+        if choques:
+            # Fijos en la página (no flash: un flash de error ya no se borra, pero esto es una lista larga).
+            return _render_catedra_form('nueva', datos, [], filas, choques=choques)
+        datos['sesiones'] = [_sesion_de_fila(f) for f in filas]
     try:
         respuesta = crear('Catedra', datos)
     except ErrorApi as ex:
+        # Si UNA sesión falla, no se creó nada: vuelve todo lo escrito.
         _avisar(ex)
-        return _render_catedra_form('nueva', datos, ex.errores)
+        return _render_catedra_form('nueva', datos, ex.errores, filas)
 
-    flash(f"Cátedra creada con id {respuesta['id_catedra']} "
+    sufijo = f" con {len(filas)} sesion{'' if len(filas) == 1 else 'es'}" if filas else ''
+    flash(f"Cátedra creada con id {respuesta['id_catedra']}{sufijo} "
           f"(nombre ASIS: '{respuesta['nombre_asis']}').", 'exito')
-    return redirect(url_for('admin.catedras_listar'))
+    if filas:
+        # v7.1 · D53: cada sesión nace con su QR de cierre (se ve en «QR de asistencia» de la sesión).
+        qr_hechos, qr_total = asegurar_qr_de_catedra(respuesta['id_catedra'], usuario_actual().get('id_usuario'))
+        if qr_hechos != qr_total:
+            flash(f'Se generó el QR de {qr_hechos} de {qr_total} sesiones.', 'error')
+    return redirect(url_for('admin.catedras_detalle', id_catedra=respuesta['id_catedra']))
+
+
+@admin_bp.route('/catedras/<int:id_catedra>')
+def catedras_detalle(id_catedra):
+    """Maestro-detalle #1: la cátedra con sus sesiones (la relación
+    principal del sistema; 'numero_reunion' no se repite dentro de ella,
+    uq_sesion_reunion)."""
+    try:
+        catedra = obtener('Catedra', id_catedra)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.catedras_listar'))
+    # La API filtra por cátedra en SQL (?fkCatedra=): llegan solo las suyas.
+    sesiones = sorted(_lista_de('Sesion', limite=1000, fkCatedra=id_catedra),
+                      key=lambda s: s['numero_reunion'])
+    return render_template('admin/catedra_detalle.html', catedra=catedra, sesiones=sesiones)
 
 
 @admin_bp.route('/catedras/<int:id_catedra>/editar', methods=['GET', 'POST'])
 def catedras_editar(id_catedra):
+    existentes = sorted(_lista_de('Sesion', limite=1000, fkCatedra=id_catedra),
+                        key=lambda s: s['numero_reunion'])
     if request.method == 'GET':
         try:
             catedra = obtener('Catedra', id_catedra)
         except ErrorApi as ex:
             _avisar(ex)
             return redirect(url_for('admin.catedras_listar'))
-        return _render_catedra_form('editar', catedra, [])
+        return _render_catedra_form('editar', catedra, [], sesiones_existentes=existentes)
 
     datos = _leer_form_catedra()
+    filas = _filas('ses', CAMPOS_SESION_FILA, clave='inicio')
     try:
         reemplazar('Catedra', id_catedra, datos)
     except ErrorApi as ex:
         _avisar(ex)
         datos['id_catedra'] = id_catedra
-        return _render_catedra_form('editar', datos, ex.errores)
+        return _render_catedra_form('editar', datos, ex.errores, filas, existentes)
 
     flash(f"Cátedra {id_catedra} actualizada.", 'exito')
-    return redirect(url_for('admin.catedras_listar'))
+    # Sesiones nuevas: cada una con su propio POST /api/Sesion (la cátedra ya existe).
+    fallidas = _crear_detalles('Sesion', filas,
+                               lambda f, n: {**_sesion_de_fila(f), 'fk_catedra': id_catedra},
+                               'Sesión', 'sesiones')
+    if fallidas:
+        datos['id_catedra'] = id_catedra
+        return _render_catedra_form('editar', datos, [], fallidas,
+                                    _lista_de('Sesion', limite=1000, fkCatedra=id_catedra))
+    return redirect(url_for('admin.catedras_detalle', id_catedra=id_catedra))
 
 
 @admin_bp.route('/catedras/<int:id_catedra>/eliminar', methods=['POST'])
@@ -1288,6 +1601,35 @@ def _leer_form_asistente():
     }
 
 
+# Maestro-detalle #4 y #5 en el formulario del asistente: documentos en
+# filas (varios a la vez) y el consentimiento (casilla). Al crear viajan en el
+# MISMO POST (sp_guardar_asistente, v3); al editar, cada uno aparte.
+CAMPOS_DOCUMENTO_FILA = ('fk_tipo_documento', 'numero', 'vigente')
+
+
+def _documento_de_fila(fila):
+    return {'fk_tipo_documento': fila['fk_tipo_documento'], 'numero': fila['numero'],
+            'vigente': fila['vigente'] != 'no'}
+
+
+def _consentimiento_del_formulario():
+    """Lo que pide la casilla "aceptó la política" (o None si no está marcada)."""
+    if request.form.get('consentimiento') != 'on':
+        return None
+    return {'version_politica': request.form.get('version_politica', '').strip(),
+            'canal': request.form.get('canal') or 'WEB'}
+
+
+def _render_asistente_form(modo, asistente, errores, filas_documentos=(), id_asistente=None):
+    documentos, consentimientos = [], []
+    if modo == 'editar' and id_asistente:
+        documentos = _lista_de('DocumentoAsistente', fkAsistente=id_asistente)
+        consentimientos = _lista_de('ConsentimientoDatos', fkAsistente=id_asistente)
+    return render_template('admin/asistente_form.html', modo=modo, asistente=asistente, errores=errores,
+                           filas_documentos=list(filas_documentos), documentos_existentes=documentos,
+                           consentimientos_existentes=consentimientos, **_catalogos_asistente())
+
+
 def _volver_a_asistente(fk_asistente, respaldo):
     """Tras una acción sobre un detalle: a la ficha del asistente si se
     conoce, o al listado 'respaldo' si no."""
@@ -1318,17 +1660,17 @@ def asistentes_listar():
 @admin_bp.route('/asistentes/nuevo', methods=['GET', 'POST'])
 def asistentes_nuevo():
     if request.method == 'GET':
-        return render_template('admin/asistente_form.html', modo='nueva', asistente=None,
-                               errores=[], **_catalogos_asistente())
+        return _render_asistente_form('nueva', None, [])
 
     datos = _leer_form_asistente()
 
     # Guía IA, Regla 1: los detalles iniciales viajan en el MISMO POST y la
     # API los guarda junto con el asistente (sp_guardar_asistente). Cada
-    # bloque se agrega solo si el formulario lo trae lleno.
-    if request.form.get('doc_tipo') and request.form.get('doc_numero', '').strip():
-        datos['documentos'] = [{'fk_tipo_documento': request.form['doc_tipo'],
-                                'numero': request.form['doc_numero'].strip()}]
+    # bloque se agrega solo si el formulario lo trae lleno. Los documentos
+    # llegan en FILAS (pueden ser varios; solo uno vigente: ux_documento_vigente).
+    filas_documentos = _filas('doc', CAMPOS_DOCUMENTO_FILA, clave='numero')
+    if filas_documentos:
+        datos['documentos'] = [_documento_de_fila(f) for f in filas_documentos]
     if request.form.get('vinc_tipo'):
         vinculacion = {'fk_tipo_vinculacion': request.form['vinc_tipo']}
         if request.form.get('vinc_fecha_ini'):
@@ -1337,9 +1679,9 @@ def asistentes_nuevo():
     if request.form.get('prog_codigo') and request.form.get('prog_periodo'):
         datos['programas'] = [{'fk_programa': request.form['prog_codigo'],
                                'fk_periodo': request.form['prog_periodo']}]
-    if request.form.get('consentimiento') == 'on':
-        datos['consentimiento'] = {'version_politica': request.form.get('version_politica', '').strip(),
-                                   'canal': request.form.get('canal') or 'WEB'}
+    consentimiento = _consentimiento_del_formulario()
+    if consentimiento is not None:
+        datos['consentimiento'] = consentimiento
 
     try:
         respuesta = crear('Asistente', datos)
@@ -1347,8 +1689,7 @@ def asistentes_nuevo():
         # 400 (id_asis/es_externo, correos), 422 (forma) o 500: si fue un
         # detalle el que falló, NO se creó nada (ni el asistente).
         _avisar(ex)
-        return render_template('admin/asistente_form.html', modo='nueva', asistente=datos,
-                               errores=ex.errores, **_catalogos_asistente())
+        return _render_asistente_form('nueva', datos, ex.errores, filas_documentos)
 
     flash(f"Asistente creado con id {respuesta['id_asistente']}.", 'exito')
     return redirect(url_for('admin.asistentes_detalle', id_asistente=respuesta['id_asistente']))
@@ -1384,19 +1725,36 @@ def asistentes_editar(id_asistente):
         except ErrorApi as ex:
             _avisar(ex)
             return redirect(url_for('admin.asistentes_listar'))
-        return render_template('admin/asistente_form.html', modo='editar', asistente=asistente,
-                               errores=[], **_catalogos_asistente())
+        return _render_asistente_form('editar', asistente, [], id_asistente=id_asistente)
 
     datos = _leer_form_asistente()
+    filas = _filas('doc', CAMPOS_DOCUMENTO_FILA, clave='numero')
     try:
         reemplazar('Asistente', id_asistente, datos)
     except ErrorApi as ex:
         _avisar(ex)
         datos['id_asistente'] = id_asistente
-        return render_template('admin/asistente_form.html', modo='editar', asistente=datos,
-                               errores=ex.errores, **_catalogos_asistente())
+        return _render_asistente_form('editar', datos, ex.errores, filas, id_asistente)
 
     flash(f"Asistente {id_asistente} actualizado.", 'exito')
+    datos['id_asistente'] = id_asistente
+
+    # Detalles nuevos: el asistente ya existe -> cada uno aparte.
+    fallidas = _crear_detalles('DocumentoAsistente', filas,
+                               lambda f, n: {**_documento_de_fila(f), 'fk_asistente': id_asistente},
+                               'Documento', 'documentos')
+    hubo_error = False
+    consentimiento = _consentimiento_del_formulario()
+    if consentimiento is not None:
+        try:
+            crear('ConsentimientoDatos', {**consentimiento, 'fk_asistente': id_asistente,
+                                          'ip': request.remote_addr})
+            flash('Consentimiento registrado.', 'exito')
+        except ErrorApi as ex:
+            _avisar(ex)
+            hubo_error = True
+    if fallidas or hubo_error:
+        return _render_asistente_form('editar', datos, [], fallidas, id_asistente)
     return redirect(url_for('admin.asistentes_detalle', id_asistente=id_asistente))
 
 
@@ -1755,14 +2113,47 @@ def _leer_form_sesion():
         'fk_encuesta': _entero_o_none(request.form.get('fk_encuesta')),
         'lugar': _texto_o_none('lugar'),
         'enlace_virtual': _texto_o_none('enlace_virtual'),
-        'cupo': _entero_o_none(request.form.get('cupo')),
         'estado': request.form.get('estado') or 'PROGRAMADA',
     }
 
 
-def _render_sesion_form(modo, sesion, catedra, errores):
+# Maestro-detalle #2 y #3 en el formulario de la sesión:
+#  · enlace de registro: casilla "emitir" (al crear, en el MISMO CALL:
+#    sp_guardar_sesion; al editar, POST /api/EnlaceRegistro aparte).
+#  · registros de asistencia: filas, SOLO al editar (la asistencia ocurre
+#    cuando la sesión ya existe). La persona se busca y se elige (Regla 2).
+CAMPOS_REGISTRO_FILA = ('fk_asistente', 'texto_asistente', 'origen')
+
+
+def _enlace_del_formulario():
+    """Lo que pide la casilla "emitir enlace" (o None si no está marcada).
+    'fk_usuario' = el administrador con la sesión abierta (Regla 2)."""
+    if request.form.get('emitir_enlace') != 'on':
+        return None
+    enlace = {'fk_usuario': _id_admin_actual()}
+    for campo in ('minutos_antes', 'minutos_despues'):     # vacío -> el del parámetro
+        valor = _entero_o_none(request.form.get(campo))
+        if valor is not None:
+            enlace[campo] = valor
+    return {k: v for k, v in enlace.items() if v is not None}
+
+
+def _render_sesion_form(modo, sesion, catedra, errores, filas_registros=(), id_sesion=None,
+                        emitir_marcado=False):
+    # Al editar se muestra lo que la sesión YA tiene (solo lectura aquí).
+    enlaces, registros = [], []
+    if modo == 'editar' and id_sesion:
+        enlaces = _preparar_enlaces(_lista_de('EnlaceRegistro', limite=500, fkSesion=id_sesion))
+        registros = _lista_de('RegistroAsistencia', limite=5000, fkSesion=id_sesion)
     return render_template('admin/sesion_form.html', modo=modo, sesion=sesion, catedra=catedra,
-                           errores=errores, **_catalogos_sesion())
+                           errores=errores, filas_registros=list(filas_registros),
+                           enlaces_existentes=enlaces, registros_existentes=registros,
+                           # La casilla "emitir enlace" vuelve marcada SOLO si ese enlace
+                           # todavía no se emitió (si no, reenviar emitiría otro).
+                           emitir_marcado=emitir_marcado,
+                           minutos_antes=request.form.get('minutos_antes', ''),
+                           minutos_despues=request.form.get('minutos_despues', ''),
+                           **_catalogos_sesion())
 
 
 def _catedra_o_none(id_catedra):
@@ -1793,7 +2184,7 @@ def sesiones_listar():
 def sesiones_nueva():
     fk_catedra = _entero_o_none(request.values.get('fk_catedra'))
     if not fk_catedra:
-        flash('Elige primero la cátedra: botón "Sesiones" en la lista de cátedras.', 'error')
+        flash('Elige primero la cátedra: entra a la cátedra (lista de cátedras) y usa "Nueva sesión".', 'error')
         return redirect(url_for('admin.catedras_listar'))
     catedra = _catedra_o_none(fk_catedra)
 
@@ -1804,16 +2195,56 @@ def sesiones_nueva():
     datos['fk_catedra'] = fk_catedra          # lo fija la URL, no se digita
     if datos['numero_reunion'] is None:
         del datos['numero_reunion']            # ausente -> la BD pone el consecutivo
+    # Regla 1: si se marcó "emitir enlace", viaja en el MISMO POST y la API
+    # crea sesión + enlace en un solo CALL (sp_guardar_sesion).
+    enlace = _enlace_del_formulario()
+    if enlace is not None:
+        datos['enlace'] = enlace
     try:
         respuesta = crear('Sesion', datos)
     except ErrorApi as ex:
         # 400 (fin <= inicio), 422 (forma) o 500 (FK, número repetido).
+        # Si el enlace falló, tampoco quedó la sesión.
         _avisar(ex)
-        return _render_sesion_form('nueva', datos, catedra, ex.errores)
+        return _render_sesion_form('nueva', datos, catedra, ex.errores, emitir_marcado=enlace is not None)
 
     flash(f"Sesión creada con id {respuesta['id_sesion']}: la base de datos le asignó "
-          f"el número de reunión {respuesta['numero_reunion']}.", 'exito')
-    return redirect(url_for('admin.sesiones_listar', fk_catedra=fk_catedra))
+          f"el número de reunión {respuesta['numero_reunion']}"
+          + (" y emitió su enlace de registro." if enlace is not None else "."), 'exito')
+    return redirect(url_for('admin.sesiones_detalle', id_sesion=respuesta['id_sesion']))
+
+
+@admin_bp.route('/sesiones/<int:id_sesion>')
+def sesiones_detalle(id_sesion):
+    """Maestro-detalle #2 y #3: la sesión con sus enlaces de registro y sus
+    registros de asistencia (y, de cada registro, si ya respondió la
+    encuesta: #8). Desde aquí se emite / revoca el enlace y se registra
+    asistencia a mano; todo regresa a esta misma pantalla ('volver')."""
+    try:
+        sesion = obtener('Sesion', id_sesion)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.sesiones_listar'))
+
+    enlaces = _preparar_enlaces(_lista_de('EnlaceRegistro', limite=500, fkSesion=id_sesion))
+    registros = _lista_de('RegistroAsistencia', limite=5000, fkSesion=id_sesion)
+
+    # ¿Qué registros ya respondieron la encuesta de la sesión? La API no
+    # filtra RespuestaEncuesta por registro (solo por encuesta), así que se
+    # piden las de la encuesta UNA vez y se cruzan aquí (igual que
+    # '_ya_respondida' en routes/encuestas.py).
+    respondidas = {}
+    if sesion.get('fk_encuesta') and registros:
+        for r in _lista_de('RespuestaEncuesta', limite=5000, fkEncuesta=sesion['fk_encuesta']):
+            respondidas[r['fk_registro']] = r['id_respuesta']
+    for r in registros:
+        r['id_respuesta'] = respondidas.get(r['id_registro'])
+
+    texto = request.args.get('q', '').strip()
+    return render_template('admin/sesion_detalle.html', sesion=sesion,
+                           catedra=_catedra_o_none(sesion['fk_catedra']),
+                           enlaces=enlaces, registros=registros, q=texto,
+                           candidatos=buscar_candidatos(texto))
 
 
 @admin_bp.route('/sesiones/<int:id_sesion>/editar', methods=['GET', 'POST'])
@@ -1826,19 +2257,42 @@ def sesiones_editar(id_sesion):
     catedra = _catedra_o_none(actual['fk_catedra'])
 
     if request.method == 'GET':
-        return _render_sesion_form('editar', actual, catedra, [])
+        return _render_sesion_form('editar', actual, catedra, [], id_sesion=id_sesion)
 
     datos = _leer_form_sesion()
     datos['fk_catedra'] = actual['fk_catedra']   # PUT = reemplazo completo; la cátedra no cambia aquí
+    filas = _filas('reg', CAMPOS_REGISTRO_FILA, clave='fk_asistente')
     try:
         reemplazar('Sesion', id_sesion, datos)
     except ErrorApi as ex:
         _avisar(ex)
         datos['id_sesion'] = id_sesion
-        return _render_sesion_form('editar', datos, catedra, ex.errores)
+        return _render_sesion_form('editar', datos, catedra, ex.errores, filas, id_sesion,
+                                   emitir_marcado=request.form.get('emitir_enlace') == 'on')
 
     flash(f"Sesión {id_sesion} actualizada.", 'exito')
-    return redirect(url_for('admin.sesiones_listar', fk_catedra=actual['fk_catedra']))
+    datos['id_sesion'] = id_sesion
+
+    # Detalles nuevos: la sesión ya existe, así que cada uno es su propia
+    # petición (caso "No aplica" de la Regla 1).
+    hubo_error = False
+    enlace = _enlace_del_formulario()
+    if enlace is not None:
+        try:
+            crear('EnlaceRegistro', {**enlace, 'fk_sesion': id_sesion})
+            flash('Enlace de registro emitido (el anterior, si había uno vigente, quedó revocado).', 'exito')
+        except ErrorApi as ex:
+            _avisar(ex)
+            hubo_error = True
+    fallidas = _crear_detalles('RegistroAsistencia', filas,
+                               lambda f, n: {'fk_sesion': id_sesion,
+                                             'fk_asistente': _entero_o_none(f['fk_asistente']),
+                                             'origen': f['origen'] or 'MANUAL'},
+                               'Registro', 'registros')
+    if fallidas or hubo_error:
+        return _render_sesion_form('editar', datos, catedra, [], fallidas, id_sesion,
+                                   emitir_marcado=hubo_error)
+    return redirect(url_for('admin.sesiones_detalle', id_sesion=id_sesion))
 
 
 @admin_bp.route('/sesiones/<int:id_sesion>/eliminar', methods=['POST'])
@@ -1851,7 +2305,7 @@ def sesiones_eliminar(id_sesion):
         # 500 típico: la sesión ya tiene registros de asistencia o un lote de
         # migración (RESTRICT). No se borró NADA, ni siquiera sus ponencias.
         _avisar(ex)
-    return redirect(url_for('admin.sesiones_listar', fk_catedra=fk_catedra))
+    return _redirigir('admin.sesiones_listar', fk_catedra=fk_catedra)
 
 
 # ==========================================================================
@@ -1958,6 +2412,17 @@ def usuarios_nuevo():
                                q='', candidatos=_candidatos_de(datos['fk_asistente']))
 
     flash(f"Usuario '{datos['usuario']}' creado.", 'exito')
+    return redirect(url_for('admin.usuarios_listar'))
+
+
+@admin_bp.route('/usuarios/<int:id_usuario>/exigir-cambio-clave', methods=['POST'])
+def usuarios_exigir_cambio(id_usuario):
+    """v7.1 · D54 · Obliga a esa persona a cambiar su clave en el próximo ingreso."""
+    try:
+        crear(f'Usuario/{id_usuario}/exigir-cambio-clave', {})
+        flash('Esa persona deberá cambiar su clave la próxima vez que entre.', 'exito')
+    except ErrorApi as ex:
+        _avisar(ex)
     return redirect(url_for('admin.usuarios_listar'))
 
 
@@ -2099,12 +2564,19 @@ def enlaces_listar():
     except ErrorApi as ex:
         _avisar(ex)
         enlaces = []
+    return render_template('admin/enlace_lista.html', enlaces=_preparar_enlaces(enlaces),
+                           fk_sesion=fk_sesion, sesion=sesion)
+
+
+def _preparar_enlaces(enlaces):
+    """Agrega a cada enlace su estado y el enlace público para compartir
+    (lo usan la lista de enlaces y la pantalla de la sesión)."""
     for e in enlaces:
         e['estado'] = _estado_enlace(e)
         # El enlace que se COMPARTE con el público es el de ESTE front
         # (url_publica de la BD es solo el dato guardado).
         e['enlace_publico'] = url_for('registro.solicitar', token=e['token'], _external=True)
-    return render_template('admin/enlace_lista.html', enlaces=enlaces, fk_sesion=fk_sesion, sesion=sesion)
+    return enlaces
 
 
 @admin_bp.route('/enlaces/emitir', methods=['POST'])
@@ -2124,7 +2596,7 @@ def enlaces_emitir():
               "Si la sesión tenía otro enlace vigente, quedó revocado (RN-14).", 'exito')
     except ErrorApi as ex:
         _avisar(ex)        # 422 sin sesión, 500 si la sesión no existe
-    return redirect(url_for('admin.enlaces_listar', fk_sesion=fk_sesion))
+    return _redirigir('admin.enlaces_listar', fk_sesion=fk_sesion)
 
 
 @admin_bp.route('/enlaces/<int:id_enlace>/revocar', methods=['POST'])
@@ -2134,7 +2606,7 @@ def enlaces_revocar(id_enlace):
         flash(f'Enlace {id_enlace} revocado.', 'exito')
     except ErrorApi as ex:
         _avisar(ex)        # 400 si ya estaba revocado, 404 si no existe
-    return redirect(url_for('admin.enlaces_listar', fk_sesion=_entero_o_none(request.form.get('volver_fk_sesion'))))
+    return _redirigir('admin.enlaces_listar', fk_sesion=_entero_o_none(request.form.get('volver_fk_sesion')))
 
 
 # ==========================================================================
@@ -2188,10 +2660,833 @@ def registros_nuevo():
     }
     if datos['fk_asistente'] is None:
         flash('Selecciona una persona de la lista (primero búscala).', 'error')
-        return redirect(url_for('admin.registros_listar', fk_sesion=fk_sesion))
+        return _redirigir('admin.registros_listar', fk_sesion=fk_sesion)
     try:
         respuesta = crear('RegistroAsistencia', datos)
         flash(f"Asistencia registrada (registro {respuesta['id_registro']}).", 'exito')
     except ErrorApi as ex:
         _avisar(ex)        # 400 origen inválido, 500 si el asistente no tiene vinculación vigente (RN-07)
-    return redirect(url_for('admin.registros_listar', fk_sesion=fk_sesion))
+    return _redirigir('admin.registros_listar', fk_sesion=fk_sesion)
+
+
+def _respuesta_de_registro(registro, sesion):
+    """La RespuestaEncuesta de un registro (a lo sumo una:
+    uq_respuesta_registro), o None. La API solo filtra RespuestaEncuesta
+    por encuesta, así que se piden las de la encuesta de la sesión (o todas,
+    si la sesión no tiene encuesta) y se busca el registro aquí. Son pocas
+    (62 en los datos de ejemplo): mismo criterio que '_ya_respondida'."""
+    filtros = {'fkEncuesta': sesion['fk_encuesta']} if sesion and sesion.get('fk_encuesta') else {}
+    for r in _lista_de('RespuestaEncuesta', limite=20000, **filtros):
+        if r['fk_registro'] == registro['id_registro']:
+            return r
+    return None
+
+
+@admin_bp.route('/registros/<int:id_registro>')
+def registros_detalle(id_registro):
+    """Maestro-detalle #8: el registro de asistencia con su respuesta de
+    encuesta (la respuesta cuelga del REGISTRO, no de la encuesta) y, de
+    una vez, los ítems de esa respuesta (#9)."""
+    try:
+        registro = obtener('RegistroAsistencia', id_registro)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.registros_listar'))
+
+    sesion = _sesion_o_none(registro['fk_sesion'])
+    asistente = None
+    try:
+        asistente = obtener('Asistente', registro['fk_asistente'])
+    except ErrorApi:
+        pass   # se muestra solo el id
+
+    respuesta = _respuesta_de_registro(registro, sesion)
+    items = _items_de_respuesta(respuesta['id_respuesta']) if respuesta else []
+    return render_template('admin/registro_asistencia_detalle.html', registro=registro, sesion=sesion,
+                           asistente=asistente, respuesta=respuesta, items=items)
+
+
+# ==========================================================================
+#  v6 · PREGUNTA  (recurso API: "Pregunta", clave: id_pregunta)
+#  CRUD con 'opciones' iniciales OPCIONALES al crear (Guía IA, Regla 1):
+#  una pregunta de tipo OPCION_UNICA se crea junto con sus opciones, en
+#  una sola transacción (sp_guardar_pregunta) — igual mecánica que el
+#  alias de ProgramaAcademico (v2), pero de nacimiento, no retrofit.
+#  El PUT de editar NO toca 'fk_encuesta' ni las opciones (D33): esas se
+#  administran aparte, en OpcionPregunta.
+# ==========================================================================
+
+def _opciones_de_texto(texto):
+    """Una opción por línea, formato libre 'etiqueta' o 'etiqueta;valor'.
+    El 'orden' lo pone la posición de la línea (Regla 2: nada que la
+    persona tenga que numerar a mano). Lo usan las filas de pregunta del
+    formulario de la ENCUESTA (dos niveles de detalle en un solo campo)."""
+    opciones = []
+    for i, linea in enumerate((texto or '').splitlines(), start=1):
+        linea = linea.strip()
+        if not linea:
+            continue
+        etiqueta, _, valor = linea.partition(';')
+        opcion = {'etiqueta': etiqueta.strip(), 'orden': i}
+        valor = valor.strip()
+        if valor:
+            try:
+                opcion['valor'] = int(valor)
+            except ValueError:
+                pass   # un valor no numérico se ignora; la etiqueta y el orden sí quedan
+        opciones.append(opcion)
+    return opciones
+
+
+def _leer_form_pregunta():
+    datos = {
+        'enunciado': request.form.get('enunciado', '').strip(),
+        'orden': _entero_o_none(request.form.get('orden')),
+        'fk_tipo_pregunta': request.form.get('fk_tipo_pregunta', ''),
+        'obligatoria': request.form.get('obligatoria') == 'on',
+    }
+    valor_min = _entero_o_none(request.form.get('valor_min'))
+    valor_max = _entero_o_none(request.form.get('valor_max'))
+    if valor_min is not None:
+        datos['valor_min'] = valor_min
+    if valor_max is not None:
+        datos['valor_max'] = valor_max
+    return datos
+
+
+# Maestro-detalle #7 en el formulario de la pregunta: las opciones en filas.
+CAMPOS_OPCION_FILA = ('etiqueta', 'valor')
+
+
+def _opcion_de_fila(fila, orden):
+    opcion = {'etiqueta': fila['etiqueta'], 'orden': orden}
+    valor = _entero_o_none(fila['valor'])
+    if valor is not None:
+        opcion['valor'] = valor
+    return opcion
+
+
+def _render_pregunta_form(modo, pregunta, errores, filas_opciones=(), id_pregunta=None):
+    existentes = []
+    if modo == 'editar' and id_pregunta:
+        existentes = sorted(_lista_de('OpcionPregunta', limite=500, fkPregunta=id_pregunta), key=lambda o: o['orden'])
+    return render_template('admin/pregunta_form.html', modo=modo, pregunta=pregunta, errores=errores,
+                           encuestas=_opciones('Encuesta'), tipos=_opciones('TipoPregunta'),
+                           filas_opciones=list(filas_opciones), opciones_existentes=existentes)
+
+
+def _encuesta_o_none(id_encuesta):
+    """La encuesta (para el título y las migas de pan), o None."""
+    if not id_encuesta:
+        return None
+    try:
+        return obtener('Encuesta', id_encuesta)
+    except ErrorApi:
+        return None
+
+
+@admin_bp.route('/preguntas')
+def preguntas_listar():
+    fk_encuesta = _entero_o_none(request.args.get('fk_encuesta'))
+    try:
+        preguntas = listar('Pregunta', limite=200, fkEncuesta=fk_encuesta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        preguntas = []
+    return render_template('admin/pregunta_lista.html', preguntas=preguntas, fk_encuesta=fk_encuesta,
+                           encuestas=_opciones('Encuesta'))
+
+
+@admin_bp.route('/preguntas/nueva', methods=['GET', 'POST'])
+def preguntas_nueva():
+    if request.method == 'GET':
+        # Desde la pantalla de la encuesta llega '?fk_encuesta=': queda preseleccionada.
+        fk_encuesta = _entero_o_none(request.args.get('fk_encuesta'))
+        return _render_pregunta_form('nueva', {'fk_encuesta': fk_encuesta} if fk_encuesta else None, [])
+
+    datos = _leer_form_pregunta()
+    datos['fk_encuesta'] = _entero_o_none(request.form.get('fk_encuesta'))
+    # Retrofit v6 (Guía IA, Regla 1): las opciones de las FILAS del
+    # formulario viajan en el MISMO POST que la pregunta -> sp_guardar_pregunta
+    # las guarda juntas en una sola transacción. Si alguna falla, NO se crea
+    # ni la pregunta (todo o nada). El orden lo pone la posición de la fila.
+    filas = _filas('opc', CAMPOS_OPCION_FILA, clave='etiqueta')
+    opciones = [_opcion_de_fila(f, n) for n, f in enumerate(filas, start=1)]
+    if opciones:
+        datos['opciones'] = opciones
+    try:
+        respuesta = crear('Pregunta', datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return _render_pregunta_form('nueva', datos, ex.errores, filas)
+
+    cantidad = len(opciones)
+    sufijo = f" con {cantidad} opciones" if cantidad else ''
+    flash(f"Pregunta creada{sufijo}.", 'exito')
+    return redirect(url_for('admin.preguntas_detalle', id_pregunta=respuesta['id_pregunta']))
+
+
+@admin_bp.route('/preguntas/<int:id_pregunta>')
+def preguntas_detalle(id_pregunta):
+    """Maestro-detalle #7: la pregunta con sus opciones (en su orden,
+    uq_opcion_orden). Desde aquí se agregan, editan y borran."""
+    try:
+        pregunta = obtener('Pregunta', id_pregunta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.preguntas_listar'))
+    opciones = sorted(_lista_de('OpcionPregunta', limite=500, fkPregunta=id_pregunta),
+                      key=lambda o: o['orden'])
+    return render_template('admin/pregunta_detalle.html', pregunta=pregunta, opciones=opciones,
+                           encuesta=_encuesta_o_none(pregunta['fk_encuesta']))
+
+
+@admin_bp.route('/preguntas/<int:id_pregunta>/editar', methods=['GET', 'POST'])
+def preguntas_editar(id_pregunta):
+    if request.method == 'GET':
+        try:
+            pregunta = obtener('Pregunta', id_pregunta)
+        except ErrorApi as ex:
+            _avisar(ex)
+            return redirect(url_for('admin.preguntas_listar'))
+        return _render_pregunta_form('editar', pregunta, [], id_pregunta=id_pregunta)
+
+    datos = _leer_form_pregunta()
+    filas = _filas('opc', CAMPOS_OPCION_FILA, clave='etiqueta')
+    try:
+        reemplazar('Pregunta', id_pregunta, datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        datos['id_pregunta'] = id_pregunta
+        return _render_pregunta_form('editar', datos, ex.errores, filas, id_pregunta)
+
+    flash(f"Pregunta {id_pregunta} actualizada.", 'exito')
+    datos['id_pregunta'] = id_pregunta
+    # Opciones nuevas: cada una con su POST /api/OpcionPregunta; el orden
+    # sigue después de la última que ya tiene la pregunta (uq_opcion_orden).
+    ultimo = max((o['orden'] for o in _lista_de('OpcionPregunta', limite=500, fkPregunta=id_pregunta)), default=0)
+    fallidas = _crear_detalles('OpcionPregunta', filas,
+                               lambda f, n: {**_opcion_de_fila(f, ultimo + n), 'fk_pregunta': id_pregunta},
+                               'Opción', 'opciones')
+    if fallidas:
+        return _render_pregunta_form('editar', datos, [], fallidas, id_pregunta)
+    return redirect(url_for('admin.preguntas_detalle', id_pregunta=id_pregunta))
+
+
+@admin_bp.route('/preguntas/<int:id_pregunta>/eliminar', methods=['POST'])
+def preguntas_eliminar(id_pregunta):
+    try:
+        eliminar('Pregunta', id_pregunta)
+        flash(f"Pregunta {id_pregunta} eliminada.", 'exito')
+    except ErrorApi as ex:
+        # 500 típico: ya tiene respuestas de ejemplo (respuesta_item,
+        # RESTRICT) — la cascada hacia sus opciones no llega a ejecutarse.
+        _avisar(ex)
+    return _redirigir('admin.preguntas_listar')
+
+
+# ==========================================================================
+#  v6 · OPCIÓN DE PREGUNTA  (recurso API: "OpcionPregunta", clave: id_opcion)
+#  CRUD completo (D33): a diferencia de AliasPrograma/ConsentimientoDatos,
+#  aquí SÍ hace falta editar — corregir la etiqueta o reordenar una
+#  opción es una edición legítima, no "una nueva versión del hecho".
+# ==========================================================================
+
+def _leer_form_opcion():
+    datos = {
+        'etiqueta': request.form.get('etiqueta', '').strip(),
+        'orden': _entero_o_none(request.form.get('orden')),
+    }
+    valor = _entero_o_none(request.form.get('valor'))
+    if valor is not None:
+        datos['valor'] = valor
+    return datos
+
+
+@admin_bp.route('/opciones-pregunta')
+def opciones_listar():
+    fk_pregunta = _entero_o_none(request.args.get('fk_pregunta'))
+    try:
+        opciones = listar('OpcionPregunta', limite=200, fkPregunta=fk_pregunta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        opciones = []
+    return render_template('admin/opcion_pregunta_lista.html', opciones=opciones, fk_pregunta=fk_pregunta)
+
+
+@admin_bp.route('/opciones-pregunta/nueva', methods=['GET', 'POST'])
+def opciones_nueva():
+    if request.method == 'GET':
+        fk_pregunta = _entero_o_none(request.args.get('fk_pregunta'))
+        return render_template('admin/opcion_pregunta_form.html', modo='nueva', opcion=None, errores=[],
+                               fk_pregunta=fk_pregunta, preguntas=_opciones('Pregunta'))
+
+    datos = _leer_form_opcion()
+    datos['fk_pregunta'] = _entero_o_none(request.form.get('fk_pregunta'))
+    try:
+        respuesta = crear('OpcionPregunta', datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return render_template('admin/opcion_pregunta_form.html', modo='nueva', opcion=datos, errores=ex.errores,
+                               fk_pregunta=datos['fk_pregunta'], preguntas=_opciones('Pregunta'))
+
+    flash(f"Opción creada con id {respuesta['id_opcion']}.", 'exito')
+    return _redirigir('admin.opciones_listar', fk_pregunta=datos['fk_pregunta'])
+
+
+@admin_bp.route('/opciones-pregunta/<int:id_opcion>/editar', methods=['GET', 'POST'])
+def opciones_editar(id_opcion):
+    if request.method == 'GET':
+        try:
+            opcion = obtener('OpcionPregunta', id_opcion)
+        except ErrorApi as ex:
+            _avisar(ex)
+            return redirect(url_for('admin.opciones_listar'))
+        return render_template('admin/opcion_pregunta_form.html', modo='editar', opcion=opcion, errores=[],
+                               fk_pregunta=None, preguntas=[])
+
+    datos = _leer_form_opcion()
+    try:
+        reemplazar('OpcionPregunta', id_opcion, datos)
+    except ErrorApi as ex:
+        _avisar(ex)
+        datos['id_opcion'] = id_opcion
+        return render_template('admin/opcion_pregunta_form.html', modo='editar', opcion=datos, errores=ex.errores,
+                               fk_pregunta=None, preguntas=[])
+
+    flash(f"Opción {id_opcion} actualizada.", 'exito')
+    return _redirigir('admin.opciones_listar')
+
+
+@admin_bp.route('/opciones-pregunta/<int:id_opcion>/eliminar', methods=['POST'])
+def opciones_eliminar(id_opcion):
+    try:
+        eliminar('OpcionPregunta', id_opcion)
+        flash(f"Opción {id_opcion} eliminada.", 'exito')
+    except ErrorApi as ex:
+        # 500 típico: ya fue elegida en alguna respuesta de ejemplo
+        # (respuesta_item.fk_opcion, RESTRICT).
+        _avisar(ex)
+    return _redirigir('admin.opciones_listar')
+
+
+# ==========================================================================
+#  v6 · RESPUESTA DE ENCUESTA  (recurso API: "RespuestaEncuesta")  ·  SOLO LECTURA
+#  Nace cuando un asistente responde su encuesta (front público, fuera de
+#  /admin — ver routes/encuestas.py). Es un hecho auditable (D32, igual
+#  criterio que ConsentimientoDatos en v3 y RegistroAsistencia en v5):
+#  sin editar ni eliminar, ni aquí ni en la API.
+# ==========================================================================
+
+@admin_bp.route('/respuestas-encuesta')
+def respuestas_listar():
+    fk_encuesta = _entero_o_none(request.args.get('fk_encuesta'))
+    try:
+        respuestas = listar('RespuestaEncuesta', limite=200, fkEncuesta=fk_encuesta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        respuestas = []
+    return render_template('admin/respuesta_encuesta_lista.html', respuestas=respuestas,
+                           fk_encuesta=fk_encuesta, encuestas=_opciones('Encuesta'))
+
+
+@admin_bp.route('/respuestas-encuesta/<int:id_respuesta>')
+def respuestas_detalle(id_respuesta):
+    """Maestro-detalle #9: la respuesta con sus ítems (uno por pregunta)."""
+    try:
+        respuesta = obtener('RespuestaEncuesta', id_respuesta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        return redirect(url_for('admin.respuestas_listar'))
+    return render_template('admin/respuesta_encuesta_detalle.html', respuesta=respuesta,
+                           items=_items_de_respuesta(id_respuesta))
+
+
+def _items_de_respuesta(id_respuesta):
+    """Los RespuestaItem de una respuesta, cada uno con su pregunta y su
+    opción elegida, en el orden de las preguntas. Lo usan el detalle de la
+    respuesta (#9) y el del registro de asistencia (#8)."""
+    items = []
+    try:
+        items = listar('RespuestaItem', fkRespuesta=id_respuesta)
+        # Cada ítem solo trae 'fk_pregunta'/'fk_opcion'; se pide cada una
+        # para mostrar el enunciado y la etiqueta (pocos ítems por
+        # respuesta: una llamada por pregunta es aceptable, igual
+        # criterio que 'ponentes_de' en routes/sesiones.py).
+        cache_preguntas = {}
+        cache_opciones = {}
+        for item in items:
+            fk_pregunta = item['fk_pregunta']
+            if fk_pregunta not in cache_preguntas:
+                try:
+                    cache_preguntas[fk_pregunta] = obtener('Pregunta', fk_pregunta)
+                except ErrorApi:
+                    cache_preguntas[fk_pregunta] = None
+            item['pregunta'] = cache_preguntas[fk_pregunta]
+
+            fk_opcion = item.get('fk_opcion')
+            if fk_opcion:
+                if fk_opcion not in cache_opciones:
+                    try:
+                        cache_opciones[fk_opcion] = obtener('OpcionPregunta', fk_opcion)
+                    except ErrorApi:
+                        cache_opciones[fk_opcion] = None
+                item['opcion'] = cache_opciones[fk_opcion]
+    except ErrorApi as ex:
+        _avisar(ex)
+
+    items.sort(key=lambda i: i['pregunta']['orden'] if i.get('pregunta') else 0)
+    return items
+
+
+# ==========================================================================
+#  v6 · ÍTEM DE RESPUESTA  (recurso API: "RespuestaItem")  ·  SOLO LECTURA
+#  Nace solo dentro de "responder" (RF178); normalmente se consulta desde
+#  el detalle de su RespuestaEncuesta (arriba). Esta lista es el filtro
+#  libre, igual criterio que ClaveAcceso en v5.
+# ==========================================================================
+
+@admin_bp.route('/items-respuesta')
+def items_listar():
+    fk_respuesta = _entero_o_none(request.args.get('fk_respuesta'))
+    try:
+        items = listar('RespuestaItem', limite=200, fkRespuesta=fk_respuesta)
+    except ErrorApi as ex:
+        _avisar(ex)
+        items = []
+    return render_template('admin/respuesta_item_lista.html', items=items, fk_respuesta=fk_respuesta)
+
+
+# ==========================================================================
+#  VERSIÓN 7 · MIGRACIÓN A ASIS, BITÁCORA Y PARÁMETROS
+#  (criterio 8 de version7/2_spec.md; decisión D37-E: todo vive en ESTE
+#  blueprint para heredar la guardia de rol ADMIN del before_request de
+#  arriba — un blueprint nuevo no la tendría).
+#
+#  Cuatro bloques:
+#    · PARÁMETROS        -> CRUD completo, llave de texto ('clave').
+#    · LOTES DE MIGRACIÓN -> lista, detalle con sus filas, PATCH de estado
+#                           y de resultado por fila, y "generar migración"
+#                           de una sesión (POST bajo /admin).
+#    · DETALLE DE MIGRACIÓN -> lista filtrable de las filas de los lotes.
+#    · BITÁCORA          -> SOLO LECTURA (D36): la escriben los triggers.
+#
+#  Criterio 11 de VERSION_2.md: en estas pantallas no aparecen nombres de
+#  verbos HTTP, códigos de estado ni nombres de restricciones de la BD.
+#  Los errores conocidos de la API se traducen a castellano en
+#  '_avisar_v7' (abajo); el resto se muestra con el mensaje de la API.
+# ==========================================================================
+
+TIPOS_DATO = ['TEXTO', 'ENTERO', 'BOOLEANO', 'FECHA', 'DECIMAL']   # refleja chk_parametro_tipo
+RESULTADOS_MIGRACION = ['PENDIENTE', 'ACEPTADO', 'RECHAZADO']       # refleja chk_detalle_resultado
+TABLAS_BITACORA = ['registro_asistencia', 'asistente']              # las dos con trigger de bitácora
+LIMITES_BITACORA = [20, 50, 100, 500]
+
+# Errores de la BD que ya sabemos explicar: (texto que trae la API, mensaje para la persona).
+_TRADUCCIONES_V7 = [
+    ('ux_detmig_aceptado', 'Ese registro de asistencia ya quedó ACEPTADO en otro lote de migración: '
+                           'ASIS no puede aceptar el mismo registro dos veces.'),
+    ('No hay registros migrables', 'La sesión no tiene registros que se puedan migrar a ASIS. Solo se '
+                                   'migran asistentes con ID de ASIS y programa, que no sean externos.'),
+    ('fk_lotemig_estado', 'Ese estado no existe en el catálogo de estados de proceso.'),
+    ('pk_parametro', 'Ya existe un parámetro con esa clave.'),
+    ('fk_parametro_usuario', 'El usuario que modifica no existe.'),
+    ('fk_lotemig_usuario', 'El usuario que genera el lote no existe.'),
+]
+
+
+def _avisar_v7(ex):
+    """Como '_avisar', pero en castellano y sin jerga técnica (criterio 11):
+    errores conocidos -> frase clara; 'sin cambios' -> aviso; red -> la API
+    no responde; cualquier otro -> el mensaje (ya en castellano) de la API."""
+    texto = f"{ex.mensaje} {ex.detalle or ''}"
+    for clave, frase in _TRADUCCIONES_V7:
+        if clave in texto:
+            flash(frase, 'error')
+            return
+    if ex.codigo is None:
+        flash('No se pudo contactar la API de Cátedras. ¿Está levantada?', 'error')
+    elif ex.codigo == 400 and 'ningún campo' in (ex.detalle or ''):
+        flash('No cambiaste ningún dato.', 'error')
+    elif ex.codigo == 422:
+        flash('Revisa los datos del formulario.', 'error')
+    else:
+        flash(ex.mensaje, 'error')
+
+
+def _id_admin_actual():
+    """id_usuario del administrador que tiene la sesión abierta (o None).
+    Se manda como 'fk_usuario' / 'fk_usuario_modifica': es una FK que no se
+    digita ni se elige, la fija la sesión (Regla 2)."""
+    actual = usuario_actual()
+    return actual.get('id_usuario') if actual else None
+
+
+# --------------------------------------------------------------------------
+#  v7 · PARÁMETROS  (recurso API: "Parametro", llave: clave)
+# --------------------------------------------------------------------------
+
+def _leer_form_parametro():
+    """Columnas editables (las mismas en crear y editar; 'clave' va aparte)."""
+    return {
+        'valor': request.form.get('valor', ''),            # puede ser '' a propósito
+        'tipo_dato': request.form.get('tipo_dato', 'TEXTO'),
+        'descripcion': request.form.get('descripcion', '').strip(),
+        'fk_usuario_modifica': _id_admin_actual(),
+    }
+
+
+@admin_bp.route('/parametros')
+def parametros_listar():
+    try:
+        parametros = listar('Parametro')
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        parametros = []
+    return render_template('admin/parametro_lista.html', parametros=parametros)
+
+
+@admin_bp.route('/parametros/nuevo', methods=['GET', 'POST'])
+def parametros_nuevo():
+    if request.method == 'GET':
+        return render_template('admin/parametro_form.html', modo='nuevo', parametro=None,
+                               errores=[], tipos=TIPOS_DATO)
+
+    datos = _leer_form_parametro()
+    datos['clave'] = request.form.get('clave', '').strip().upper()   # la API exige MAYÚSCULAS
+    try:
+        crear('Parametro', datos)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        return render_template('admin/parametro_form.html', modo='nuevo', parametro=datos,
+                               errores=ex.errores, tipos=TIPOS_DATO)
+
+    flash(f"Parámetro '{datos['clave']}' creado.", 'exito')
+    return redirect(url_for('admin.parametros_listar'))
+
+
+@admin_bp.route('/parametros/<clave>/editar', methods=['GET', 'POST'])
+def parametros_editar(clave):
+    if request.method == 'GET':
+        try:
+            parametro = obtener('Parametro', clave)
+        except ErrorApi as ex:
+            _avisar_v7(ex)
+            return redirect(url_for('admin.parametros_listar'))
+        return render_template('admin/parametro_form.html', modo='editar', parametro=parametro,
+                               errores=[], tipos=TIPOS_DATO)
+
+    # Reemplazo completo: el formulario siempre trae los 3 campos. La clave
+    # NO viaja en el cuerpo: es la llave de la ruta (no se edita).
+    datos = _leer_form_parametro()
+    try:
+        reemplazar('Parametro', clave, datos)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        datos['clave'] = clave
+        return render_template('admin/parametro_form.html', modo='editar', parametro=datos,
+                               errores=ex.errores, tipos=TIPOS_DATO)
+
+    flash(f"Parámetro '{clave}' actualizado.", 'exito')
+    return redirect(url_for('admin.parametros_listar'))
+
+
+@admin_bp.route('/parametros/<clave>/eliminar', methods=['POST'])
+def parametros_eliminar(clave):
+    try:
+        eliminar('Parametro', clave)
+        flash(f"Parámetro '{clave}' eliminado. Las funciones que lo leían usan su valor por defecto.", 'exito')
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+    return redirect(url_for('admin.parametros_listar'))
+
+
+# --------------------------------------------------------------------------
+#  v7 · LOTES DE MIGRACIÓN  (recursos API: "LoteMigracion", "DetalleMigracion")
+#  Generar un lote es UNA llamada (POST /api/LoteMigracion): la BD crea el
+#  lote, sus filas y deja la sesión en MIGRADA (RF184). El front NO toca
+#  la sesión por su cuenta.
+# --------------------------------------------------------------------------
+
+def _estados_proceso():
+    """Catálogo de estados para el <select> (Regla 2), con su bandera de final."""
+    return _opciones('EstadoProceso')
+
+
+@admin_bp.route('/lotes-migracion')
+def lotes_migracion_listar():
+    fk_sesion = _entero_o_none(request.args.get('fk_sesion'))
+    try:
+        lotes = listar('LoteMigracion', limite=200, fkSesion=fk_sesion)
+        # Para el <select> del filtro: solo las sesiones que tienen lotes
+        # (no las miles de sesiones del catálogo).
+        sesiones = sorted({l['fk_sesion'] for l in listar('LoteMigracion', limite=1000)})
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        lotes, sesiones = [], []
+    return render_template('admin/lote_migracion_lista.html', lotes=lotes, fk_sesion=fk_sesion,
+                           sesiones=sesiones)
+
+
+@admin_bp.route('/lotes-migracion/<int:id_lote>')
+def lotes_migracion_detalle(id_lote):
+    try:
+        lote = obtener('LoteMigracion', id_lote)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        return redirect(url_for('admin.lotes_migracion_listar'))
+
+    filtro = request.args.get('resultado') or None
+    if filtro not in RESULTADOS_MIGRACION:
+        filtro = None
+    detalles = []
+    conteo = {r: 0 for r in RESULTADOS_MIGRACION}
+    try:
+        detalles = listar('DetalleMigracion', limite=10000, fkLoteMigracion=id_lote)
+        for d in detalles:
+            conteo[d['resultado']] = conteo.get(d['resultado'], 0) + 1
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+    visibles = [d for d in detalles if filtro is None or d['resultado'] == filtro]
+    return render_template('admin/lote_migracion_detalle.html', lote=lote, detalles=visibles,
+                           total_detalles=len(detalles), conteo=conteo, filtro=filtro,
+                           estados=_estados_proceso(), resultados=RESULTADOS_MIGRACION)
+
+
+@admin_bp.route('/lotes-migracion/<int:id_lote>/estado', methods=['POST'])
+def lotes_migracion_estado(id_lote):
+    # Actualización PARCIAL: solo lo que la persona puede cambiar (D35).
+    datos = {'fk_estado_proceso': request.form.get('fk_estado_proceso', '')}
+    observaciones = request.form.get('observaciones', '').strip()
+    if observaciones:
+        datos['observaciones'] = observaciones
+    try:
+        actualizar_parcial('LoteMigracion', id_lote, datos)
+        flash(f"Lote {id_lote}: estado {datos['fk_estado_proceso']} guardado.", 'exito')
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+    return redirect(url_for('admin.lotes_migracion_detalle', id_lote=id_lote))
+
+
+@admin_bp.route('/lotes-migracion/<int:id_lote>/detalle/<int:id_detalle>', methods=['POST'])
+def lotes_migracion_resultado(id_lote, id_detalle):
+    # Simula la respuesta de ASIS para UNA fila (RF188).
+    datos = {'resultado': request.form.get('resultado', '')}
+    mensaje = request.form.get('mensaje', '').strip()
+    if mensaje:
+        datos['mensaje'] = mensaje
+    try:
+        actualizar_parcial('DetalleMigracion', id_detalle, datos)
+        flash(f"Fila {id_detalle}: {datos['resultado']}.", 'exito')
+    except ErrorApi as ex:
+        _avisar_v7(ex)    # p. ej. ese registro ya fue ACEPTADO en otro lote
+    filtro = request.form.get('filtro') or None
+    return redirect(url_for('admin.lotes_migracion_detalle', id_lote=id_lote, resultado=filtro) + f'#fila-{id_detalle}')
+
+
+@admin_bp.route('/sesiones/<int:id_sesion>/migrar', methods=['POST'])
+def sesiones_migrar(id_sesion):
+    """'Generar migración' (botón de detalle_sesion.html). Bajo /admin para
+    heredar la guardia de rol ADMIN (D37-E)."""
+    try:
+        respuesta = crear('LoteMigracion', {'fk_sesion': id_sesion, 'fk_usuario': _id_admin_actual()})
+    except ErrorApi as ex:
+        _avisar_v7(ex)    # p. ej. la sesión no tiene registros migrables
+        return redirect(url_for('sesiones.detalle', id_sesion=id_sesion))
+
+    lote = respuesta['lote']
+    flash(f"Lote {lote['id_lote_migracion']} generado: archivo {lote['nombre_archivo']} con "
+          f"{lote['total_filas']} filas. La sesión quedó marcada como migrada.", 'exito')
+    return redirect(url_for('admin.lotes_migracion_detalle', id_lote=lote['id_lote_migracion']))
+
+
+# --------------------------------------------------------------------------
+#  v7 · DETALLE DE MIGRACIÓN  (recurso API: "DetalleMigracion")
+#  Lista filtrable de las filas de todos los lotes. Se editan desde el
+#  detalle de su lote (arriba), donde se ve el contexto.
+# --------------------------------------------------------------------------
+
+@admin_bp.route('/detalles-migracion')
+def detalles_migracion_listar():
+    fk_lote = _entero_o_none(request.args.get('fk_lote_migracion'))
+    filtro = request.args.get('resultado') or None
+    if filtro not in RESULTADOS_MIGRACION:
+        filtro = None
+    try:
+        detalles = listar('DetalleMigracion', limite=500, fkLoteMigracion=fk_lote)
+        lotes = listar('LoteMigracion', limite=200)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        detalles, lotes = [], []
+    detalles = [d for d in detalles if filtro is None or d['resultado'] == filtro]
+    return render_template('admin/detalle_migracion_lista.html', detalles=detalles, lotes=lotes,
+                           fk_lote=fk_lote, filtro=filtro, resultados=RESULTADOS_MIGRACION)
+
+
+# --------------------------------------------------------------------------
+#  v7 · BITÁCORA  (recurso API: "Bitacora")  ·  SOLO LECTURA (ADR D36)
+#  La llenan los triggers de la BD; ni la API ni el front escriben en ella.
+#  Sin filtro por usuario: 'fk_usuario' es nulo en todas las filas (D37-C).
+# --------------------------------------------------------------------------
+
+@admin_bp.route('/bitacora')
+def bitacora_listar():
+    tabla = request.args.get('tabla') or None
+    if tabla not in TABLAS_BITACORA:
+        tabla = None
+    limite = _entero_o_none(request.args.get('limite'))
+    if limite not in LIMITES_BITACORA:
+        limite = LIMITES_BITACORA[1]
+    try:
+        entradas = listar('Bitacora', limite=limite, nombreTabla=tabla)
+    except ErrorApi as ex:
+        _avisar_v7(ex)
+        entradas = []
+    return render_template('admin/bitacora_lista.html', entradas=entradas, tabla=tabla, limite=limite,
+                           tablas=TABLAS_BITACORA, limites=LIMITES_BITACORA)
+
+
+# ==========================================================================
+#  v7.1 · D52/D53/D55 · QR DE ASISTENCIA DE UNA SESIÓN Y DISPONIBILIDAD DE HORARIO
+# --------------------------------------------------------------------------
+#  Antes lo hacía el ponente desde su panel; como ahora solo el administrador inicia sesión, vive aquí.
+#  El administrador abre la pantalla del QR de la sesión (para proyectarlo o compartirlo al final) y ve en
+#  vivo quién registró su asistencia. Un horario NO está disponible si otra sesión se traslapa con él en la
+#  misma sede FÍSICA y el mismo salón (sin salón escrito cuenta como choque, es lo prudente; una sede virtual
+#  no tiene salón y no se revisa). La regla la calcula la BD (sp_sesiones_en_conflicto, migración 050).
+# ==========================================================================
+_MOTIVO = {'LUGAR': 'el mismo salón en esa sede', 'PONENTE': 'ya participa la misma persona'}
+
+
+def _describe_choque(c):
+    """Una sesión que choca, en una línea legible (hora de Colombia)."""
+    motivos = ' y '.join(_MOTIVO.get(m, m) for m in (c.get('motivos') or []))
+    donde = ', '.join(x for x in (c.get('fk_sede'), c.get('lugar')) if x)
+    return (f"«{c['nombre_catedra']}» (reunión {c['numero_reunion']}, "
+            f"{fecha_hora(c['inicio'], '%Y-%m-%d %H:%M')}–{fecha_hora(c['fin'], '%H:%M')}"
+            f"{', ' + donde if donde else ''}): {motivos}")
+
+
+def _conflictos_de_horario(inicio, fin, sede=None, lugar=None):
+    """Sesiones que chocan con ese horario por salón. 'inicio'/'fin': texto ISO con zona. Lanza ErrorApi."""
+    r = consultar('Disponibilidad/conflictos', inicio=inicio, fin=fin, fkSede=sede or None, lugar=lugar or None)
+    return r['conflictos']
+
+
+def _choques_del_formulario(filas):
+    """Textos con los choques de las sesiones escritas: contra la BD y entre ellas mismas (dos que se
+    traslapan en la misma sede física y el mismo salón, o sin salón escrito)."""
+    avisos = []
+    virtuales = {x['id_sede'] for x in _opciones('Sede') if x.get('es_virtual')}
+    rangos = []
+    for n, f in enumerate(filas, start=1):
+        inicio, fin = desde_input(f['inicio']), desde_input(f['fin'])
+        for c in _conflictos_de_horario(inicio, fin, f.get('fk_sede'), f.get('lugar')):
+            avisos.append(f"Sesión {n} choca con {_describe_choque(c)}.")
+        try:
+            rangos.append((n, datetime.fromisoformat(inicio), datetime.fromisoformat(fin), f.get('fk_sede'),
+                           (f.get('lugar') or '').strip().lower()))
+        except (TypeError, ValueError):
+            pass        # fecha ilegible: la API la rechaza con su 422 al crear
+    for i, (n1, a1, b1, s1, l1) in enumerate(rangos):
+        for n2, a2, b2, s2, l2 in rangos[i + 1:]:
+            if a1 < b2 and b1 > a2 and s1 == s2 and s1 not in virtuales and (not l1 or not l2 or l1 == l2):
+                avisos.append(f"Las sesiones {n1} y {n2} de esta misma cátedra se cruzan en el horario y el salón.")
+    return avisos
+
+
+def _hora_choque(c):
+    return {**c, 'hora': f"{fecha_hora(c['inicio'], '%H:%M')}–{fecha_hora(c['fin'], '%H:%M')}",
+            'fecha': fecha_hora(c['inicio'], '%Y-%m-%d'),
+            'texto': _describe_choque(c) if c.get('motivos') else None}
+
+
+@admin_bp.route('/catedras/disponibilidad')
+def catedras_disponibilidad():
+    """¿Está libre este horario? ?inicio=&fin= (datetime-local) &sede= &lugar= . JSON para static/disponibilidad.js."""
+    inicio, fin = desde_input(request.args.get('inicio')), desde_input(request.args.get('fin'))
+    if not inicio or not fin:
+        return jsonify(error='Escribe el inicio y el fin para consultar.'), 400
+    try:
+        conflictos = _conflictos_de_horario(inicio, fin, request.args.get('sede'), request.args.get('lugar'))
+    except ErrorApi as ex:
+        return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), (400 if ex.codigo in (400, 422) else 502)
+    return jsonify(disponible=not conflictos, conflictos=[_hora_choque(c) for c in conflictos])
+
+
+@admin_bp.route('/catedras/agenda')
+def catedras_agenda():
+    """Qué hay ocupado en una fecha: ?fecha=AAAA-MM-DD &sede= (opcional)."""
+    try:
+        dia = datetime.strptime(request.args.get('fecha', ''), '%Y-%m-%d').replace(tzinfo=ZONA_COLOMBIA)
+    except ValueError:
+        return jsonify(error='Elige una fecha.'), 400
+    try:
+        r = consultar('Disponibilidad/agenda', desde=dia.isoformat(), hasta=(dia + timedelta(days=1)).isoformat(),
+                      fkSede=request.args.get('sede') or None)
+    except ErrorApi as ex:
+        return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), 502
+    return jsonify(fecha=dia.strftime('%Y-%m-%d'), sesiones=[_hora_choque(c) for c in r['datos']])
+
+
+def _resumen_asistencia(id_sesion):
+    """(filas, total) de quienes registraron su asistencia a la sesión (con hora y ubicación)."""
+    r = consultar('QrSesion/asistencia', fkSesion=id_sesion)
+    filas = r['datos'] if r else []
+    return filas, len(filas)
+
+
+@admin_bp.route('/sesiones/<int:id_sesion>/qr', methods=['GET', 'POST'])
+def sesiones_qr(id_sesion):
+    try:
+        sesion = obtener('Sesion', id_sesion)
+        catedra = obtener('Catedra', sesion['fk_catedra'])
+    except ErrorApi as ex:
+        if ex.codigo == 404:
+            abort(404)
+        _avisar(ex)
+        return redirect(url_for('admin.sesiones_listar'))
+
+    if request.method == 'POST':
+        regenerar = request.form.get('regenerar') == '1'
+        try:
+            qr = emitir_qr(id_sesion, usuario_actual().get('id_usuario'), regenerar)
+            flash('Se generó un QR nuevo (el anterior ya no sirve).' if regenerar and not qr['ya_existia']
+                  else 'El QR de la sesión está listo.', 'exito')
+        except ErrorApi as ex:
+            _avisar(ex)
+        return redirect(url_for('admin.sesiones_qr', id_sesion=id_sesion))
+
+    error = None
+    qr = None
+    try:
+        qr = qr_de_sesion(id_sesion)
+    except ErrorApi as ex:
+        error = ex
+    filas, total = [], 0
+    try:
+        filas, total = _resumen_asistencia(id_sesion)
+    except ErrorApi as ex:
+        error = error or ex
+
+    url = svg = None
+    if qr:
+        url = url_de_registro(qr['token'])
+        svg = svg_qr(url)
+    return render_template('admin/sesion_qr.html', sesion=sesion, catedra=catedra, qr=qr, estado=estado_de_ventana(qr),
+                           url=url, svg=svg, filas=filas, total=total, error=error,
+                           desde=a_local(qr['ventana_desde']) if qr else None,
+                           hasta=a_local(qr['ventana_hasta']) if qr else None)
+
+
+@admin_bp.route('/sesiones/<int:id_sesion>/asistencia')
+def sesiones_asistencia_json(id_sesion):
+    """JSON para refrescar la lista sin recargar la página (lo llama la pantalla del QR)."""
+    try:
+        filas, total = _resumen_asistencia(id_sesion)
+        estado = estado_de_ventana(qr_de_sesion(id_sesion))
+    except ErrorApi as ex:
+        return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), 502
+    for f in filas:
+        f['hora'] = fecha_hora(f['registrado_en'], '%H:%M:%S') if f.get('registrado_en') else None
+    return jsonify(filas=filas, total=total, estado=estado)

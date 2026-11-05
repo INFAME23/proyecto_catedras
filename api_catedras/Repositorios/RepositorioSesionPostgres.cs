@@ -66,13 +66,26 @@ public class RepositorioSesionPostgres : IRepositorioSesion
         return sesion;
     }
 
-    public async Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(Sesion sesion)
+    public async Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(
+        Sesion sesion, (int? MinutosAntes, int? MinutosDespues, long? FkUsuario)? enlaceInicial)
     {
+        // Maestro-detalle (Guía IA, Regla 1 · migración 044): 'sp_guardar_sesion'
+        // reutiliza 'sp_crear_sesion' y, si llega 'p_enlace', 'sp_emitir_enlace'
+        // (del script), en el MISMO CALL. Sin enlace (NULL) hace lo mismo que antes.
         const string sql = @"
-            CALL catedras.sp_crear_sesion(
+            CALL catedras.sp_guardar_sesion(
                 @FkCatedra, @Inicio, @Fin, @FkModalidad, @FkSede, @FkPeriodo,
                 @NumeroReunion, @NumeroReunionAsis, @Titulo, @FkEncuesta,
-                @Lugar, @EnlaceVirtual, @Cupo, @Estado, NULL);";
+                @Lugar, @EnlaceVirtual, CAST(NULL AS integer), @Estado, CAST(@Enlace AS jsonb), NULL);";
+
+        string? enlaceJson = enlaceInicial is null
+            ? null
+            : JsonSerializer.Serialize(new
+            {
+                minutos_antes = enlaceInicial.Value.MinutosAntes,
+                minutos_despues = enlaceInicial.Value.MinutosDespues,
+                fk_usuario = enlaceInicial.Value.FkUsuario,
+            });
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
@@ -92,8 +105,8 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             sesion.FkEncuesta,
             sesion.Lugar,
             sesion.EnlaceVirtual,
-            sesion.Cupo,
             sesion.Estado,
+            Enlace = enlaceJson,
         });
 
         var creada = JsonSerializer.Deserialize<Sesion>(json!)!;
@@ -138,8 +151,6 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             ? (vEncuesta is null ? null : Convert.ToInt64(vEncuesta)) : actual.FkEncuesta;
         string? lugar = datos.TryGetValue("lugar", out var vLugar) ? (string?)vLugar : actual.Lugar;
         string? enlaceVirtual = datos.TryGetValue("enlace_virtual", out var vEnlace) ? (string?)vEnlace : actual.EnlaceVirtual;
-        int? cupo = datos.TryGetValue("cupo", out var vCupo)
-            ? (vCupo is null ? null : Convert.ToInt32(vCupo)) : actual.Cupo;
         string estado = datos.TryGetValue("estado", out var vEstado) ? (string)vEstado! : actual.Estado;
 
         // 3) Procedimiento con el conjunto COMPLETO. Rango o cupo inválidos,
@@ -148,7 +159,7 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             CALL catedras.sp_actualizar_sesion(
                 @idSesion, @fkCatedra, @numeroReunion, @numeroReunionAsis, @titulo,
                 @inicio, @fin, @fkModalidad, @fkSede, @fkPeriodo, @fkEncuesta,
-                @lugar, @enlaceVirtual, @cupo, @estado, NULL);";
+                @lugar, @enlaceVirtual, CAST(NULL AS integer), @estado, NULL);";
         string? resultadoJson = await conexion.QuerySingleAsync<string?>(sqlActualizar, new
         {
             idSesion,
@@ -164,7 +175,6 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             fkEncuesta,
             lugar,
             enlaceVirtual,
-            cupo,
             estado,
         });
 

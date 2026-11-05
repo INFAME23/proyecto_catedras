@@ -1,0 +1,76 @@
+{% extends 'admin/base_admin.html' %}
+{# ==========================================================================
+   admin/bitacora_lista.html  ·  Front Cátedras · Versión 7
+   Bitácora de auditoría — SOLO LECTURA (ADR D36): la escriben los
+   triggers de la base de datos; ni la API ni este panel pueden crear,
+   editar ni borrar entradas. Filtro por tabla con <select> (las dos
+   tablas que tienen trigger de bitácora).
+   ========================================================================== #}
+{% block titulo %}Bitácora · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Bitácora</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-history text-primary-custom me-2"></i>Bitácora de auditoría</h1>
+<p class="text-muted small">Solo lectura: cada fila la escribió la base de datos cuando cambió un registro de asistencia o un asistente. Las más recientes primero; horas en hora de Colombia.</p>
+
+<form class="row g-2 mb-3" method="get" action="{{ url_for('admin.bitacora_listar') }}">
+    <div class="col-sm-6">
+        <select class="form-select" name="tabla" onchange="this.form.submit()" aria-label="Tabla">
+            <option value="">Todas las tablas</option>
+            {% for t in tablas %}<option value="{{ t }}" {% if tabla == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+    </div>
+    <div class="col-sm-4">
+        <select class="form-select" name="limite" onchange="this.form.submit()" aria-label="Cuántas filas">
+            {% for n in limites %}<option value="{{ n }}" {% if limite == n %}selected{% endif %}>Últimas {{ n }}</option>{% endfor %}
+        </select>
+    </div>
+</form>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if entradas %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Id</th><th>Cuándo</th><th>Tabla</th><th>Operación</th><th>Fila</th><th>Cambio</th></tr>
+                </thead>
+                <tbody>
+                    {% for b in entradas %}
+                    {% set clase_op = {'INSERT': 'badge-success', 'UPDATE': 'badge-warning', 'DELETE': 'badge-danger'}.get(b.operacion, 'badge-secondary') %}
+                    <tr>
+                        <td class="fw-semibold">{{ b.id_bitacora }}</td>
+                        <td class="small text-nowrap">{{ b.ocurrido_en|fecha_hora('%Y-%m-%d %H:%M:%S') }}<br><span class="text-muted">{{ b.usuario_bd }}</span></td>
+                        <td><code>{{ b.nombre_tabla }}</code></td>
+                        <td><span class="badge {{ clase_op }}">{{ b.operacion }}</span></td>
+                        <td>{{ b.llave or '—' }}</td>
+                        <td class="small">
+                            <details>
+                                <summary>Ver datos</summary>
+                                <div class="row g-2 mt-1">
+                                    <div class="col-md-6">
+                                        <div class="text-muted">Antes</div>
+                                        {% if b.datos_antes %}<pre class="bg-light p-2 rounded small mb-0">{{ b.datos_antes|tojson(indent=2) }}</pre>{% else %}<div class="fst-italic text-muted">(no había fila)</div>{% endif %}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="text-muted">Después</div>
+                                        {% if b.datos_despues %}<pre class="bg-light p-2 rounded small mb-0">{{ b.datos_despues|tojson(indent=2) }}</pre>{% else %}<div class="fst-italic text-muted">(la fila se borró)</div>{% endif %}
+                                    </div>
+                                </div>
+                            </details>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">No hay entradas que mostrar.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

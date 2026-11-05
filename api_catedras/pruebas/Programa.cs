@@ -1256,12 +1256,12 @@ int filasPutSes = await servicioSesion.ReemplazarAsync(idSes1, new SesionReempla
 {
     FkCatedra = 5498, NumeroReunion = 1, Inicio = inicioBogota, Fin = inicioBogota.AddHours(3),
     FkModalidad = "VIRTUAL", FkSede = "VIRTUAL", FkPeriodo = "2026-2", Estado = "ABIERTA",
-    EnlaceVirtual = "https://ejemplo.edu.co/sala", Cupo = 40,
+    EnlaceVirtual = "https://ejemplo.edu.co/sala",
 });
 var trasPutSes = await servicioSesion.ObtenerAsync(idSes1);
-Afirmar("PUT reemplaza todo (modalidad, estado, enlace, cupo y fin)",
+Afirmar("PUT reemplaza todo (modalidad, estado, enlace y fin)",
     filasPutSes == 1 && trasPutSes.FkModalidad == "VIRTUAL" && trasPutSes.Estado == "ABIERTA"
-    && trasPutSes.Cupo == 40 && trasPutSes.Fin == new DateTime(2026, 10, 20, 22, 0, 0, DateTimeKind.Utc));
+    && trasPutSes.Fin == new DateTime(2026, 10, 20, 22, 0, 0, DateTimeKind.Utc));
 
 await AfirmarLanza<ArgumentException>(
     "PUT con fin anterior a inicio lanza ArgumentException",
@@ -1389,7 +1389,8 @@ await AfirmarLanza<InvalidOperationException>(
 // ============================================================================
 var repoUsr5 = new RepositorioUsuarioFalso();
 var repoRolesUsr5 = new RepositorioRolPorUsuarioFalso();
-var servicioUsuario5 = new ServicioUsuario(repoUsr5, repoRolesUsr5);
+var repoCodRec71 = new RepositorioCodigoRecuperacionFalso();
+var servicioUsuario5 = new ServicioUsuario(repoUsr5, repoRolesUsr5, repoCodRec71);
 
 Console.WriteLine("\n== v5 · Prueba de capas: ServicioUsuario + repositorios falsos en memoria ==\n");
 
@@ -1605,6 +1606,66 @@ Afirmar("EnlaceRegistroEmitir NO tiene canal, token, ventana ni url_publica (RF1
         .All(p => typeof(EnlaceRegistroEmitir).GetProperty(p) is null));
 
 // ============================================================================
+//  v7.1 · Prueba de capas: cambiar la clave (RF-S5) y recuperarla (RF-S5/RF-S6)
+//  Todo el hash BCrypt sale de ServicioUsuario; el repositorio falso de
+//  códigos solo guarda la cadena opaca.
+// ============================================================================
+Console.WriteLine("\n== v7.1 · Prueba de capas: cambiar y recuperar la clave ==\n");
+
+// Cambiar sabiendo la actual (usuario 1 = admin / Admin12345)
+Afirmar("CambiarClave con la clave actual correcta devuelve true y guarda un hash NUEVO",
+    await servicioUsuario5.CambiarClaveAsync(1, new UsuarioCambiarClave { ClaveActual = "Admin12345", ClaveNueva = "Nueva-Clave-71" }));
+var trasCambio71 = await servicioUsuario5.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "Nueva-Clave-71" });
+Afirmar("...y el login ya funciona con la clave nueva", trasCambio71 is not null);
+Afirmar("...y la clave anterior dejó de servir",
+    await servicioUsuario5.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "Admin12345" }) is null);
+Afirmar("CambiarClave con la clave actual INCORRECTA devuelve false (401, D27)",
+    !await servicioUsuario5.CambiarClaveAsync(1, new UsuarioCambiarClave { ClaveActual = "equivocada", ClaveNueva = "Otra-Clave-71" }));
+Afirmar("CambiarClave en una cuenta INACTIVA devuelve false (misma respuesta)",
+    !await servicioUsuario5.CambiarClaveAsync(2, new UsuarioCambiarClave { ClaveActual = "Clave12345", ClaveNueva = "Otra-Clave-71" }));
+await AfirmarLanza<ArgumentException>(
+    "CambiarClave con la clave nueva IGUAL a la actual lanza ArgumentException (400)",
+    () => servicioUsuario5.CambiarClaveAsync(1, new UsuarioCambiarClave { ClaveActual = "Nueva-Clave-71", ClaveNueva = "Nueva-Clave-71" }));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "CambiarClave de un usuario inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioUsuario5.CambiarClaveAsync(999, new UsuarioCambiarClave { ClaveActual = "x", ClaveNueva = "Otra-Clave-71" }));
+Afirmar("UsuarioCambiarClave exige clave nueva de al menos 8 caracteres",
+    typeof(UsuarioCambiarClave).GetProperty("ClaveNueva")!
+        .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.MinLengthAttribute), false).Length == 1);
+// (la cuenta de prueba vuelve a su clave original para no alterar las pruebas siguientes)
+await servicioUsuario5.CambiarClaveAsync(1, new UsuarioCambiarClave { ClaveActual = "Nueva-Clave-71", ClaveNueva = "Admin12345" });
+
+// Recuperar una clave olvidada
+await AfirmarLanza<ArgumentException>(
+    "SolicitarRecuperacion con una 'ip' inválida lanza ArgumentException (400)",
+    () => servicioUsuario5.SolicitarRecuperacionAsync(new RecuperacionSolicitar { Identificador = "admin", Ip = "999.9.9.9" }));
+Afirmar("SolicitarRecuperacion de una cuenta que no existe devuelve null (la API responde igual, D27)",
+    await servicioUsuario5.SolicitarRecuperacionAsync(new RecuperacionSolicitar { Identificador = "nadie.existe" }) is null);
+var rec71 = await servicioUsuario5.SolicitarRecuperacionAsync(new RecuperacionSolicitar { Identificador = "  admin  ", Ip = "10.0.0.7" });
+Afirmar("SolicitarRecuperacion devuelve id, código en claro y correo de destino (RNF12)",
+    rec71 is not null && rec71.Value.IdCodigo > 0 && rec71.Value.Codigo == RepositorioCodigoRecuperacionFalso.CodigoFijo
+    && rec71.Value.EnviadoA.Contains('@'));
+Afirmar("...el identificador llegó sin espacios y la IP ya validada",
+    repoCodRec71.UltimoIdentificador == "admin" && repoCodRec71.UltimaIp == "10.0.0.7");
+
+await AfirmarLanza<CodigoRecuperacionInvalidoExcepcion>(
+    "Restablecer con el código INCORRECTO lanza CodigoRecuperacionInvalidoExcepcion (400)",
+    () => servicioUsuario5.RestablecerClaveAsync(new RecuperacionRestablecer { IdCodigo = rec71!.Value.IdCodigo, Codigo = "000000", ClaveNueva = "Recuperada-71" }));
+Afirmar("...y el servicio no llegó a guardar ningún hash", repoCodRec71.UltimoHashRecibido is null);
+await servicioUsuario5.RestablecerClaveAsync(new RecuperacionRestablecer
+{ IdCodigo = rec71!.Value.IdCodigo, Codigo = rec71.Value.Codigo, ClaveNueva = "Recuperada-71" });
+Afirmar("Restablecer con el código correcto guarda un hash BCrypt, NUNCA la clave en claro (Regla 3)",
+    repoCodRec71.UltimoHashRecibido is not null
+    && repoCodRec71.UltimoHashRecibido != "Recuperada-71"
+    && BCrypt.Net.BCrypt.Verify("Recuperada-71", repoCodRec71.UltimoHashRecibido));
+await AfirmarLanza<CodigoRecuperacionInvalidoExcepcion>(
+    "Restablecer OTRA VEZ con el mismo código falla (ya usado; la API responde 400)",
+    () => servicioUsuario5.RestablecerClaveAsync(new RecuperacionRestablecer { IdCodigo = rec71!.Value.IdCodigo, Codigo = rec71.Value.Codigo, ClaveNueva = "Otra-71-Clave" }));
+Afirmar("IRepositorioCodigoRecuperacion no declara Crear/Reemplazar/Actualizar/Eliminar (no es un CRUD)",
+    new[] { "CrearAsync", "ReemplazarAsync", "ActualizarAsync", "EliminarAsync" }
+        .All(m => typeof(IRepositorioCodigoRecuperacion).GetMethod(m) is null));
+
+// ============================================================================
 //  v5 · Prueba de capas: ServicioClaveAcceso + repositorio falso
 //  NO es un CRUD (ADR D24): SOLICITAR y VALIDAR (funciones de la BD simuladas).
 // ============================================================================
@@ -1638,19 +1699,60 @@ await AfirmarLanza<InvalidOperationException>(
 // Validar
 await AfirmarLanza<ArgumentException>(
     "Validar con una 'ip' inválida lanza ArgumentException (400)",
-    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "abc" }));
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "abc", Latitud = 6.2m, Longitud = -75.5m }));
 
 await AfirmarLanza<InvalidOperationException>(
     "Validar con la clave INCORRECTA falla (simulado; en la API real -> 500, D25)",
-    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = "000000" }));
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = "000000", Latitud = 6.2m, Longitud = -75.5m }));
 
 long idRegistroVal5 = await servicioCla5.ValidarAsync(new ClaveAccesoValidar
-{ IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "10.0.0.5", UserAgent = "prueba/1.0" });
+{ IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Ip = "10.0.0.5", UserAgent = "prueba/1.0",
+  Latitud = 6.244203m, Longitud = -75.581211m });
 Afirmar("Validar() con la clave correcta devuelve el id_registro creado", idRegistroVal5 > 0);
 
 await AfirmarLanza<InvalidOperationException>(
     "Validar OTRA VEZ la misma clave falla (ya usada, RN-20; en la API real -> 500)",
-    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave }));
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitud5.IdClave, Clave = solicitud5.Clave, Latitud = 6.2m, Longitud = -75.5m }));
+
+// ---------------------------------------------------------------------------
+//  v7.1 · RF-S1 · Geolocalización obligatoria al validar la clave
+// ---------------------------------------------------------------------------
+Afirmar("Validar() guardó la ubicación que llegó (RF-S1)",
+    repoCla5.UltimaLatitud == 6.244203m && repoCla5.UltimaLongitud == -75.581211m);
+
+var solicitudGeo71 = await servicioCla5.SolicitarAsync(new ClaveAccesoSolicitar
+{ Identificador = "1000091", Token = tokenOk5 });
+int validacionesAntesGeo71 = repoCla5.LlamadasValidar;
+await AfirmarLanza<ArgumentException>(
+    "Validar SIN latitud ni longitud lanza ArgumentException (400, RF-S1)",
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitudGeo71.IdClave, Clave = solicitudGeo71.Clave }));
+await AfirmarLanza<ArgumentException>(
+    "Validar con latitud pero SIN longitud lanza ArgumentException (400, RF-S1)",
+    () => servicioCla5.ValidarAsync(new ClaveAccesoValidar { IdClave = solicitudGeo71.IdClave, Clave = solicitudGeo71.Clave, Latitud = 6.2m }));
+Afirmar("...y en ninguno de los dos casos se llamó al repositorio (la clave no gasta intentos)",
+    repoCla5.LlamadasValidar == validacionesAntesGeo71);
+
+static bool Obligatoria(Type tipo, string propiedad) =>
+    tipo.GetProperty(propiedad)!
+        .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), false).Length == 1;
+Afirmar("ClaveAccesoValidar marca latitud y longitud como [Required] (-> 422 antes del servicio)",
+    Obligatoria(typeof(ClaveAccesoValidar), "Latitud") && Obligatoria(typeof(ClaveAccesoValidar), "Longitud"));
+
+static bool RangoDe(Type tipo, string propiedad, double min, double max)
+{
+    var r = (System.ComponentModel.DataAnnotations.RangeAttribute?)tipo.GetProperty(propiedad)!
+        .GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RangeAttribute), false).FirstOrDefault();
+    return r is not null && Convert.ToDouble(r.Minimum) == min && Convert.ToDouble(r.Maximum) == max;
+}
+Afirmar("...con rango -90..90 para la latitud y -180..180 para la longitud",
+    RangoDe(typeof(ClaveAccesoValidar), "Latitud", -90, 90) && RangoDe(typeof(ClaveAccesoValidar), "Longitud", -180, 180));
+Afirmar("El modelo RegistroAsistencia expone latitud y longitud NULABLES (MANUAL / IMPORTADO no las tienen)",
+    typeof(RegistroAsistencia).GetProperty("Latitud")!.PropertyType == typeof(decimal?)
+    && typeof(RegistroAsistencia).GetProperty("Longitud")!.PropertyType == typeof(decimal?));
+string jsonReg71 = System.Text.Json.JsonSerializer.Serialize(
+    new RegistroAsistencia { FkSesion = 1, FkAsistente = 1, Latitud = 6.25m, Longitud = -75.56m });
+Afirmar("...y se serializan como 'latitud' y 'longitud'",
+    jsonReg71.Contains("\"latitud\":6.25") && jsonReg71.Contains("\"longitud\":-75.56"));
 
 // Lecturas de auditoría
 var claveLeida5 = await servicioCla5.ObtenerAsync(solicitud5.IdClave);
@@ -1864,6 +1966,493 @@ Afirmar("DetalleMigracionActualizar no expone las columnas *_enviado(a) (copia l
     new[] { "IdAsisEnviado", "ProgramaEnviado", "ReunionEnviada", "FkRegistro", "FkLoteMigracion" }
         .All(p => typeof(DetalleMigracionActualizar).GetProperty(p) is null));
 
+// ============================================================================
+//  VERSIÓN 7 · Fase 58 (version7/8_tasks.md) — la prueba de capas llega a las
+//  37 entidades. Mismo patrón de siempre: servicio REAL + repositorio FALSO.
+//  (a) Parametro: CRUD con llave de texto; 'modificado_en' lo pone el SP
+//      (el falso lo simula), nunca el servicio.
+//  (b) Bitacora: solo lectura (ADR D36, D37-A), vigilado por reflexión.
+//  (c) LoteMigracion/DetalleMigracion: verbos que NO deben existir y el
+//      servicio que no toca Sesion (RF184).
+//  (d) Las 4 entidades de la v6 que la prueba de capas no cubría aún:
+//      Pregunta, OpcionPregunta, RespuestaEncuesta y RespuestaItem.
+// ============================================================================
+
+// Valida una petición con sus anotaciones, como lo hace [ApiController]
+// antes de llegar al controlador (falso = la API respondería 422).
+static bool EsValida(object peticion) =>
+    System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+        peticion, new System.ComponentModel.DataAnnotations.ValidationContext(peticion),
+        new List<System.ComponentModel.DataAnnotations.ValidationResult>(), validateAllProperties: true);
+
+// Verbos HTTP que declara un controlador (atributos [HttpGet], [HttpPost]...).
+static HashSet<string> VerbosDe(Type controlador) =>
+    controlador.GetMethods()
+        .SelectMany(m => m.GetCustomAttributes(true))
+        .OfType<Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute>()
+        .SelectMany(a => a.HttpMethods)
+        .ToHashSet();
+
+// ---- (a) Parametro --------------------------------------------------------
+Console.WriteLine("\n== v7 · Prueba de capas: ServicioParametro + repositorio falso en memoria ==\n");
+
+var parRepo = new RepositorioParametroFalso();
+var parServicio = new ServicioParametro(parRepo);
+
+var (parLista, parTotal) = await parServicio.ListarAsync(null);
+Afirmar("Parametro: Listar() devuelve las semillas ordenadas por clave",
+    parTotal == 2 && parLista[0].Clave == "CLAVE_LONGITUD" && parLista[1].Clave == "URL_BASE");
+
+await parServicio.CrearAsync(new ParametroCrear
+{
+    Clave = "PRUEBA_V7", Valor = "1", Descripcion = "Prueba de capas v7",
+});
+var parCreado = await parServicio.ObtenerAsync("PRUEBA_V7");
+Afirmar("Parametro: Crear() sin tipo_dato usa el DEFAULT 'TEXTO'",
+    parCreado.TipoDato == "TEXTO" && parCreado.Valor == "1");
+
+await AfirmarLanza<InvalidOperationException>(
+    "Parametro: Crear() con clave repetida deja subir el error de la BD (pk_parametro -> 500)",
+    () => parServicio.CrearAsync(new ParametroCrear { Clave = "PRUEBA_V7", Valor = "2", Descripcion = "x" }));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Parametro: Obtener('NO_EXISTE') lanza NoEncontradoExcepcion (404)",
+    () => parServicio.ObtenerAsync("NO_EXISTE"));
+
+int parLlamadasAntes = parRepo.LlamadasTotales;
+await AfirmarLanza<ArgumentException>(
+    "Parametro: PATCH sin campos lanza ArgumentException (400)",
+    () => parServicio.ActualizarAsync("PRUEBA_V7", new ParametroActualizar()));
+Afirmar("...y el repositorio NUNCA se invocó", parRepo.LlamadasTotales == parLlamadasAntes);
+
+DateTime parAntes = parCreado.ModificadoEn;
+await parServicio.ActualizarAsync("PRUEBA_V7", new ParametroActualizar { Valor = "2" });
+var parTrasPatch = await parServicio.ObtenerAsync("PRUEBA_V7");
+Afirmar("Parametro: PATCH cambia 'valor', conserva 'descripcion' y 'modificado_en' avanza (lo pone el SP)",
+    parTrasPatch.Valor == "2" && parTrasPatch.Descripcion == "Prueba de capas v7"
+    && parTrasPatch.ModificadoEn > parAntes);
+
+await parServicio.ReemplazarAsync("PRUEBA_V7", new ParametroReemplazo
+{
+    Valor = "3", TipoDato = "ENTERO", Descripcion = "Reemplazada",
+});
+var parTrasPut = await parServicio.ObtenerAsync("PRUEBA_V7");
+Afirmar("Parametro: PUT reemplaza todo; 'fk_usuario_modifica' ausente queda NULL",
+    parTrasPut.Valor == "3" && parTrasPut.TipoDato == "ENTERO" && parTrasPut.FkUsuarioModifica is null);
+
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Parametro: PUT a una clave inexistente lanza NoEncontradoExcepcion (404)",
+    () => parServicio.ReemplazarAsync("NO_EXISTE", new ParametroReemplazo { Valor = "1", TipoDato = "TEXTO", Descripcion = "x" }));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Parametro: PATCH a una clave inexistente lanza NoEncontradoExcepcion (404)",
+    () => parServicio.ActualizarAsync("NO_EXISTE", new ParametroActualizar { Valor = "1" }));
+await AfirmarLanza<ArgumentException>(
+    "Parametro: Listar(limite 0) lanza ArgumentException (400)", () => parServicio.ListarAsync(0));
+
+int parEliminadas = await parServicio.EliminarAsync("PRUEBA_V7");
+Afirmar("Parametro: Eliminar() borra la fila (DELETE físico, sin FK entrantes)", parEliminadas == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Parametro: un segundo Eliminar() lanza NoEncontradoExcepcion (404)",
+    () => parServicio.EliminarAsync("PRUEBA_V7"));
+
+// Forma de las peticiones (422), D37-D.
+Afirmar("ParametroCrear rechaza una clave en minúsculas ('prueba' -> 422)",
+    !EsValida(new ParametroCrear { Clave = "prueba", Valor = "1", Descripcion = "x" }));
+Afirmar("ParametroCrear rechaza una clave que empieza por dígito ('1CLAVE' -> 422)",
+    !EsValida(new ParametroCrear { Clave = "1CLAVE", Valor = "1", Descripcion = "x" }));
+Afirmar("ParametroCrear acepta 'VENTANA_MINUTOS_ANTES' sin tipo_dato (opcional)",
+    EsValida(new ParametroCrear { Clave = "VENTANA_MINUTOS_ANTES", Valor = "30", Descripcion = "x" }));
+Afirmar("ParametroCrear acepta 'valor' vacío (la columna lo permite)",
+    EsValida(new ParametroCrear { Clave = "URL_VACIA", Valor = "", Descripcion = "x" }));
+Afirmar("ParametroCrear rechaza un tipo_dato fuera de la lista ('OTRO' -> 422)",
+    !EsValida(new ParametroCrear { Clave = "X", Valor = "1", Descripcion = "x", TipoDato = "OTRO" }));
+Afirmar("ParametroReemplazo exige tipo_dato (PUT = reemplazo completo -> 422)",
+    !EsValida(new ParametroReemplazo { Valor = "1", Descripcion = "x" }));
+Afirmar("La clave nunca va en el body de PUT/PATCH (es la llave de la ruta)",
+    typeof(ParametroReemplazo).GetProperty("Clave") is null && typeof(ParametroActualizar).GetProperty("Clave") is null);
+Afirmar("Ninguna petición de Parametro deja mandar 'modificado_en' (lo pone el SP, RF197)",
+    new[] { typeof(ParametroCrear), typeof(ParametroReemplazo), typeof(ParametroActualizar) }
+        .All(t => t.GetProperty("ModificadoEn") is null));
+
+// ---- (b) Bitacora -----------------------------------------------------------
+Console.WriteLine("\n== v7 · Prueba de capas: ServicioBitacora (solo lectura) + repositorio falso ==\n");
+
+var bitServicio = new ServicioBitacora(new RepositorioBitacoraFalso());
+
+var (bitTodas, bitTotal) = await bitServicio.ListarAsync(null, null);
+Afirmar("Bitacora: Listar() devuelve las 3 filas, la más reciente primero",
+    bitTotal == 3 && bitTodas[0].IdBitacora == 3 && bitTodas[2].IdBitacora == 1);
+var (bitAsistente, bitTotalAsistente) = await bitServicio.ListarAsync("asistente", null);
+Afirmar("Bitacora: Listar(nombreTabla 'asistente') filtra (fila del borrado lógico)",
+    bitTotalAsistente == 1 && bitAsistente[0].Operacion == "UPDATE");
+var (_, bitTotalBlanco) = await bitServicio.ListarAsync("   ", null);
+Afirmar("Bitacora: un filtro en blanco se trata como 'sin filtro'", bitTotalBlanco == 3);
+var (_, bitTotalLimite) = await bitServicio.ListarAsync(null, 2);
+Afirmar("Bitacora: Listar(limite 2) respeta el límite", bitTotalLimite == 2);
+await AfirmarLanza<ArgumentException>(
+    "Bitacora: Listar(limite 0) lanza ArgumentException (400)", () => bitServicio.ListarAsync(null, 0));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Bitacora: Obtener(999) lanza NoEncontradoExcepcion (404)", () => bitServicio.ObtenerAsync(999));
+var bitUna = await bitServicio.ObtenerAsync(1);
+Afirmar("Bitacora: Obtener(1) devuelve la fila con su JSON 'datos_despues'",
+    bitUna.NombreTabla == "registro_asistencia" && bitUna.DatosDespues?.GetProperty("id_registro").GetInt64() == 1);
+
+// D36 / D37-A: si alguien vuelve a abrir la escritura, estas pruebas fallan.
+Afirmar("IRepositorioBitacora solo declara lectura (sin Crear/Actualizar/Eliminar)",
+    MetodosDe(typeof(IRepositorioBitacora)) == "ObtenerPorIdAsync,ObtenerTodosAsync");
+Afirmar("IServicioBitacora solo declara lectura",
+    MetodosDe(typeof(IServicioBitacora)) == "ListarAsync,ObtenerAsync");
+Afirmar("BitacoraController solo tiene [HttpGet] (POST/PUT/PATCH/DELETE -> 405)",
+    VerbosDe(typeof(ApiCatedras.Controllers.BitacoraController)).SetEquals(new[] { "GET" }));
+Afirmar("No quedan peticiones de escritura de Bitacora (BitacoraCrear/Reemplazo/Actualizar)",
+    new[] { "BitacoraCrear", "BitacoraReemplazo", "BitacoraActualizar" }
+        .All(n => typeof(ParametroCrear).Assembly.GetType("ApiCatedras.Peticiones." + n) is null));
+
+// ---- (c) LoteMigracion / DetalleMigracion: lo que NO debe existir --------------
+Console.WriteLine("\n== v7 · Verbos de LoteMigracion/DetalleMigracion y RF184 ==\n");
+
+Afirmar("ServicioLoteMigracion solo recibe IRepositorioLoteMigracion (no puede tocar Sesion, RF184)",
+    typeof(ServicioLoteMigracion).GetConstructors().Single().GetParameters()
+        .Select(p => p.ParameterType).SequenceEqual(new[] { typeof(IRepositorioLoteMigracion) }));
+Afirmar("LoteMigracionController: solo GET, POST (generar) y PATCH (RF183: sin PUT ni DELETE)",
+    VerbosDe(typeof(ApiCatedras.Controllers.LoteMigracionController)).SetEquals(new[] { "GET", "POST", "PATCH" }));
+Afirmar("DetalleMigracionController: solo GET y PATCH (RF189: sin POST, PUT ni DELETE)",
+    VerbosDe(typeof(ApiCatedras.Controllers.DetalleMigracionController)).SetEquals(new[] { "GET", "PATCH" }));
+Afirmar("ParametroController: los 5 verbos del CRUD completo",
+    VerbosDe(typeof(ApiCatedras.Controllers.ParametroController)).SetEquals(new[] { "GET", "POST", "PUT", "PATCH", "DELETE" }));
+Afirmar("LoteMigracionActualizar no expone 'instancia_proceso_asis' (D37-F)",
+    typeof(LoteMigracionActualizar).GetProperty("InstanciaProcesoAsis") is null);
+Afirmar("LoteMigracionGenerar exige fk_sesion (sin él -> 422)",
+    !EsValida(new LoteMigracionGenerar()) && EsValida(new LoteMigracionGenerar { FkSesion = 5712 }));
+
+// ---- (d) v6: Pregunta -------------------------------------------------------
+Console.WriteLine("\n== v6 · Prueba de capas: ServicioPregunta + repositorio falso en memoria ==\n");
+
+var preRepo = new RepositorioPreguntaFalso();
+var preServicio = new ServicioPregunta(preRepo);
+
+long preId = await preServicio.CrearAsync(new PreguntaCrear
+{
+    FkEncuesta = 1, Enunciado = "¿Qué tan útil fue la sesión?", Orden = 1, FkTipoPregunta = "ESCALA",
+    ValorMin = 1, ValorMax = 5,
+    Opciones = [new OpcionInicial { Etiqueta = "Poco", Valor = 1, Orden = 1 },
+                new OpcionInicial { Etiqueta = "Mucho", Valor = 5, Orden = 2 }],
+});
+var preCreada = await preServicio.ObtenerAsync(preId);
+Afirmar("Pregunta: Crear() guarda la pregunta con 'obligatoria' false por defecto",
+    preCreada.Enunciado.StartsWith("¿Qué") && preCreada.Obligatoria == false && preCreada.ValorMax == 5);
+Afirmar("Pregunta: las opciones iniciales viajan en la MISMA llamada (SP maestro-detalle, Regla 1)",
+    preRepo.UltimasOpciones.Count == 2 && preRepo.UltimasOpciones.All(o => o.FkPregunta == 0));
+
+int preLlamadas = preRepo.LlamadasTotales;
+await AfirmarLanza<ArgumentException>(
+    "Pregunta: valor_min sin valor_max lanza ArgumentException (400)",
+    () => preServicio.CrearAsync(new PreguntaCrear { FkEncuesta = 1, Enunciado = "x", Orden = 2, FkTipoPregunta = "ESCALA", ValorMin = 1 }));
+await AfirmarLanza<ArgumentException>(
+    "Pregunta: valor_max <= valor_min lanza ArgumentException (400)",
+    () => preServicio.CrearAsync(new PreguntaCrear { FkEncuesta = 1, Enunciado = "x", Orden = 2, FkTipoPregunta = "ESCALA", ValorMin = 5, ValorMax = 5 }));
+Afirmar("...y el repositorio NUNCA se invocó", preRepo.LlamadasTotales == preLlamadas);
+
+await AfirmarLanza<ArgumentException>(
+    "Pregunta: PATCH solo de valor_max, menor que el valor_min guardado -> 400 (no 500 del CHECK)",
+    () => preServicio.ActualizarAsync(preId, new PreguntaActualizar { ValorMax = 1 }));
+await preServicio.ActualizarAsync(preId, new PreguntaActualizar { Enunciado = "Nuevo enunciado" });
+var prePatch = await preServicio.ObtenerAsync(preId);
+Afirmar("Pregunta: PATCH parcial cambia el enunciado y conserva el rango",
+    prePatch.Enunciado == "Nuevo enunciado" && prePatch.ValorMin == 1 && prePatch.ValorMax == 5);
+await AfirmarLanza<ArgumentException>(
+    "Pregunta: PATCH sin campos lanza ArgumentException (400)",
+    () => preServicio.ActualizarAsync(preId, new PreguntaActualizar()));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Pregunta: PUT a una pregunta inexistente lanza NoEncontradoExcepcion (404)",
+    () => preServicio.ReemplazarAsync(999, new PreguntaReemplazo { Enunciado = "x", Orden = 1, FkTipoPregunta = "TEXTO", Obligatoria = false }));
+await preServicio.CrearAsync(new PreguntaCrear { FkEncuesta = 2, Enunciado = "Otra encuesta", Orden = 1, FkTipoPregunta = "TEXTO" });
+var (_, preTotalEnc1) = await preServicio.ListarAsync(1, null);
+Afirmar("Pregunta: Listar(fkEncuesta) filtra por encuesta", preTotalEnc1 == 1);
+Afirmar("Pregunta: Eliminar() devuelve 1", await preServicio.EliminarAsync(preId) == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Pregunta: Obtener() de la eliminada lanza NoEncontradoExcepcion (404)", () => preServicio.ObtenerAsync(preId));
+
+// ---- (d) v6: OpcionPregunta ---------------------------------------------------
+Console.WriteLine("\n== v6 · Prueba de capas: ServicioOpcionPregunta + repositorio falso en memoria ==\n");
+
+var opcServicio = new ServicioOpcionPregunta(new RepositorioOpcionPreguntaFalso());
+long opcId = await opcServicio.CrearAsync(new OpcionPreguntaCrear { FkPregunta = 10, Etiqueta = "Sí", Valor = 1, Orden = 1 });
+await opcServicio.CrearAsync(new OpcionPreguntaCrear { FkPregunta = 11, Etiqueta = "Otra", Orden = 1 });
+var (_, opcTotal10) = await opcServicio.ListarAsync(10, null);
+Afirmar("OpcionPregunta: Listar(fkPregunta) filtra por pregunta", opcTotal10 == 1);
+await opcServicio.ActualizarAsync(opcId, new OpcionPreguntaActualizar { Orden = 3 });
+var opcPatch = await opcServicio.ObtenerAsync(opcId);
+Afirmar("OpcionPregunta: PATCH parcial cambia el orden y conserva la etiqueta",
+    opcPatch.Orden == 3 && opcPatch.Etiqueta == "Sí" && opcPatch.Valor == 1);
+await opcServicio.ReemplazarAsync(opcId, new OpcionPreguntaReemplazo { Etiqueta = "No", Orden = 2 });
+var opcPut = await opcServicio.ObtenerAsync(opcId);
+Afirmar("OpcionPregunta: PUT reemplaza todo ('valor' ausente queda NULL)",
+    opcPut.Etiqueta == "No" && opcPut.Valor is null && opcPut.Orden == 2);
+await AfirmarLanza<ArgumentException>(
+    "OpcionPregunta: PATCH sin campos lanza ArgumentException (400)",
+    () => opcServicio.ActualizarAsync(opcId, new OpcionPreguntaActualizar()));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "OpcionPregunta: Obtener(999) lanza NoEncontradoExcepcion (404)", () => opcServicio.ObtenerAsync(999));
+Afirmar("OpcionPregunta: Eliminar() devuelve 1", await opcServicio.EliminarAsync(opcId) == 1);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "OpcionPregunta: un segundo Eliminar() lanza NoEncontradoExcepcion (404)", () => opcServicio.EliminarAsync(opcId));
+
+// ---- (d) v6: RespuestaEncuesta y RespuestaItem --------------------------------
+Console.WriteLine("\n== v6 · Prueba de capas: ServicioRespuestaEncuesta + ServicioRespuestaItem ==\n");
+
+var resTablaItems = new List<RespuestaItem>();
+var resServicio = new ServicioRespuestaEncuesta(new RepositorioRespuestaEncuestaFalso(resTablaItems));
+var itemServicio = new ServicioRespuestaItem(new RepositorioRespuestaItemFalso(resTablaItems));
+
+long resId = await resServicio.ResponderAsync(new RespuestaEncuestaResponder
+{
+    FkRegistro = 169,
+    Respuestas = [new ItemRespuesta { Pregunta = 1, Numero = 5 },
+                  new ItemRespuesta { Pregunta = 2, Texto = "Muy buena" }],
+});
+var resCreada = await resServicio.ObtenerAsync(resId);
+Afirmar("RespuestaEncuesta: Responder() crea la respuesta del registro, completa",
+    resCreada.FkRegistro == 169 && resCreada.Completa);
+var (resItems, resTotalItems) = await itemServicio.ListarAsync(resId, null);
+Afirmar("RespuestaItem: los ítems nacieron DENTRO de responder (2, del mismo maestro)",
+    resTotalItems == 2 && resItems.All(i => i.FkRespuesta == resId) && resItems.Any(i => i.ValorTexto == "Muy buena"));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "RespuestaEncuesta: Obtener(999) lanza NoEncontradoExcepcion (404)", () => resServicio.ObtenerAsync(999));
+await AfirmarLanza<ArgumentException>(
+    "RespuestaEncuesta: Listar(limite 0) lanza ArgumentException (400)", () => resServicio.ListarAsync(null, 0));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "RespuestaItem: Obtener(999) lanza NoEncontradoExcepcion (404)", () => itemServicio.ObtenerAsync(999));
+await AfirmarLanza<ArgumentException>(
+    "RespuestaItem: Listar(limite 0) lanza ArgumentException (400)", () => itemServicio.ListarAsync(null, 0));
+Afirmar("RespuestaEncuestaResponder rechaza una lista de respuestas vacía (-> 422)",
+    !EsValida(new RespuestaEncuestaResponder { FkRegistro = 169, Respuestas = [] }));
+Afirmar("IRepositorioRespuestaEncuesta: lectura + responder, sin editar ni borrar (D32)",
+    MetodosDe(typeof(IRepositorioRespuestaEncuesta)) == "ObtenerPorIdAsync,ObtenerTodosAsync,ResponderAsync");
+Afirmar("IRepositorioRespuestaItem es de solo lectura (nace dentro de responder)",
+    MetodosDe(typeof(IRepositorioRespuestaItem)) == "ObtenerPorIdAsync,ObtenerTodosAsync");
+
+// ---- Maestro-detalle en el formulario (Guía IA, Reglas 1 y 4) ------------------
+//  El maestro y sus detalles llegan en UNA petición y el servicio los entrega
+//  JUNTOS al repositorio (un solo CALL: migraciones 042-044). Lo que se
+//  comprueba aquí es la parte del SERVICIO: que arma los detalles, que valida
+//  sus reglas ANTES de tocar el repositorio y que no inventa los ids.
+//  (El todo-o-nada del motor lo prueba
+//   db/postgres/pruebas/prueba_sp_maestro_detalle_formulario.sql.)
+Console.WriteLine("\n== Maestro-detalle en el formulario: cátedra, encuesta y sesión ==\n");
+
+var mdRepoCat = new RepositorioCatedraFalso();
+var mdServCat = new ServicioCatedra(mdRepoCat);
+var mdInicio = new DateTimeOffset(2026, 11, 3, 14, 0, 0, TimeSpan.FromHours(-5));
+SesionInicial MdSesion(DateTimeOffset inicio, DateTimeOffset fin) => new()
+{ Inicio = inicio, Fin = fin, FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-2" };
+
+var (mdIdCat, _) = await mdServCat.CrearAsync(new CatedraCrear
+{
+    IdEventoAsis = "000999101", Nombre = "Con sesiones", FkTipoEvento = "CAAB",
+    Sesiones = [MdSesion(mdInicio, mdInicio.AddHours(2)), MdSesion(mdInicio.AddDays(7), mdInicio.AddDays(7).AddHours(2))],
+});
+Afirmar("Cátedra: las 2 sesiones viajan en la MISMA llamada que la cátedra (Regla 1)",
+    mdIdCat > 0 && mdRepoCat.UltimasSesiones.Count == 2);
+Afirmar("Cátedra: cada sesión va con FkCatedra 0 (lo fija el SP) y NumeroReunion 0 (lo fija el trigger)",
+    mdRepoCat.UltimasSesiones.All(s => s.FkCatedra == 0 && s.NumeroReunion == 0));
+Afirmar("Cátedra: las horas de las sesiones se pasan a UTC (14:00 -05:00 -> 19:00 UTC) y estado PROGRAMADA",
+    mdRepoCat.UltimasSesiones[0].Inicio == new DateTime(2026, 11, 3, 19, 0, 0, DateTimeKind.Utc)
+    && mdRepoCat.UltimasSesiones.All(s => s.Estado == "PROGRAMADA"));
+
+await mdServCat.CrearAsync(new CatedraCrear { IdEventoAsis = "000999102", Nombre = "Sin sesiones", FkTipoEvento = "CAAB" });
+Afirmar("Cátedra: sin 'sesiones' el repositorio recibe una lista vacía (no null)",
+    mdRepoCat.UltimasSesiones.Count == 0);
+
+int mdLlamadasCat = mdRepoCat.LlamadasCrear;
+await AfirmarLanza<ArgumentException>(
+    "Cátedra: una sesión con fin <= inicio -> ArgumentException (400, misma regla RF125 de Sesion)",
+    () => mdServCat.CrearAsync(new CatedraCrear
+    {
+        IdEventoAsis = "000999103", Nombre = "No debe quedar", FkTipoEvento = "CAAB",
+        Sesiones = [MdSesion(mdInicio, mdInicio.AddHours(2)), MdSesion(mdInicio, mdInicio.AddHours(-1))],
+    }));
+Afirmar("...y el repositorio NUNCA se invocó (no queda ni la cátedra)", mdRepoCat.LlamadasCrear == mdLlamadasCat);
+
+var mdRepoEnc = new RepositorioEncuestaFalso();
+var mdServEnc = new ServicioEncuesta(mdRepoEnc);
+long mdIdEnc = await mdServEnc.CrearAsync(new EncuestaCrear
+{
+    Nombre = "Con preguntas",
+    Preguntas =
+    [
+        new PreguntaInicial { Enunciado = "¿Útil?", Orden = 1, FkTipoPregunta = "ESCALA_5", ValorMin = 1, ValorMax = 5, Obligatoria = true },
+        new PreguntaInicial
+        {
+            Enunciado = "¿Cómo se enteró?", Orden = 2, FkTipoPregunta = "OPCION_UNICA",
+            Opciones = [new OpcionInicial { Etiqueta = "Correo", Orden = 1 }, new OpcionInicial { Etiqueta = "Cartelera", Orden = 2 }],
+        },
+    ],
+});
+Afirmar("Encuesta: las 2 preguntas viajan en la MISMA llamada que la encuesta (Regla 1)",
+    mdIdEnc > 0 && mdRepoEnc.UltimasPreguntas.Count == 2);
+Afirmar("Encuesta: segundo nivel — la pregunta de opción única lleva sus 2 opciones",
+    mdRepoEnc.UltimasPreguntas[1].Opciones.Count == 2 && mdRepoEnc.UltimasPreguntas[0].Opciones.Count == 0);
+Afirmar("Encuesta: FkEncuesta y FkPregunta van en 0 (los fija el SP); obligatoria por defecto false",
+    mdRepoEnc.UltimasPreguntas.All(p => p.Pregunta.FkEncuesta == 0 && p.Opciones.All(o => o.FkPregunta == 0))
+    && mdRepoEnc.UltimasPreguntas[0].Pregunta.Obligatoria && !mdRepoEnc.UltimasPreguntas[1].Pregunta.Obligatoria);
+
+int mdLlamadasEnc = mdRepoEnc.LlamadasCrear;
+await AfirmarLanza<ArgumentException>(
+    "Encuesta: una pregunta con valor_min sin valor_max -> ArgumentException (misma regla de Pregunta)",
+    () => mdServEnc.CrearAsync(new EncuestaCrear
+    {
+        Nombre = "No debe quedar",
+        Preguntas = [new PreguntaInicial { Enunciado = "x", Orden = 1, FkTipoPregunta = "ESCALA_5", ValorMin = 1 }],
+    }));
+Afirmar("...y el repositorio NUNCA se invocó (no queda ni la encuesta)", mdRepoEnc.LlamadasCrear == mdLlamadasEnc);
+
+var mdRepoSes = new RepositorioSesionFalso();
+var mdServSes = new ServicioSesion(mdRepoSes);
+SesionCrear MdSesionCrear(EnlaceInicial? enlace) => new()
+{
+    FkCatedra = 5498, Inicio = mdInicio, Fin = mdInicio.AddHours(2),
+    FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-2", Enlace = enlace,
+};
+await mdServSes.CrearAsync(MdSesionCrear(new EnlaceInicial { MinutosAntes = 15, MinutosDespues = 45, FkUsuario = 1 }));
+Afirmar("Sesión: el enlace pedido viaja en la MISMA llamada que la sesión (Regla 1)",
+    mdRepoSes.UltimoEnlace.HasValue && mdRepoSes.UltimoEnlace.Value.MinutosAntes == 15
+    && mdRepoSes.UltimoEnlace.Value.MinutosDespues == 45 && mdRepoSes.UltimoEnlace.Value.FkUsuario == 1);
+await mdServSes.CrearAsync(MdSesionCrear(null));
+Afirmar("Sesión: sin 'enlace' el repositorio recibe null (la sesión nace sin enlace, como antes)",
+    !mdRepoSes.UltimoEnlace.HasValue);
+
+Afirmar("Las peticiones de detalle NO declaran la FK del maestro (la fija el SP)",
+    typeof(SesionInicial).GetProperty("FkCatedra") is null
+    && typeof(PreguntaInicial).GetProperty("FkEncuesta") is null
+    && typeof(EnlaceInicial).GetProperty("FkSesion") is null);
+Afirmar("SesionInicial con fk_sede vacía no es válida (-> 422 antes de llegar al servicio)",
+    !EsValida(new SesionInicial { Inicio = mdInicio, Fin = mdInicio.AddHours(1), FkModalidad = "PRESENCIAL", FkPeriodo = "2026-2" }));
+Afirmar("EnlaceInicial con minutos fuera de 0..1440 no es válido (-> 422)",
+    !EsValida(new EnlaceInicial { MinutosAntes = 2000 }));
+
+// ---------------------------------------------------------------------------
+//  v7.1 · D52 · Disponibilidad de horario (solo lectura)
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.1 · Prueba de capas: disponibilidad de horario ==\n");
+var repoDisp71 = new RepositorioDisponibilidadFalso();
+var servicioDisp71 = new ServicioDisponibilidad(repoDisp71);
+var dispIni = new DateTimeOffset(2026, 10, 20, 14, 0, 0, TimeSpan.FromHours(-5));
+
+await AfirmarLanza<ArgumentException>(
+    "Conflictos sin 'fin' lanza ArgumentException (400)",
+    () => servicioDisp71.ConflictosAsync(dispIni, null, "SAN_BENITO", null, null, null));
+await AfirmarLanza<ArgumentException>(
+    "Conflictos con fin <= inicio lanza ArgumentException (400)",
+    () => servicioDisp71.ConflictosAsync(dispIni, dispIni, "SAN_BENITO", null, null, null));
+await AfirmarLanza<ArgumentException>(
+    "Conflictos con un rango de más de 24 h lanza ArgumentException (400)",
+    () => servicioDisp71.ConflictosAsync(dispIni, dispIni.AddHours(25), "SAN_BENITO", null, null, null));
+Afirmar("...y ninguna de esas consultas llegó a la BD", repoDisp71.Consultas == 0);
+
+var hayChoque71 = await servicioDisp71.ConflictosAsync(dispIni, dispIni.AddHours(2), "  SAN_BENITO ", "  ", 7, null);
+Afirmar("Conflictos devuelve lo que decide la BD (aquí 1 choque por LUGAR y PONENTE)",
+    hayChoque71.Count == 1 && hayChoque71[0].Motivos!.Contains("LUGAR") && hayChoque71[0].Motivos!.Contains("PONENTE"));
+Afirmar("...la sede llega sin espacios y un lugar en blanco llega como null (la BD lo trata como «sin lugar»)",
+    repoDisp71.UltimaSede == "SAN_BENITO" && repoDisp71.UltimoLugar is null && repoDisp71.UltimoAsistente == 7);
+var libre71 = await servicioDisp71.ConflictosAsync(dispIni.AddDays(3), dispIni.AddDays(3).AddHours(2), "SAN_BENITO", null, 7, null);
+Afirmar("Un horario sin sesiones que choquen devuelve lista vacía (disponible)", libre71.Count == 0);
+
+await AfirmarLanza<ArgumentException>(
+    "Agenda sin 'desde' lanza ArgumentException (400)",
+    () => servicioDisp71.AgendaAsync(null, dispIni.AddDays(1), null, null));
+await AfirmarLanza<ArgumentException>(
+    "Agenda con un rango de más de 31 días lanza ArgumentException (400)",
+    () => servicioDisp71.AgendaAsync(dispIni, dispIni.AddDays(40), null, null));
+await AfirmarLanza<ArgumentException>(
+    "Agenda con limite 0 lanza ArgumentException (400)",
+    () => servicioDisp71.AgendaAsync(dispIni, dispIni.AddDays(1), null, 0));
+var agenda71 = await servicioDisp71.AgendaAsync(dispIni.Date, dispIni.AddDays(1), null, null);
+Afirmar("Agenda de un día devuelve las sesiones de la BD con el límite por defecto (500)",
+    agenda71.Count == 1 && repoDisp71.UltimoLimite == 500);
+
+// ---------------------------------------------------------------------------
+//  v7.1 · D53 · QR de cierre de una sesión
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.1 · Prueba de capas: QR de cierre de sesión ==\n");
+var repoQr71 = new RepositorioQrSesionFalso();
+var servicioQr71 = new ServicioQrSesion(repoQr71);
+
+var qrNuevo71 = await servicioQr71.EmitirAsync(new QrSesionEmitir { FkSesion = 7, FkUsuario = 3 });
+Afirmar("Emitir el QR de una sesión lo crea: ya_existia = false (y ya no exige inscripción)",
+    !qrNuevo71.YaExistia && qrNuevo71.Token != Guid.Empty && qrNuevo71.FkSesion == 7);
+Afirmar("...la ventana se abre ANTES de que termine la sesión y se cierra cuando termina (fin = 18:00, abre 17:45)",
+    qrNuevo71.VentanaHasta == RepositorioQrSesionFalso.FinSesion && qrNuevo71.VentanaDesde == RepositorioQrSesionFalso.FinSesion.AddMinutes(-15));
+Afirmar("...y quedó registrado quién lo emitió", repoQr71.UltimoUsuario == 3);
+var qrMismo71 = await servicioQr71.EmitirAsync(new QrSesionEmitir { FkSesion = 7 });
+Afirmar("Emitir otra vez es idempotente: devuelve el MISMO QR (ya_existia = true)", qrMismo71.YaExistia && qrMismo71.Token == qrNuevo71.Token);
+var qrOtro71 = await servicioQr71.EmitirAsync(new QrSesionEmitir { FkSesion = 7, Regenerar = true });
+Afirmar("Regenerar revoca el anterior y crea otro token distinto", !qrOtro71.YaExistia && qrOtro71.Token != qrNuevo71.Token && repoQr71.Revocados == 1);
+Afirmar("Consultar devuelve el QR vigente (el nuevo)", (await servicioQr71.ConsultarAsync(7))!.Token == qrOtro71.Token);
+Afirmar("Consultar una sesión sin QR devuelve null (204)", await servicioQr71.ConsultarAsync(8) is null);
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "Emitir el QR de una sesión inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioQr71.EmitirAsync(new QrSesionEmitir { FkSesion = 999 }));
+await AfirmarLanza<ArgumentException>(
+    "Consultar sin 'fkSesion' lanza ArgumentException (400)",
+    () => servicioQr71.ConsultarAsync(null));
+await AfirmarLanza<ArgumentException>(
+    "La asistencia sin 'fkSesion' lanza ArgumentException (400)",
+    () => servicioQr71.AsistenciaAsync(0));
+var asis71 = await servicioQr71.AsistenciaAsync(7);
+Afirmar("La asistencia lista a quien registró (con hora y ubicación), sin lista de inscritos (D55)",
+    asis71.Count == 2 && asis71.All(a => a.RegistradoEn is not null) && asis71[0].Latitud is not null);
+Afirmar("QrSesionEmitir exige fk_sesion", !EsValida(new QrSesionEmitir()) && EsValida(new QrSesionEmitir { FkSesion = 7 }));
+
+// ---------------------------------------------------------------------------
+//  v7.1 · D55 · Solo el ADMINISTRADOR inicia sesión; cambio obligatorio de clave a quien se le marque
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.1 · Prueba de capas: solo el administrador inicia sesión ==\n");
+var repoUsr55 = new RepositorioUsuarioFalso();
+var repoRoles55 = new RepositorioRolPorUsuarioFalso();
+var servicioUsr55 = new ServicioUsuario(repoUsr55, repoRoles55, new RepositorioCodigoRecuperacionFalso());
+
+var admin55 = await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "Admin12345" });
+Afirmar("El administrador (usuario con el rol ADMIN vigente) inicia sesión", admin55 is not null && admin55.Value.Roles.Contains("ADMIN"));
+
+var estu55 = await servicioUsr55.CrearAsync(new UsuarioCrear { FkAsistente = 70, Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" });
+int accesosAntes55 = repoUsr55.LlamadasUltimoAcceso;
+Afirmar("Una cuenta con la clave correcta pero SIN ningún rol NO inicia sesión (null, el mismo rechazo de siempre, D27)",
+    await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" }) is null);
+await repoRoles55.CrearAsync(new RolPorUsuario { FkUsuario = estu55.IdUsuario, FkRol = "ESTUDIANTE", FechaIni = new DateOnly(2026, 1, 1) });
+Afirmar("...con el rol ESTUDIANTE tampoco", await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" }) is null);
+await repoRoles55.CrearAsync(new RolPorUsuario { FkUsuario = estu55.IdUsuario, FkRol = "PONENTE", FechaIni = new DateOnly(2026, 1, 1) });
+Afirmar("...ni con ESTUDIANTE y PONENTE juntos", await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" }) is null);
+Afirmar("...y a quien no puede entrar NO se le anota acceso", repoUsr55.LlamadasUltimoAcceso == accesosAntes55);
+await repoRoles55.CrearAsync(new RolPorUsuario { FkUsuario = estu55.IdUsuario, FkRol = "ADMIN", FechaIni = new DateOnly(2026, 1, 1) });
+var ahoraAdmin55 = await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" });
+Afirmar("Cuando se le da el rol ADMIN, entra (el rol es lo que manda, no la persona)", ahoraAdmin55 is not null && ahoraAdmin55.Value.Roles.Contains("ADMIN"));
+Afirmar("Con el rol ADMIN pero la clave mal escrita, no entra",
+    await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "otra-clave" }) is null);
+Afirmar("Un correo institucional ya no es un nombre de usuario válido para entrar",
+    await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "3000999111" }) is null);
+
+// cambio obligatorio de clave (sirve para cualquier cuenta, p. ej. un administrador nuevo con clave temporal)
+var conFlag55 = await servicioUsr55.CrearAsync(new UsuarioCrear { FkAsistente = 71, Usuario = "admin.nuevo", Clave = "Temporal-1234", DebeCambiarClave = true });
+Afirmar("Crear una cuenta con debe_cambiar_clave = true la deja marcada",
+    (await servicioUsr55.ObtenerAsync(conFlag55.IdUsuario)).DebeCambiarClave);
+var sinFlag55 = await servicioUsr55.CrearAsync(new UsuarioCrear { FkAsistente = 72, Usuario = "admin.otro", Clave = "Temporal-1234" });
+Afirmar("...y sin pedirlo no se marca", !(await servicioUsr55.ObtenerAsync(sinFlag55.IdUsuario)).DebeCambiarClave);
+await servicioUsr55.ExigirCambioClaveAsync(sinFlag55.IdUsuario);
+Afirmar("El administrador puede exigir el cambio a una cuenta existente", (await servicioUsr55.ObtenerAsync(sinFlag55.IdUsuario)).DebeCambiarClave);
+await AfirmarLanza<NoEncontradoExcepcion>("Exigir el cambio a un usuario inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioUsr55.ExigirCambioClaveAsync(99999));
+Afirmar("Cambiar la clave apaga la exigencia",
+    await servicioUsr55.CambiarClaveAsync(sinFlag55.IdUsuario, new UsuarioCambiarClave { ClaveActual = "Temporal-1234", ClaveNueva = "Definitiva-5678" })
+    && !(await servicioUsr55.ObtenerAsync(sinFlag55.IdUsuario)).DebeCambiarClave);
+
+// ---- Cuenta de control --------------------------------------------------------
+Console.WriteLine("\n== Cuenta de control: 37 tablas, 37 recursos ==\n");
+// v7.1: D52 agrega Disponibilidad (consultas de solo lectura) y D53 agrega QrSesion (el QR de cierre: enlace_registro +
+// asistencia). La inscripción (D50) se quitó en la D55. 37 del script + 2.
+Afirmar("La API declara 39 controladores (los 37 de bdcatedras + Disponibilidad + QrSesion de la v7.1)",
+    typeof(ApiCatedras.Controllers.BitacoraController).Assembly.GetTypes()
+        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 39);
+
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
 // --------------------------------------------------------------------------
@@ -2065,8 +2654,15 @@ class RepositorioEncuestaFalso : IRepositorioEncuesta
     public Task<Encuesta?> ObtenerPorIdAsync(long idEncuesta) =>
         Task.FromResult(_tabla.TryGetValue(idEncuesta, out var encuesta) ? encuesta : null);
 
-    public Task<long> CrearAsync(Encuesta encuesta)
+    // Maestro-detalle (Regla 1): lo que le entregó el servicio, para la prueba.
+    public int LlamadasCrear { get; private set; }
+    public IReadOnlyList<(Pregunta Pregunta, IReadOnlyList<OpcionPregunta> Opciones)> UltimasPreguntas { get; private set; } = [];
+
+    public Task<long> CrearAsync(Encuesta encuesta,
+        IReadOnlyList<(Pregunta Pregunta, IReadOnlyList<OpcionPregunta> Opciones)> preguntasIniciales)
     {
+        LlamadasCrear++;
+        UltimasPreguntas = preguntasIniciales;
         // Simula la violación de uq_encuesta_ver (nombre, version).
         if (_tabla.Values.Any(e => e.Nombre == encuesta.Nombre && e.Version == encuesta.Version))
             throw new InvalidOperationException(
@@ -2606,8 +3202,15 @@ class RepositorioCatedraFalso : IRepositorioCatedra
     public Task<Catedra?> ObtenerPorIdAsync(long idCatedra) =>
         Task.FromResult(_tabla.TryGetValue(idCatedra, out var catedra) ? catedra : null);
 
-    public Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra)
+    // Maestro-detalle (Regla 1): guarda lo que le entregó el servicio para que
+    // la prueba compruebe que las sesiones llegaron JUNTO con la cátedra.
+    public int LlamadasCrear { get; private set; }
+    public IReadOnlyList<Sesion> UltimasSesiones { get; private set; } = [];
+
+    public Task<(long IdCatedra, string NombreAsis)> CrearAsync(Catedra catedra, IReadOnlyList<Sesion> sesionesIniciales)
     {
+        LlamadasCrear++;
+        UltimasSesiones = sesionesIniciales;
         if (_tabla.Values.Any(c => c.IdEventoAsis == catedra.IdEventoAsis))
             throw new InvalidOperationException("id_evento_asis duplicado (simulado).");
 
@@ -3018,9 +3621,14 @@ class RepositorioSesionFalso : IRepositorioSesion
     public Task<Sesion?> ObtenerPorIdAsync(long idSesion) =>
         Task.FromResult(_tabla.TryGetValue(idSesion, out var sesion) ? sesion : null);
 
-    public Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(Sesion sesion)
+    // Maestro-detalle (Regla 1): el enlace que pidió el servicio (null = ninguno).
+    public (int? MinutosAntes, int? MinutosDespues, long? FkUsuario)? UltimoEnlace { get; private set; }
+
+    public Task<(long IdSesion, short NumeroReunion, DateTime CreadoEn)> CrearAsync(
+        Sesion sesion, (int? MinutosAntes, int? MinutosDespues, long? FkUsuario)? enlaceInicial)
     {
         LlamadasCrear++;
+        UltimoEnlace = enlaceInicial;
         UltimoNumeroRecibido = sesion.NumeroReunion;
 
         if (sesion.NumeroReunion == 0)
@@ -3057,7 +3665,6 @@ class RepositorioSesionFalso : IRepositorioSesion
         if (datos.TryGetValue("fk_encuesta", out var e)) s.FkEncuesta = (long?)e;
         if (datos.TryGetValue("lugar", out var l)) s.Lugar = (string?)l;
         if (datos.TryGetValue("enlace_virtual", out var ev)) s.EnlaceVirtual = (string?)ev;
-        if (datos.TryGetValue("cupo", out var cu)) s.Cupo = (int?)cu;
         if (datos.TryGetValue("estado", out var es)) s.Estado = (string)es!;
         return Task.FromResult(1);
     }
@@ -3174,7 +3781,8 @@ class RepositorioUsuarioFalso : IRepositorioUsuario
 
         if (datos.TryGetValue("fk_asistente", out var f)) u.FkAsistente = (long)f!;
         if (datos.TryGetValue("usuario", out var n)) u.NombreUsuario = (string)n!;
-        if (datos.TryGetValue("clave_hash", out var h)) u.ClaveHash = (string)h!;
+        // Como el disparador trg_usuario_clave_cambiada: cambiar la clave apaga debe_cambiar_clave.
+        if (datos.TryGetValue("clave_hash", out var h)) { u.ClaveHash = (string)h!; u.DebeCambiarClave = false; }
         if (datos.TryGetValue("activo", out var a)) u.Activo = (bool)a!;
         return Task.FromResult(1);
     }
@@ -3189,6 +3797,12 @@ class RepositorioUsuarioFalso : IRepositorioUsuario
 
     public Task<int> EliminarAsync(long idUsuario) =>
         Task.FromResult(_tabla.Remove(idUsuario) ? 1 : 0);
+
+    public Task FijarDebeCambiarClaveAsync(long idUsuario, bool valor)
+    {
+        if (_tabla.TryGetValue(idUsuario, out var u)) u.DebeCambiarClave = valor;
+        return Task.CompletedTask;
+    }
 }
 
 // ==========================================================================
@@ -3332,7 +3946,10 @@ class RepositorioClaveAccesoFalso : IRepositorioClaveAcceso
     private long _siguienteRegistro = 900;
 
     public int LlamadasSolicitar { get; private set; }
+    public int LlamadasValidar { get; private set; }
     public string? UltimaIp { get; private set; }
+    public decimal? UltimaLatitud { get; private set; }
+    public decimal? UltimaLongitud { get; private set; }
 
     public Task<List<ClaveAcceso>> ObtenerTodosAsync(long? fkAsistente, int limite) =>
         Task.FromResult(_tabla
@@ -3363,8 +3980,10 @@ class RepositorioClaveAccesoFalso : IRepositorioClaveAcceso
         return Task.FromResult((clave.IdClave, ClaveFija, clave.EnviadoA));
     }
 
-    public Task<long> ValidarAsync(long idClave, string clave, string? ip, string? userAgent)
+    public Task<long> ValidarAsync(long idClave, string clave, decimal latitud, decimal longitud,
+        string? ip, string? userAgent)
     {
+        LlamadasValidar++;
         var fila = _tabla.FirstOrDefault(c => c.IdClave == idClave)
             ?? throw new InvalidOperationException("La clave no existe (simulado).");
 
@@ -3374,7 +3993,56 @@ class RepositorioClaveAccesoFalso : IRepositorioClaveAcceso
             throw new InvalidOperationException("Clave incorrecta (simulado).");
 
         fila.UsadoEn = DateTime.UtcNow;
+        UltimaLatitud = latitud;      // el SP de la BD las guarda en registro_asistencia
+        UltimaLongitud = longitud;
         return Task.FromResult(_siguienteRegistro++);
+    }
+}
+
+// ==========================================================================
+//  v7.1 · Repositorio FALSO de 'CodigoRecuperacion'. Simula los dos
+//  procedimientos de la migración 047: una cuenta "admin" existe, el código
+//  correcto es siempre CodigoFijo y se puede usar UNA vez. Guarda el último
+//  hash que recibió para comprobar que es un hash y no la clave.
+// ==========================================================================
+class RepositorioCodigoRecuperacionFalso : IRepositorioCodigoRecuperacion
+{
+    public const string CodigoFijo = "719304";
+
+    private readonly Dictionary<long, bool> _usado = new();   // id_codigo -> ¿ya se usó?
+    private long _siguienteId = 70;
+
+    public string? UltimoIdentificador { get; private set; }
+    public string? UltimaIp { get; private set; }
+    public string? UltimoHashRecibido { get; private set; }
+
+    public Task<(long IdCodigo, string Codigo, string EnviadoA, string Usuario)?> SolicitarAsync(
+        string identificador, string? ip)
+    {
+        UltimoIdentificador = identificador;
+        UltimaIp = ip;
+
+        if (identificador != "admin")
+            return Task.FromResult<(long, string, string, string)?>(null);   // sin cuenta activa
+
+        long id = _siguienteId++;
+        _usado[id] = false;
+        return Task.FromResult<(long, string, string, string)?>((id, CodigoFijo, "admin.catedras@usbmed.edu.co", "admin"));
+    }
+
+    public Task<string> RestablecerAsync(long idCodigo, string codigo, string claveHash)
+    {
+        // Como sp_restablecer_clave: devuelve un ESTADO, no lanza.
+        if (!_usado.TryGetValue(idCodigo, out var usado))
+            return Task.FromResult("NO_EXISTE");
+        if (usado)
+            return Task.FromResult("USADO");
+        if (codigo != CodigoFijo)
+            return Task.FromResult("INCORRECTO");
+
+        _usado[idCodigo] = true;
+        UltimoHashRecibido = claveHash;
+        return Task.FromResult("OK");
     }
 }
 
@@ -3558,4 +4226,324 @@ class RepositorioDetalleMigracionFalso : IRepositorioDetalleMigracion
 
         return Task.FromResult(1);
     }
+}
+
+
+// ==========================================================================
+//  VERSIÓN 7 · Fase 58 — repositorios FALSOS de Parametro y Bitacora, y de
+//  las 4 entidades de la v6 que faltaban (Pregunta, OpcionPregunta,
+//  RespuestaEncuesta, RespuestaItem). Mismo contrato que el repositorio
+//  real, en memoria; ninguna línea de PostgreSQL.
+// ==========================================================================
+
+/// <summary>Falso de 'parametro'. Simula lo que hace la BD: PK de texto
+/// (clave repetida -> error) y 'modificado_en' que fija el SP.</summary>
+class RepositorioParametroFalso : IRepositorioParametro
+{
+    private readonly SortedDictionary<string, Parametro> _tabla = new(StringComparer.Ordinal);
+
+    // Reloj del "motor": avanza un segundo por operación para que la
+    // prueba no dependa de la resolución de DateTime.UtcNow.
+    private DateTime _reloj = new(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
+    private DateTime Ahora() => _reloj = _reloj.AddSeconds(1);
+
+    public int LlamadasTotales { get; private set; }
+
+    public RepositorioParametroFalso()
+    {
+        _tabla["URL_BASE"] = new Parametro { Clave = "URL_BASE", Valor = "https://catedras.usbmed.edu.co/r/", Descripcion = "Base de los enlaces", ModificadoEn = Ahora() };
+        _tabla["CLAVE_LONGITUD"] = new Parametro { Clave = "CLAVE_LONGITUD", Valor = "6", TipoDato = "ENTERO", Descripcion = "Dígitos de la clave", ModificadoEn = Ahora() };
+    }
+
+    public Task<List<Parametro>> ObtenerTodosAsync(int limite)
+    {
+        LlamadasTotales++;
+        return Task.FromResult(_tabla.Values.Take(limite).ToList());   // ORDER BY clave
+    }
+
+    public Task<Parametro?> ObtenerPorIdAsync(string clave)
+    {
+        LlamadasTotales++;
+        return Task.FromResult(_tabla.TryGetValue(clave, out var p) ? p : null);
+    }
+
+    public Task CrearAsync(Parametro parametro)
+    {
+        LlamadasTotales++;
+        if (_tabla.ContainsKey(parametro.Clave))
+            throw new InvalidOperationException(
+                $"duplicate key value violates unique constraint \"pk_parametro\" (simula la BD: '{parametro.Clave}').");
+        parametro.ModificadoEn = Ahora();   // DEFAULT now() de la columna
+        _tabla[parametro.Clave] = parametro;
+        return Task.CompletedTask;
+    }
+
+    public Task<int> ActualizarAsync(string clave, Dictionary<string, object?> datos)
+    {
+        LlamadasTotales++;
+        if (!_tabla.TryGetValue(clave, out var actual))
+            return Task.FromResult(0);
+
+        // Igual que el repositorio real: mezcla lo enviado sobre la fila
+        // guardada y "llama al SP" con el conjunto completo.
+        if (datos.TryGetValue("valor", out var v)) actual.Valor = (string)v!;
+        if (datos.TryGetValue("tipo_dato", out var t)) actual.TipoDato = (string)t!;
+        if (datos.TryGetValue("descripcion", out var d)) actual.Descripcion = (string)d!;
+        if (datos.TryGetValue("fk_usuario_modifica", out var u)) actual.FkUsuarioModifica = u is null ? null : Convert.ToInt64(u);
+        actual.ModificadoEn = Ahora();      // sp_actualizar_parametro: modificado_en = now()
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(string clave)
+    {
+        LlamadasTotales++;
+        return Task.FromResult(_tabla.Remove(clave) ? 1 : 0);
+    }
+}
+
+/// <summary>Falso de 'bitacora': solo lectura, como el contrato real. Las
+/// filas "las pusieron los triggers" antes de empezar la prueba.</summary>
+class RepositorioBitacoraFalso : IRepositorioBitacora
+{
+    private readonly List<Bitacora> _tabla =
+    [
+        new Bitacora { IdBitacora = 1, OcurridoEn = new DateTime(2026, 8, 13, 18, 0, 0, DateTimeKind.Utc), UsuarioBd = "sa",
+            NombreTabla = "registro_asistencia", Operacion = "INSERT", Llave = "1",
+            DatosDespues = System.Text.Json.JsonDocument.Parse("{\"id_registro\": 1}").RootElement },
+        new Bitacora { IdBitacora = 2, OcurridoEn = new DateTime(2026, 8, 13, 18, 1, 0, DateTimeKind.Utc), UsuarioBd = "sa",
+            NombreTabla = "registro_asistencia", Operacion = "INSERT", Llave = "2" },
+        new Bitacora { IdBitacora = 3, OcurridoEn = new DateTime(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc), UsuarioBd = "sa",
+            NombreTabla = "asistente", Operacion = "UPDATE", Llave = "2" },
+    ];
+
+    public Task<List<Bitacora>> ObtenerTodosAsync(string? nombreTabla, int limite) =>
+        Task.FromResult(_tabla
+            .Where(b => nombreTabla is null || b.NombreTabla == nombreTabla)
+            .OrderByDescending(b => b.OcurridoEn).ThenByDescending(b => b.IdBitacora)
+            .Take(limite)
+            .ToList());
+
+    public Task<Bitacora?> ObtenerPorIdAsync(long idBitacora) =>
+        Task.FromResult(_tabla.FirstOrDefault(b => b.IdBitacora == idBitacora));
+}
+
+/// <summary>Falso de 'pregunta' (v6). Guarda las opciones iniciales que le
+/// llegan en la misma llamada para comprobar la Regla 1.</summary>
+class RepositorioPreguntaFalso : IRepositorioPregunta
+{
+    private readonly List<Pregunta> _tabla = new();
+    private long _siguiente = 1;
+    public int LlamadasTotales { get; private set; }
+    public IReadOnlyList<OpcionPregunta> UltimasOpciones { get; private set; } = [];
+
+    public Task<List<Pregunta>> ObtenerTodosAsync(long? fkEncuesta, int limite)
+    {
+        LlamadasTotales++;
+        return Task.FromResult(_tabla.Where(p => fkEncuesta is null || p.FkEncuesta == fkEncuesta).Take(limite).ToList());
+    }
+
+    public Task<Pregunta?> ObtenerPorIdAsync(long idPregunta)
+    {
+        LlamadasTotales++;
+        return Task.FromResult(_tabla.FirstOrDefault(p => p.IdPregunta == idPregunta));
+    }
+
+    public Task<long> CrearAsync(Pregunta pregunta, IReadOnlyList<OpcionPregunta> opcionesIniciales)
+    {
+        LlamadasTotales++;
+        pregunta.IdPregunta = _siguiente++;
+        _tabla.Add(pregunta);
+        UltimasOpciones = opcionesIniciales;
+        return Task.FromResult(pregunta.IdPregunta);
+    }
+
+    public Task<int> ActualizarAsync(long idPregunta, Dictionary<string, object?> datos)
+    {
+        LlamadasTotales++;
+        var p = _tabla.FirstOrDefault(x => x.IdPregunta == idPregunta);
+        if (p is null) return Task.FromResult(0);
+        if (datos.TryGetValue("enunciado", out var e)) p.Enunciado = (string)e!;
+        if (datos.TryGetValue("orden", out var o)) p.Orden = Convert.ToInt16(o);
+        if (datos.TryGetValue("fk_tipo_pregunta", out var t)) p.FkTipoPregunta = (string)t!;
+        if (datos.TryGetValue("obligatoria", out var ob)) p.Obligatoria = (bool)ob!;
+        if (datos.TryGetValue("valor_min", out var mi)) p.ValorMin = mi is null ? null : Convert.ToInt16(mi);
+        if (datos.TryGetValue("valor_max", out var ma)) p.ValorMax = ma is null ? null : Convert.ToInt16(ma);
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(long idPregunta)
+    {
+        LlamadasTotales++;
+        return Task.FromResult(_tabla.RemoveAll(p => p.IdPregunta == idPregunta));
+    }
+}
+
+/// <summary>Falso de 'opcion_pregunta' (v6).</summary>
+class RepositorioOpcionPreguntaFalso : IRepositorioOpcionPregunta
+{
+    private readonly List<OpcionPregunta> _tabla = new();
+    private long _siguiente = 1;
+
+    public Task<List<OpcionPregunta>> ObtenerTodosAsync(long? fkPregunta, int limite) =>
+        Task.FromResult(_tabla.Where(o => fkPregunta is null || o.FkPregunta == fkPregunta).Take(limite).ToList());
+
+    public Task<OpcionPregunta?> ObtenerPorIdAsync(long idOpcion) =>
+        Task.FromResult(_tabla.FirstOrDefault(o => o.IdOpcion == idOpcion));
+
+    public Task<long> CrearAsync(OpcionPregunta opcion)
+    {
+        opcion.IdOpcion = _siguiente++;
+        _tabla.Add(opcion);
+        return Task.FromResult(opcion.IdOpcion);
+    }
+
+    public Task<int> ActualizarAsync(long idOpcion, Dictionary<string, object?> datos)
+    {
+        var o = _tabla.FirstOrDefault(x => x.IdOpcion == idOpcion);
+        if (o is null) return Task.FromResult(0);
+        if (datos.TryGetValue("etiqueta", out var e)) o.Etiqueta = (string)e!;
+        if (datos.TryGetValue("valor", out var v)) o.Valor = v is null ? null : Convert.ToInt16(v);
+        if (datos.TryGetValue("orden", out var or)) o.Orden = Convert.ToInt16(or);
+        return Task.FromResult(1);
+    }
+
+    public Task<int> EliminarAsync(long idOpcion) =>
+        Task.FromResult(_tabla.RemoveAll(o => o.IdOpcion == idOpcion));
+}
+
+/// <summary>Falso de 'respuesta_encuesta' (v6): "responder" crea el maestro
+/// y sus ítems juntos, en la lista que comparte con el falso de ítems.</summary>
+class RepositorioRespuestaEncuestaFalso : IRepositorioRespuestaEncuesta
+{
+    private readonly List<RespuestaEncuesta> _tabla = new();
+    private readonly List<RespuestaItem> _items;
+    private long _siguiente = 1;
+    private long _siguienteItem = 1;
+
+    public RepositorioRespuestaEncuestaFalso(List<RespuestaItem> items) { _items = items; }
+
+    public Task<List<RespuestaEncuesta>> ObtenerTodosAsync(long? fkEncuesta, int limite) =>
+        Task.FromResult(_tabla.Where(r => fkEncuesta is null || r.FkEncuesta == fkEncuesta).Take(limite).ToList());
+
+    public Task<RespuestaEncuesta?> ObtenerPorIdAsync(long idRespuesta) =>
+        Task.FromResult(_tabla.FirstOrDefault(r => r.IdRespuesta == idRespuesta));
+
+    public Task<long> ResponderAsync(long fkRegistro, IReadOnlyList<ItemRespuesta> respuestas)
+    {
+        var r = new RespuestaEncuesta
+        {
+            IdRespuesta = _siguiente++, FkRegistro = fkRegistro, FkEncuesta = 1,
+            RespondidaEn = DateTimeOffset.UtcNow, Completa = true,
+        };
+        _tabla.Add(r);
+        foreach (var it in respuestas)
+            _items.Add(new RespuestaItem
+            {
+                IdItem = _siguienteItem++, FkRespuesta = r.IdRespuesta, FkPregunta = it.Pregunta!.Value,
+                ValorNumerico = it.Numero, ValorTexto = it.Texto, FkOpcion = it.Opcion,
+            });
+        return Task.FromResult(r.IdRespuesta);
+    }
+}
+
+/// <summary>Falso de 'respuesta_item' (v6): solo lectura.</summary>
+class RepositorioRespuestaItemFalso : IRepositorioRespuestaItem
+{
+    private readonly List<RespuestaItem> _items;
+    public RepositorioRespuestaItemFalso(List<RespuestaItem> items) { _items = items; }
+
+    public Task<List<RespuestaItem>> ObtenerTodosAsync(long? fkRespuesta, int limite) =>
+        Task.FromResult(_items.Where(i => fkRespuesta is null || i.FkRespuesta == fkRespuesta).Take(limite).ToList());
+
+    public Task<RespuestaItem?> ObtenerPorIdAsync(long idItem) =>
+        Task.FromResult(_items.FirstOrDefault(i => i.IdItem == idItem));
+}
+
+// ==========================================================================
+//  v7.1 · D52 · Repositorio FALSO de 'Disponibilidad'. Guarda los últimos
+//  parámetros recibidos y simula una sola sesión ocupada: la de las 14:00 a
+//  las 16:00 del 20-oct-2026 (hora de Colombia) en SAN_BENITO, donde participa el ponente 7.
+// ==========================================================================
+class RepositorioDisponibilidadFalso : IRepositorioDisponibilidad
+{
+    private static readonly DateTimeOffset Ocupada = new(2026, 10, 20, 14, 0, 0, TimeSpan.FromHours(-5));
+
+    public int Consultas { get; private set; }
+    public string? UltimaSede { get; private set; }
+    public string? UltimoLugar { get; private set; }
+    public long? UltimoAsistente { get; private set; }
+    public int UltimoLimite { get; private set; }
+
+    private static SesionOcupada Sesion(List<string>? motivos) => new()
+    {
+        IdSesion = 1, FkCatedra = 10, NombreCatedra = "Cátedra ocupada", NumeroReunion = 1,
+        Inicio = Ocupada.UtcDateTime, Fin = Ocupada.AddHours(2).UtcDateTime,
+        FkSede = "SAN_BENITO", Lugar = "Aula 101", FkModalidad = "PRESENCIAL", Estado = "PROGRAMADA",
+        Motivos = motivos,
+    };
+
+    public Task<List<SesionOcupada>> ConflictosAsync(
+        DateTimeOffset inicio, DateTimeOffset fin, string? fkSede, string? lugar, long? fkAsistente, long? excluirSesion)
+    {
+        Consultas++;
+        UltimaSede = fkSede;
+        UltimoLugar = lugar;
+        UltimoAsistente = fkAsistente;
+        bool traslapa = inicio < Ocupada.AddHours(2) && fin > Ocupada;
+        return Task.FromResult(traslapa ? new List<SesionOcupada> { Sesion(["LUGAR", "PONENTE"]) } : new List<SesionOcupada>());
+    }
+
+    public Task<List<SesionOcupada>> AgendaAsync(DateTimeOffset desde, DateTimeOffset hasta, string? fkSede, int limite)
+    {
+        Consultas++;
+        UltimoLimite = limite;
+        bool toca = desde < Ocupada.AddHours(2) && hasta > Ocupada;
+        return Task.FromResult(toca ? new List<SesionOcupada> { Sesion(null) } : new List<SesionOcupada>());
+    }
+}
+
+// ==========================================================================
+//  v7.1 · D53 · Repositorio FALSO de 'QrSesion'. La sesión 7 existe y termina a las
+//  18:00 UTC del 20-oct-2026; emitir crea un QR con ventana [17:45, 18:00); regenerar
+//  revoca el vigente. La asistencia simulada: 2 personas que registraron.
+// ==========================================================================
+class RepositorioQrSesionFalso : IRepositorioQrSesion
+{
+    public static readonly DateTime FinSesion = new(2026, 10, 20, 18, 0, 0, DateTimeKind.Utc);
+
+    private QrSesion? _vigente;
+    private long _siguiente = 1;
+
+    public long? UltimoUsuario { get; private set; }
+    public int Revocados { get; private set; }
+
+    public Task<QrSesion?> EmitirAsync(long fkSesion, long? fkUsuario, bool regenerar)
+    {
+        if (fkSesion != 7) return Task.FromResult<QrSesion?>(null);
+        UltimoUsuario = fkUsuario ?? UltimoUsuario;
+
+        if (_vigente is not null && !regenerar)
+        {
+            _vigente.YaExistia = true;
+            return Task.FromResult<QrSesion?>(_vigente);
+        }
+        if (_vigente is not null) Revocados++;
+
+        _vigente = new QrSesion
+        {
+            IdEnlace = _siguiente++, FkSesion = 7, Token = Guid.NewGuid(),
+            VentanaDesde = FinSesion.AddMinutes(-15), VentanaHasta = FinSesion,
+            YaExistia = false,
+        };
+        return Task.FromResult<QrSesion?>(_vigente);
+    }
+
+    public Task<QrSesion?> ConsultarAsync(long fkSesion) =>
+        Task.FromResult(fkSesion == 7 ? _vigente : null);
+
+    public Task<List<AsistenciaSesion>> AsistenciaAsync(long fkSesion) => Task.FromResult(new List<AsistenciaSesion>
+    {
+        new() { FkAsistente = 1, Nombres = "Ana", Apellidos = "A", RegistradoEn = FinSesion.AddMinutes(-5), Latitud = 6.24m, Longitud = -75.58m, Origen = "QR" },
+        new() { FkAsistente = 3, Nombres = "Cami", Apellidos = "C", RegistradoEn = FinSesion.AddMinutes(-3), Origen = "QR" },
+    });
 }

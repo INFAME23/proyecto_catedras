@@ -1,0 +1,70 @@
+{% extends 'admin/base_admin.html' %}
+{# ==========================================================================
+   admin/parametro_form.html  ·  Front Cátedras · Versión 7
+   Crear o editar un parámetro. Al editar, la clave se muestra pero no se
+   puede cambiar (es la llave). 'tipo_dato' sale de una lista cerrada.
+   ========================================================================== #}
+{% block titulo %}{{ 'Nuevo parámetro' if modo == 'nuevo' else 'Editar parámetro' }} · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.parametros_listar') }}">Parámetros</a></li>
+        <li class="breadcrumb-item active">{{ 'Nuevo' if modo == 'nuevo' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-sliders-h text-primary-custom me-2"></i>{{ 'Nuevo parámetro' if modo == 'nuevo' else 'Editar ' ~ parametro.clave }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post"
+              action="{{ url_for('admin.parametros_nuevo') if modo == 'nuevo' else url_for('admin.parametros_editar', clave=parametro.clave) }}">
+
+            <div class="mb-3">
+                <label class="form-label" for="clave">Clave</label>
+                {% if modo == 'nuevo' %}
+                <input type="text" class="form-control text-uppercase" id="clave" name="clave" maxlength="60" required
+                       pattern="[A-Za-z][A-Za-z0-9_]*" value="{{ parametro.clave if parametro else '' }}">
+                <div class="form-text">Mayúsculas, dígitos y guion bajo; empieza por una letra (por ejemplo <code>VENTANA_MINUTOS_ANTES</code>). Las funciones de la base de datos buscan la clave tal cual.</div>
+                {% else %}
+                <p class="form-control-plaintext"><code>{{ parametro.clave }}</code> <span class="text-muted small">(la clave no se cambia: se elimina y se crea otra)</span></p>
+                {% endif %}
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-sm-8">
+                    <label class="form-label" for="valor">Valor</label>
+                    <input type="text" class="form-control" id="valor" name="valor" maxlength="200"
+                           value="{{ parametro.valor if parametro else '' }}">
+                    <div class="form-text">Siempre se guarda como texto; el tipo dice cómo leerlo. Puede quedar vacío.</div>
+                </div>
+                <div class="col-sm-4">
+                    <label class="form-label" for="tipo_dato">Tipo de dato</label>
+                    <select class="form-select" id="tipo_dato" name="tipo_dato" required>
+                        {% for t in tipos %}
+                        <option value="{{ t }}" {% if (parametro.tipo_dato if parametro else 'TEXTO') == t %}selected{% endif %}>{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="descripcion">Descripción</label>
+                <input type="text" class="form-control" id="descripcion" name="descripcion" maxlength="300" required
+                       value="{{ parametro.descripcion if parametro else '' }}">
+            </div>
+
+            {% if errores %}
+            <div class="alert alert-danger py-2">
+                <ul class="mb-0 small">{% for e in errores %}<li>{{ e.mensaje }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin.parametros_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
