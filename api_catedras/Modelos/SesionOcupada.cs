@@ -47,7 +47,12 @@ public class SesionOcupada
     [JsonPropertyName("estado")]
     public string? Estado { get; set; }
 
-    /// <summary>Solo en los conflictos: LUGAR (misma sede física y salón) y/o PONENTE (ya participa).</summary>
+    /// <summary>Solo en los conflictos: LUGAR (misma sede física y salón), PONENTE (ya participa) y/o
+    /// HORARIO (a menos de MINUTOS_ENTRE_SESIONES de otra sesión, de cualquier sede; v7.1 D59).</summary>
     [JsonPropertyName("motivos")]
     public List<string>? Motivos { get; set; }
+
+    /// <summary>Solo en los conflictos: true si además se traslapa con el horario; false = solo está demasiado cerca.</summary>
+    [JsonPropertyName("solapa")]
+    public bool? Solapa { get; set; }
 }

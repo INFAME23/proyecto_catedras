@@ -98,7 +98,6 @@ public class ServicioSesion : IServicioSesion
             FkEncuesta = peticion.FkEncuesta,
             Lugar = peticion.Lugar,
             EnlaceVirtual = peticion.EnlaceVirtual,
-            Cupo = peticion.Cupo,
             Estado = peticion.Estado ?? "PROGRAMADA",
         };
 
@@ -136,7 +135,6 @@ public class ServicioSesion : IServicioSesion
             ["fk_encuesta"] = peticion.FkEncuesta,
             ["lugar"] = peticion.Lugar,
             ["enlace_virtual"] = peticion.EnlaceVirtual,
-            ["cupo"] = peticion.Cupo,
             ["estado"] = peticion.Estado!,
         };
 

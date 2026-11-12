@@ -48,13 +48,13 @@ v('Los títulos ya NO llevan la versión (sin «v2»...«v7» en ningún título
   not re.search(r'<span class="badge badge-primary">v\d</span>', t)
   and not re.search(r'<summary>.*?\bv[1-7]\b.*?</summary>', t, re.S | re.I))
 tarjetas = len(re.findall(r'<a class="card text-center', t))
-v('Siguen todas las secciones del panel (41 tarjetas, con «Nuevo ponente» e «Inscripción a cátedra»)',
-  tarjetas == 41 and 'Nuevo ponente' in t and 'Inscripción a cátedra' in t)
+v('Quedan las 39 secciones del panel (con «Periodos y horarios», v7.1 D57) (sin «Calendario del ponente», «Nuevo ponente» ni «Inscripción a cátedra», que ya no existen)',
+  tarjetas == 39 and 'Nuevo ponente' not in t and 'Inscripción a cátedra' not in t and 'Calendario del ponente' not in t)
 v('Las tarjetas están DENTRO de un <details> (se esconden al cerrar)',
   len(re.findall(r'<a class="card text-center', re.sub(r'<details.*?</details>', '', t, flags=re.S))) == 0)
 
 # Las demás pantallas de /admin tampoco llevan barra lateral
-for ruta in ('/admin/usuarios/nuevo', '/admin/inscripciones', '/admin/ponentes/nuevo'):
+for ruta in ('/admin/usuarios/nuevo', '/admin/catedras/nueva', '/admin/'):
     r = admin().get(ruta)
     h = r.get_data(as_text=True)
     v(f'{ruta}: sin barra lateral y con su contenido', 'admin-sidebar' not in h and 'admin-shell' not in h and r.status_code in (200, 500, 502))

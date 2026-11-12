@@ -57,6 +57,7 @@
                         <td>{{ s.fk_periodo }}</td>
                         <td>{{ ms.estado(s.estado) }}</td>
                         <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.sesiones_qr', id_sesion=s.id_sesion) }}" title="QR de asistencia de la sesión"><i class="fas fa-qrcode"></i></a>
                             <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.sesiones_detalle', id_sesion=s.id_sesion) }}" title="Ver la sesión con sus enlaces y asistencias"><i class="fas fa-eye"></i></a>
                             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.sesiones_editar', id_sesion=s.id_sesion) }}" title="Editar"><i class="fas fa-edit"></i></a>
                             <form class="d-inline" method="post" action="{{ url_for('admin.sesiones_eliminar', id_sesion=s.id_sesion) }}"

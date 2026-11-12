@@ -4,11 +4,9 @@ from config import Config
 from auth_helpers import registrar_en
 
 from routes.catedras import catedras_bp
+from routes.calendario import calendario_bp   # v7.1 · D56: calendario público + «Soy ponente»
 from routes.registro import registro_bp
 from routes.admin import admin_bp
-from routes.ponente import ponente_bp
-from routes.ponente_catedras import ponente_catedras_bp   # v7.1: el ponente crea y se asigna a cátedras
-from routes.estudiante import estudiante_bp
 from routes.auth import auth_bp
 from routes.perfil import perfil_bp   # v7.1: cambiar y recuperar la clave
 from routes.carga import carga_bp   # v3: pantalla de carga de datos
@@ -28,19 +26,17 @@ registrar_en(app)
 fechas.registrar_en(app)
 
 app.register_blueprint(catedras_bp, url_prefix='/')
+app.register_blueprint(calendario_bp, url_prefix='/')
 app.register_blueprint(registro_bp, url_prefix='/')
 app.register_blueprint(auth_bp, url_prefix='/')
 app.register_blueprint(perfil_bp, url_prefix='/')
 app.register_blueprint(admin_bp, url_prefix='/admin')
-app.register_blueprint(ponente_bp, url_prefix='/ponente')
-app.register_blueprint(ponente_catedras_bp, url_prefix='/ponente/catedras')
-app.register_blueprint(estudiante_bp, url_prefix='/estudiante')
 app.register_blueprint(carga_bp, url_prefix='/')
 app.register_blueprint(sesiones_bp, url_prefix='/')
 app.register_blueprint(encuestas_bp, url_prefix='/')
 
 
-# v7.1 · D54: quien entra por primera vez (clave inicial = su código) tiene que cambiar la clave ANTES de
+# v7.1 · D54: a quien se le exigió cambiar la clave (cuenta nueva con clave temporal) se le deja ANTES de
 # usar nada más: solo se le dejan la pantalla de cambiarla, cerrar sesión y los archivos estáticos.
 _SIN_CAMBIO_PENDIENTE = {'perfil.cambiar_clave', 'auth.logout', 'static'}
 
@@ -53,7 +49,7 @@ def _exigir_cambio_de_clave():
 
 @app.errorhandler(403)
 def sin_permiso(e):
-    # v5/v7.1: usuario con sesión pero sin el rol que pide la zona (/admin, /estudiante, /ponente).
+    # v5/v7.1: usuario con sesión pero sin el rol que pide la zona (/admin).
     return render_template('errors/403.html'), 403
 
 

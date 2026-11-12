@@ -149,6 +149,17 @@ services:
       - ./db/postgres/migraciones/051_qr_sesion.sql:/docker-entrypoint-initdb.d/z051_qr_sesion.sql:ro
       - ./db/postgres/migraciones/052_primer_ingreso_estudiante.sql:/docker-entrypoint-initdb.d/z052_primer_ingreso_estudiante.sql:ro
       - ./db/postgres/migraciones/053_qr_canal_por_modalidad.sql:/docker-entrypoint-initdb.d/z053_qr_canal_por_modalidad.sql:ro
+      - ./db/postgres/migraciones/054_sin_inscripcion_ni_cupo_login_admin.sql:/docker-entrypoint-initdb.d/z054_sin_inscripcion_ni_cupo_login_admin.sql:ro
+      # 055: solicitudes de ponente (calendario público + bandeja del ADMIN).
+      - ./db/postgres/migraciones/055_solicitud_ponente.sql:/docker-entrypoint-initdb.d/z055_solicitud_ponente.sql:ro
+      # 056: periodos y horarios en que se pueden programar cátedras (restricción de sesiones).
+      - ./db/postgres/migraciones/056_restriccion_programacion.sql:/docker-entrypoint-initdb.d/z056_restriccion_programacion.sql:ro
+      # 057: «Soy ponente» = cátedra nueva con fecha y hora; al aprobar se crea la cátedra sola.
+      - ./db/postgres/migraciones/057_solicitud_ponente_catedra_nueva.sql:/docker-entrypoint-initdb.d/z057_solicitud_ponente_catedra_nueva.sql:ro
+      # 058: el ponente también elige modalidad, sede y periodo.
+      - ./db/postgres/migraciones/058_solicitud_ponente_modalidad_sede_periodo.sql:/docker-entrypoint-initdb.d/z058_solicitud_ponente_modalidad_sede_periodo.sql:ro
+      # 059: una hora de margen entre sesiones (todas usan el mismo enlace) + enlace de ingreso al aprobar.
+      - ./db/postgres/migraciones/059_separacion_entre_sesiones_enlace.sql:/docker-entrypoint-initdb.d/z059_separacion_entre_sesiones_enlace.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.

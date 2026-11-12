@@ -19,7 +19,7 @@
 #  Sin ella no se registra la asistencia; ver el comentario de ese archivo.
 #
 #  Las 5 razones por las que 'validar' puede fallar (clave incorrecta, usada,
-#  expirada, cupo agotado, sin vinculación vigente) llegan como un 500 de la
+#  expirada, sin vinculación vigente) llegan como un 500 de la
 #  API (ADR D25); el texto de la razón viene en 'detalle' y se muestra tal cual.
 # ==========================================================================
 
@@ -27,9 +27,8 @@ import ipaddress
 import math
 import re
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 
-from auth_helpers import ROL_ESTUDIANTE, sesion_activa, tiene_rol, usuario_actual
 from servicios import correo
 from servicios.api_catedras import ErrorApi, crear, obtener
 
@@ -75,18 +74,6 @@ def _motivo(ex):
     return (ex.detalle or ex.mensaje or 'No se pudo completar la operación.').strip()
 
 
-def _identificador_del_estudiante():
-    """v7.1 · Si quien llega tiene sesión de ESTUDIANTE, su código ASIS para
-    precargar el formulario (solo comodidad: la clave sigue yendo a su correo,
-    así que escribir otro código no sirve de nada). '' si no aplica."""
-    if not (sesion_activa() and tiene_rol(ROL_ESTUDIANTE)):
-        return ''
-    try:
-        return obtener('Asistente', usuario_actual()['fk_asistente']).get('id_asis') or ''
-    except (ErrorApi, KeyError, TypeError):
-        return ''
-
-
 def _token_o_404(token):
     if not _UUID.fullmatch(token):
         abort(404)
@@ -114,7 +101,7 @@ def solicitar(token):
 
     if request.method == 'GET':
         return render_template('registro_solicitar.html', token=token,
-                               identificador=_identificador_del_estudiante())
+                               identificador='')
 
     identificador = request.form.get('identificador', '').strip()
     try:
@@ -173,7 +160,7 @@ def validar(token):
                                clave=None, enviado_a=None, registrado=False)
 
     try:
-        crear('ClaveAcceso/validar', {
+        respuesta = crear('ClaveAcceso/validar', {
             'id_clave': id_clave,
             'clave': clave,
             'ip': _ip_cliente(),
@@ -189,5 +176,17 @@ def validar(token):
                                clave=None, enviado_a=None, registrado=False,
                                errores=ex.errores)
 
+    # v7.1 · D55: sin cuentas de estudiante, la encuesta de la sesión se responde justo ahora, con este registro
+    # (queda en la cookie firmada; ver routes/encuestas.py). Si algo de esto falla, la asistencia ya quedó registrada.
+    id_sesion_encuesta = None
+    try:
+        registro_creado = obtener('RegistroAsistencia', respuesta['id_registro'])
+        sesion = obtener('Sesion', registro_creado['fk_sesion'])
+        session['registro_reciente'] = {'registro': respuesta['id_registro'], 'sesion': sesion['id_sesion']}
+        if sesion.get('fk_encuesta'):
+            id_sesion_encuesta = sesion['id_sesion']
+    except (ErrorApi, KeyError, TypeError):
+        pass
+
     return render_template('registro_validar.html', token=token, id_clave=id_clave,
-                           clave=None, enviado_a=None, registrado=True)
+                           clave=None, enviado_a=None, registrado=True, id_sesion_encuesta=id_sesion_encuesta)

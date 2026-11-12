@@ -1,0 +1,89 @@
+{% extends 'admin/base_admin.html' %}
+{# ==========================================================================
+   admin/solicitud_ponente_lista.html  ·  Subversión v7.1 (D56)
+   Bandeja de entrada del administrador: las solicitudes «Soy ponente».
+   ========================================================================== #}
+{% block titulo %}Bandeja de ponentes · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Bandeja de ponentes</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-inbox text-primary-custom me-2"></i>Bandeja de ponentes</h1>
+<p class="text-muted small">
+    Cada fila es una persona que llenó «Soy ponente» en el <a href="{{ url_for('calendario.calendario') }}">calendario</a>.
+    Cada una propone una <strong>cátedra nueva</strong> con su fecha y hora. Al <strong>aprobar</strong>, queda registrada como persona (con su documento), la cátedra se crea sola y ella queda como su ponente.
+    Al <strong>rechazar</strong>, se guarda el motivo.
+</p>
+
+{% if error %}
+<div class="alert alert-danger" role="alert">{{ error.mensaje }} {{ error.detalle or '' }}</div>
+{% endif %}
+
+<ul class="nav nav-pills mb-3 gap-1" aria-label="Estado de las solicitudes">
+    {% for valor, texto in pestanas %}
+    <li class="nav-item">
+        <a class="btn btn-sm {{ 'btn-primary' if estado == valor else 'btn-outline-primary' }}"
+           href="{{ url_for('admin.solicitudes_ponente_listar', estado=valor) }}">
+            {{ texto }} <span class="badge bg-light text-dark ms-1">{{ conteo.get(valor, 0) }}</span>
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if solicitudes %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>#</th><th>Solicitante</th><th>Ponencia</th><th>Cátedra</th><th>Recibida</th><th>Estado</th><th class="text-end">Revisar</th></tr>
+                </thead>
+                <tbody>
+                    {% for s in solicitudes %}
+                    <tr>
+                        <td class="text-muted">{{ s.id_solicitud }}</td>
+                        <td>
+                            <div class="fw-semibold">{{ s.nombre_completo }}</div>
+                            <div class="small text-muted">{{ s.nombre_tipo_documento }} {{ s.numero_documento }}</div>
+                        </td>
+                        <td>
+                            <div>{{ s.titulo_ponencia }}</div>
+                            <div class="small text-muted">{{ s.perfil_profesional }}</div>
+                        </td>
+                        <td class="small">
+                            {% if s.fk_catedra or s.fk_sesion %}
+                            {{ s.nombre_catedra }}<br><span class="text-muted">{{ s.inicio_sesion|fecha_hora }}</span>
+                            {% elif s.inicio_propuesto %}
+                            <span class="badge badge-secondary">Cátedra nueva</span><br><span class="text-muted">{{ s.inicio_propuesto|fecha_hora }}</span>
+                            {% else %}
+                            <span class="badge badge-secondary">Cátedra nueva</span>
+                            {% endif %}
+                        </td>
+                        <td class="small text-nowrap">{{ s.creado_en|fecha_hora }}</td>
+                        <td>
+                            {% if s.estado == 'PENDIENTE' %}<span class="badge badge-warning">Pendiente</span>
+                            {% elif s.estado == 'APROBADA' %}<span class="badge badge-success">Aprobada</span>
+                            {% else %}<span class="badge badge-danger">Rechazada</span>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a class="btn btn-sm {{ 'btn-primary' if s.estado == 'PENDIENTE' else 'btn-outline-primary' }}"
+                               href="{{ url_for('admin.solicitudes_ponente_detalle', id_solicitud=s.id_solicitud) }}">
+                                <i class="fas fa-eye me-1"></i>{{ 'Revisar' if s.estado == 'PENDIENTE' else 'Ver' }}
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% elif not error %}
+        <p class="text-muted text-center py-4 mb-0">
+            {% if estado == 'PENDIENTE' %}No hay solicitudes pendientes.{% else %}No hay solicitudes en este estado.{% endif %}
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

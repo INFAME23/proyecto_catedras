@@ -116,8 +116,8 @@ $dup = Llamar POST "/api/Usuario" @{ fk_asistente = 100; usuario = "otro.nombre"
 Verificar "Segundo usuario para el MISMO asistente -> 500 (uq_usuario_persona)" ($dup.Codigo -eq 500) $dup
 
 $loginNuevo = Llamar POST "/api/Usuario/login" @{ usuario = "prueba.login"; clave = "Secreta123" }
-Verificar "Login del usuario recien creado -> 200" ($loginNuevo.Codigo -eq 200) $loginNuevo
-Verificar "...sin roles todavia (lista vacia)" (@($loginNuevo.Json.roles).Count -eq 0) $loginNuevo
+Verificar "Login del usuario recien creado (sin roles) -> 401: desde la v7.1 (D55) SOLO el administrador inicia sesion" ($loginNuevo.Codigo -eq 401) $loginNuevo
+Verificar "...con el mismo mensaje que los otros 401 (D27)" ($loginNuevo.Texto -eq $mala.Texto) $loginNuevo
 
 $inact = Llamar PATCH "/api/Usuario/$idUsuario" @{ activo = $false }
 Verificar "PATCH activo=false -> 200" ($inact.Codigo -eq 200) $inact
@@ -137,7 +137,7 @@ $lista = Llamar GET "/api/RolPorUsuario?fkUsuario=$idUsuario"
 Verificar "GET ?fkUsuario= lista el rol abierto" ($lista.Codigo -eq 200 -and $lista.Json.total -eq 1) $lista
 
 $loginRol = Llamar POST "/api/Usuario/login" @{ usuario = "prueba.login"; clave = "Secreta123" }
-Verificar "Ahora el login devuelve el rol vigente CONSULTA" ($loginRol.Json.roles -contains "CONSULTA") $loginRol
+Verificar "Con el rol CONSULTA tampoco entra (solo ADMIN inicia sesion, D55) -> 401" ($loginRol.Codigo -eq 401) $loginRol
 
 $cerrar = Llamar PATCH "/api/RolPorUsuario/cerrar" @{ fk_usuario = $idUsuario; fk_rol = "CONSULTA"; fecha_ini = $fechaIni }
 Verificar "PATCH /api/RolPorUsuario/cerrar -> 200" ($cerrar.Codigo -eq 200) $cerrar

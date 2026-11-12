@@ -29,12 +29,12 @@
         </p>
         <p class="text-muted mb-0 small">
             {% if sesion.lugar %}Lugar: {{ sesion.lugar }} · {% endif %}
-            {% if sesion.cupo %}Cupo: {{ sesion.cupo }} · {% endif %}
             Encuesta: {% if sesion.fk_encuesta %}<a href="{{ url_for('admin.encuestas_detalle', id_encuesta=sesion.fk_encuesta) }}">{{ sesion.fk_encuesta }}</a>{% else %}sin encuesta{% endif %}
         </p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
         <a class="btn btn-outline-primary" href="{{ url_for('admin.sesiones_editar', id_sesion=sesion.id_sesion) }}"><i class="fas fa-edit me-1"></i>Editar</a>
+        <a class="btn btn-primary" href="{{ url_for('admin.sesiones_qr', id_sesion=sesion.id_sesion) }}"><i class="fas fa-qrcode me-1"></i>QR de asistencia</a>
         <a class="btn btn-outline-secondary" href="{{ url_for('admin.ponencias_listar', fk_sesion=sesion.id_sesion) }}"><i class="fas fa-chalkboard-teacher me-1"></i>Ponentes</a>
         <a class="btn btn-outline-secondary" href="{{ url_for('sesiones.detalle', id_sesion=sesion.id_sesion) }}"><i class="fas fa-external-link-alt me-1"></i>Página pública</a>
         <form method="post" action="{{ url_for('admin.sesiones_eliminar', id_sesion=sesion.id_sesion) }}"

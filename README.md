@@ -12,37 +12,55 @@ estructura académica de la v2 y la arquitectura en capas de la v1.
 
 Sin tablas de negocio nuevas en el mapa (sigue en 37 recursos) y sin romper el
 orden de versiones; sus requisitos se numeran `RF-S1`…`RF-S7`. Documento
-completo, con las decisiones (D38–D54), lo verificado y lo pendiente:
+completo, con las decisiones (D38–D59), lo verificado y lo pendiente:
 [docs/spec_kit/Versiones/version7_1/v7_1_subversion.md](docs/spec_kit/Versiones/version7_1/v7_1_subversion.md).
 
+- **Solo el administrador inicia sesión (D55).** Estudiantes y ponentes **no tienen cuenta ni panel**: consultan
+  el catálogo y registran su asistencia sin iniciar sesión, con el QR de la sesión. El administrador crea las
+  cátedras y sus sesiones, asigna ponentes, genera y proyecta el QR de cada sesión y revisa la asistencia.
+- **Sin inscripción a cátedras y sin cupo** (D55): se quitaron (la asistencia por QR es pública).
 - **Geolocalización obligatoria** al autorregistrar la asistencia: el navegador
   entrega latitud y longitud; sin ellas no se registra (front, API y BD lo
   exigen). Se ve en `/admin` con un enlace al mapa.
-- **Panel de estudiante** (`/estudiante`): su información y sus sesiones.
-  **Cuentas de estudiante y ponente** con el mismo login (`ESTUDIANTE`,
-  `PONENTE`); `/ponente` ya no es público.
-- **Estudiante semilla**: usuario `alejandro.zuleta`, clave temporal
-  `Cambiar-123` (cámbiala en `/perfil/clave`; credencial didáctica, solo local).
-- **Cambiar la clave** (`/perfil/clave`) y **recuperarla** por un código de un
-  solo uso enviado por correo (`/recuperar`).
+- **QR de asistencia por sesión** (D53): se genera al crear la cátedra y sirve en los últimos minutos de la sesión.
+- **Disponibilidad de horario** (D52): al crear una cátedra se ve la ocupación de una fecha y no se pueden
+  cruzar dos sesiones en la misma sede y el mismo salón.
+- **Cambiar la clave** (`/perfil/clave`, y obligatorio si al administrador se le entregó una clave temporal) y
+  **recuperarla** por un código de un solo uso enviado por correo (`/recuperar`).
 - **Panel de `/admin` con categorías desplegables** (cerradas por defecto, sin barra lateral).
+- **Calendario público y «Soy ponente» (D56).** `/calendario` (en el navbar, sin iniciar sesión) muestra las sesiones de todas
+  las cátedras por mes, semana o lista. Su botón **«Soy ponente»** abre un formulario (documento, perfil profesional,
+  dirección, teléfono, correo institucional, ponencia y resumen) y **elige la fecha, la hora, la modalidad, la sede y el periodo de su cátedra nueva**; la solicitud llega
+  a la **bandeja del administrador** (`/admin/solicitudes-ponente`, con el número de pendientes en `/admin`), que la **aprueba** (queda
+  registrado como persona y **la cátedra se crea sola** con su sesión, su QR y él como ponente; el administrador puede ajustar modalidad, sede,
+  periodo y salón en la misma pantalla) o la **rechaza** con un motivo. Necesita las migraciones `055`, `057` y `058` y reconstruir la API y el front.
+- **Periodos y horarios de programación (D57).** En `/admin` → «Estructura académica y cátedras» → «Periodos y horarios», el administrador define
+  las fechas, horas y días en que se pueden programar cátedras (por ejemplo, un periodo de agosto a diciembre, de 06:00 a 21:00, de lunes a sábado).
+  Con alguna ventana activa, la base de datos rechaza toda sesión nueva (o movida) que no quepa. Sin ventanas activas no hay restricción. Necesita la migración `056`.
+- **Una hora entre sesiones y enlace de ingreso (D59).** Todas las cátedras usan el mismo enlace, así que la base de datos **no deja crear dos sesiones a la misma hora
+  (en ninguna modalidad ni sede) y exige al menos 60 minutos entre una y otra** (parámetro `MINUTOS_ENTRE_SESIONES`; solo cuentan las cátedras activas). Al crear la cátedra
+  (y al aprobar a un ponente) hay un campo **«Enlace de ingreso»** (`http://` o `https://`). Necesita la migración `059`. Las cátedras activas del catálogo se redujeron a 500 (el resto quedó
+  desactivado, no borrado: «Ver inactivas»).
 
-> **Si ya tienes el volumen de PostgreSQL creado**, las migraciones 045-053 no
-> corren solas (initdb solo corre con el volumen vacío). Aplícalas **en orden**:
+> **Si ya tienes el volumen de PostgreSQL creado**, las migraciones 045-059 no
+> corren solas (initdb solo corre con el volumen vacío). Si ya tenías hasta la 056, **bastan la 057, la 058 y la 059** (reconstruye la API y el front antes o a la vez: cambian los procedimientos del formulario «Soy ponente»)
+> (primero reconstruye la API y el front con `docker compose up -d --build`; la 055 es repetible). Si
+> tenías hasta la 053, la 054 borra la inscripción y la API anterior la usaba: reconstruye antes. Para aplicarlas en orden:
 >
 > ```bash
-> for n in 045_geolocalizacion_registro 046_roles_estudiante_ponente 047_codigo_recuperacion 048_semilla_estudiante 049_inscripcion_catedra 050_disponibilidad_sesiones 051_qr_sesion 052_primer_ingreso_estudiante 053_qr_canal_por_modalidad; do
+> for n in 045_geolocalizacion_registro 046_roles_estudiante_ponente 047_codigo_recuperacion 048_semilla_estudiante 049_inscripcion_catedra 050_disponibilidad_sesiones 051_qr_sesion 052_primer_ingreso_estudiante 053_qr_canal_por_modalidad 054_sin_inscripcion_ni_cupo_login_admin 055_solicitud_ponente 056_restriccion_programacion 057_solicitud_ponente_catedra_nueva 058_solicitud_ponente_modalidad_sede_periodo 059_separacion_entre_sesiones_enlace; do
 >   docker compose cp db/postgres/migraciones/$n.sql postgres:/tmp/m.sql
 >   docker compose exec -T postgres psql -U sa -d bdcatedras_postgres_local -v ON_ERROR_STOP=1 -f /tmp/m.sql
 > done
 > ```
 >
 > Sin la 045, validar una clave responde `42883: function fn_validar_clave_geo_api
-> does not exist`; sin la 047, la recuperación de clave falla; sin la 049, inscribirse a una cátedra falla; sin la 050, la consulta de disponibilidad falla; sin la 051, el QR de asistencia y pedir la clave del QR fallan; sin la 052, el login con correo institucional y el primer ingreso fallan.
+> does not exist`; sin la 047, la recuperación de clave falla; sin la 050, la consulta de disponibilidad falla;
+> sin la 051 y la 053, el QR de asistencia falla; sin la 054, el cupo sigue limitando los registros y la tabla de
+> inscripción sigue en la base (la aplicación ya no la usa); sin la 055, el formulario «Soy ponente» y la bandeja
+> responden error (`relation "solicitud_ponente" does not exist`); sin la 056, «Periodos y horarios» responde error (`relation "restriccion_programacion" does not exist`); sin la 057 y la 058, el formulario «Soy ponente» y la aprobación fallan (`procedure ... does not exist`); sin la 059, no se aplica el margen de una hora entre sesiones y la aprobación del ponente falla (la API ya manda el enlace de ingreso).
 
-**QR de asistencia (D53).** Cada sesión tiene un QR que el ponente comparte al final (pantalla «Ver QR»). Para que sirva en los celulares de los estudiantes, el front debe abrirse con una dirección que ellos alcancen y **en https** (el navegador solo da la ubicación en https o localhost): pon esa dirección en `URL_PUBLICA` (ver `front_catedras/env.ejemplo`). Con el correo configurado, la clave de asistencia llega por correo y no se muestra en pantalla.
-
-**Estudiantes (D54).** El usuario del estudiante es su **correo institucional**; su clave inicial es su **código de estudiante** y la primera vez que entra debe cambiarla. Su cuenta se crea en ese primer ingreso (no hace falta cargar cuentas de antemano).
+**QR de asistencia (D53).** Cada sesión tiene un QR que el administrador proyecta o comparte al final (pantalla «QR de asistencia» de la sesión, en `/admin`). Para que sirva en los celulares de quienes asisten, el front debe abrirse con una dirección que ellos alcancen y **en https** (el navegador solo da la ubicación en https o localhost): pon esa dirección en `URL_PUBLICA` (ver `front_catedras/env.ejemplo`). Con el correo configurado, la clave de asistencia llega por correo y no se muestra en pantalla.
 
 **Correo (RF-S6).** El código de recuperación se envía por SMTP configurado
 con variables de entorno; copia `front_catedras/env.ejemplo` como
@@ -54,8 +72,8 @@ del front. Qué proveedor usar lo decide el equipo.
 **Ubicación en el navegador.** Solo funciona en `https://` o `localhost`; abrir
 el front por la IP de la red (`http://192.168.x.x:5000`) la deniega siempre.
 
-Verificación contra la API real: `pruebas/verificar_v71.ps1` (49/0; ver el
-documento de la subversión para el resto).
+Verificación contra la API real: `pruebas/verificar_v71.ps1` (ver el
+documento de la subversión para los números y el resto).
 
 ## Qué incluye la v7
 

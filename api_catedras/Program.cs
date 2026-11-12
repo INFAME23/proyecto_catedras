@@ -354,10 +354,7 @@ builder.Services.AddScoped<IRepositorioCodigoRecuperacion>(
     _ => new RepositorioCodigoRecuperacionPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioUsuario, ServicioUsuario>();
 
-// v7.1 · D50: inscripción de una persona a una cátedra.
-builder.Services.AddScoped<IRepositorioInscripcionCatedra>(
-    _ => new RepositorioInscripcionCatedraPostgres(cadenaConexion));
-builder.Services.AddScoped<IServicioInscripcionCatedra, ServicioInscripcionCatedra>();
+// v7.1 · D55: la inscripción a cátedras se quitó (la asistencia por QR es pública).
 
 // v7.1 · D52: disponibilidad de horario (consultas de solo lectura sobre 'sesion').
 builder.Services.AddScoped<IRepositorioDisponibilidad>(
@@ -368,6 +365,18 @@ builder.Services.AddScoped<IServicioDisponibilidad, ServicioDisponibilidad>();
 builder.Services.AddScoped<IRepositorioQrSesion>(
     _ => new RepositorioQrSesionPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioQrSesion, ServicioQrSesion>();
+
+// v7.1 · D56: bandeja de ponentes. El formulario «Soy ponente» del calendario público crea la solicitud
+// y el ADMIN la aprueba (asistente + documento + ponencia en una transacción) o la rechaza.
+builder.Services.AddScoped<IRepositorioSolicitudPonente>(
+    _ => new RepositorioSolicitudPonentePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioSolicitudPonente, ServicioSolicitudPonente>();
+
+// v7.1 · D57: ventanas de programación (periodos, horas y días en que se pueden programar sesiones).
+// La regla la aplica la base de datos con un disparador sobre 'sesion'; aquí solo se administran las ventanas.
+builder.Services.AddScoped<IRepositorioRestriccionProgramacion>(
+    _ => new RepositorioRestriccionProgramacionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioRestriccionProgramacion, ServicioRestriccionProgramacion>();
 
 // IRepositorioRolPorUsuario -> RepositorioRolPorUsuarioPostgres (llave
 // compuesta CON vigencia, ADR D16: se abre con POST y se cierra con PATCH),

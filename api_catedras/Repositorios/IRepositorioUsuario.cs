@@ -46,14 +46,6 @@ public interface IRepositorioUsuario
     /// 'enlace_registro' y otras tablas pasan a NULL (SET NULL).</summary>
     Task<int> EliminarAsync(long idUsuario);
 
-    /// <summary>v7.1 · D54. Estudiante vigente con ese CORREO INSTITUCIONAL que aún no tiene cuenta:
-    /// (id_asistente, id_asis), o null si no hay (otra persona, ya tiene cuenta, no es estudiante vigente...).</summary>
-    Task<(long IdAsistente, string IdAsis)?> BuscarEstudianteSinCuentaAsync(string correo);
-
-    /// <summary>v7.1 · D54. Crea la cuenta del estudiante de ese correo (nombre corto sacado del correo, rol
-    /// ESTUDIANTE, debe_cambiar_clave = true) con el hash que le llega ya calculado. Null si ya no corresponde.</summary>
-    Task<Usuario?> ProvisionarCuentaEstudianteAsync(string correo, string claveHash);
-
     /// <summary>v7.1 · D54. Marca o desmarca la exigencia de cambiar la clave en el próximo ingreso.</summary>
     Task FijarDebeCambiarClaveAsync(long idUsuario, bool valor);
 }

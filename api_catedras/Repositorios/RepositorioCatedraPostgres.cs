@@ -102,7 +102,6 @@ public class RepositorioCatedraPostgres : IRepositorioCatedra
                 fk_encuesta = s.FkEncuesta,
                 lugar = s.Lugar,
                 enlace_virtual = s.EnlaceVirtual,
-                cupo = s.Cupo,
                 estado = s.Estado,
             }));
 

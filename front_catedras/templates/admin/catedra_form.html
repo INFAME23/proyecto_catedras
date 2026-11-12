@@ -11,9 +11,22 @@
 </nav>
 <h1 class="h3 fw-bold mb-3"><i class="fas fa-book-open text-primary-custom me-2"></i>{{ 'Nueva cátedra' if modo == 'nueva' else 'Editar cátedra ' ~ catedra.id_catedra }}</h1>
 
+{% include 'admin/_ventanas_programacion.html' %}
+
+{% if choques %}
+{# v7.1 · D52 · no es un flash: se queda hasta que se corrija el horario. #}
+<div class="alert alert-danger" role="alert" id="choques">
+    <strong><i class="fas fa-exclamation-triangle me-1"></i>No se creó la cátedra: hay sesiones que chocan con otra.</strong>
+    <ul class="mb-1 mt-2">{% for c in choques %}<li>{{ c }}</li>{% endfor %}</ul>
+    <span class="small">Entre una sesión y otra debe haber al menos una hora (todas usan el mismo enlace de ingreso). Cambia el horario de esas sesiones; con «Ver ocupación de una fecha» puedes elegir un hueco libre.</span>
+</div>
+{% endif %}
+
 <div class="card shadow-sm">
     <div class="card-body">
-        <form method="post"
+        <form method="post" id="form-catedra"
+              data-url-disponibilidad="{{ url_for('admin.catedras_disponibilidad') }}"
+              data-url-agenda="{{ url_for('admin.catedras_agenda') }}"
               action="{{ url_for('admin.catedras_nueva') if modo == 'nueva' else url_for('admin.catedras_editar', id_catedra=catedra.id_catedra) }}">
 
             <div class="mb-3">
@@ -62,6 +75,25 @@
                 {% for s in sesiones_existentes %}<a href="{{ url_for('admin.sesiones_detalle', id_sesion=s.id_sesion) }}">reunión {{ s.numero_reunion }}</a> ({{ s.inicio|fecha_hora('%Y-%m-%d') }}){{ ', ' if not loop.last }}{% endfor %}.
                 Se editan o borran en su propia pantalla; aquí solo se agregan nuevas.
             {% endif %}{% endset %}
+            {# v7.1 · D52 · ¿qué hay ocupado ese día? (lo pinta static/disponibilidad.js) #}
+            <div class="card mb-3 border-info">
+                <div class="card-body">
+                    <h2 class="h6 fw-bold"><i class="fas fa-calendar-day me-1"></i>Ver ocupación de una fecha</h2>
+                    <p class="form-text mt-0 mb-2">Antes de escribir las sesiones, mira qué hay ya programado ese día para elegir un hueco libre. No puede haber dos sesiones a la misma hora, en ninguna sede ni modalidad: entre una y otra debe haber al menos una hora (todas usan el mismo enlace de ingreso).</p>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-sm-4"><label class="form-label small mb-1" for="ocupacion-fecha">Fecha</label>
+                            <input type="date" class="form-control form-control-sm" id="ocupacion-fecha"></div>
+                        <div class="col-sm-4"><label class="form-label small mb-1" for="ocupacion-sede">Sede</label>
+                            <select class="form-select form-select-sm" id="ocupacion-sede">
+                                <option value="">Todas las sedes</option>
+                                {% for s in sedes %}<option value="{{ s.id_sede }}">{{ s.nombre }}</option>{% endfor %}
+                            </select></div>
+                        <div class="col-sm-4"><button type="button" class="btn btn-sm btn-outline-info" id="ver-ocupacion"><i class="fas fa-search me-1"></i>Ver ocupación</button></div>
+                    </div>
+                    <div id="ocupacion-resultado" role="status" aria-live="polite"></div>
+                </div>
+            </div>
+
             {% call(f) fd.bloque('sesiones', 'Sesiones', 'fa-calendar-check', filas_sesiones, 'Agregar sesión',
                                  ayuda=('Se guardan JUNTO con la cátedra, en una sola operación: si una sesión falla, no se crea nada.'
                                         if modo == 'nueva' else
@@ -110,13 +142,14 @@
                         </select></label>
                 </div>
                 <div class="col-md-9">
-                    <label class="w-100"><span class="form-label small d-block mb-1">Lugar <span class="text-muted">(opcional)</span></span>
+                    <label class="w-100"><span class="form-label small d-block mb-1">Lugar / salón <span class="text-muted">(recomendado: sin él se asume que ocupa toda la sede)</span></span>
                         <input type="text" class="form-control form-control-sm" name="ses_lugar" maxlength="200" value="{{ f.lugar if f else '' }}"></label>
                 </div>
-                <div class="col-md-3">
-                    <label class="w-100"><span class="form-label small d-block mb-1">Cupo <span class="text-muted">(opcional)</span></span>
-                        <input type="number" class="form-control form-control-sm" name="ses_cupo" min="1" value="{{ f.cupo if f else '' }}"></label>
+                <div class="col-12">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Enlace de ingreso <span class="text-muted">(el que usa la gente para entrar a la sesión; recomendado en virtual o híbrida)</span></span>
+                        <input type="url" class="form-control form-control-sm" name="ses_enlace_virtual" maxlength="300" placeholder="https://meet.google.com/…" value="{{ f.enlace_virtual if f else '' }}"></label>
                 </div>
+                <div class="col-12"><div data-disponibilidad role="status" aria-live="polite"></div></div>
             </div>
             {% endcall %}
 
@@ -133,4 +166,8 @@
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='disponibilidad.js') }}"></script>
 {% endblock %}

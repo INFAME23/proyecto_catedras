@@ -8,7 +8,7 @@
 //    GET  /api/QrSesion/asistencia?fkSesion=ID                             -> 200 { total, datos } | 400
 //
 //  El QR es el enlace de registro de la v5 con una ventana que cierra cuando
-//  termina la sesión y exige que la persona esté inscrita en la cátedra. Esta
+//  termina la sesión (v7.1 · D55: ya no exige inscripción). Esta
 //  API no autoriza (ADR D28): que solo el ponente de la sesión (o un
 //  administrador) vea el QR lo garantiza el front.
 // ==========================================================================

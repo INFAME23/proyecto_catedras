@@ -46,9 +46,6 @@
             {% if sesion.lugar %}<dt class="col-sm-4">Lugar</dt><dd class="col-sm-8">{{ sesion.lugar }}</dd>{% endif %}
             {% if sesion.enlace_virtual %}<dt class="col-sm-4">Enlace</dt><dd class="col-sm-8"><a href="{{ sesion.enlace_virtual }}" target="_blank" rel="noopener">{{ sesion.enlace_virtual }}</a></dd>{% endif %}
 
-            <dt class="col-sm-4">Cupo</dt>
-            <dd class="col-sm-8">{{ sesion.cupo if sesion.cupo else 'Sin límite' }}</dd>
-
             <dt class="col-sm-4">Número en el ASIS</dt>
             <dd class="col-sm-8">{{ sesion.numero_reunion_asis if sesion.numero_reunion_asis else '—' }}</dd>
 
@@ -58,35 +55,22 @@
     </div>
 </div>
 
-{# v7.1 · D53 · el estudiante: asistencia por el QR que comparte el ponente al final (el token NO se muestra aquí). #}
-{% if mi_asistencia %}
-{% if mi_asistencia.registro %}
-<div class="alert alert-success mb-4" id="mi-asistencia">
-    <i class="fas fa-check-circle me-1"></i><strong>Tu asistencia quedó registrada</strong> el {{ mi_asistencia.registro.registrado_en|fecha_hora }}{% if mi_asistencia.registro.latitud is not none %} (con tu ubicación){% endif %}.
-</div>
-{% else %}
-<div class="alert alert-info mb-4" id="mi-asistencia">
+{# v7.1 · D55 · cómo se registra la asistencia (público: no hay cuentas de estudiante; el token del QR NO se muestra aquí). #}
+<div class="alert alert-info mb-4" id="como-asistir">
     <div class="small">
-        <i class="fas fa-qrcode me-1"></i><strong>Cómo registrar tu asistencia:</strong> escanea el <strong>código QR que comparte el ponente al final de la sesión</strong>
-        {% if mi_asistencia.desde and mi_asistencia.hasta %}(sirve de {{ mi_asistencia.desde.strftime('%H:%M') }} a {{ mi_asistencia.hasta.strftime('%H:%M') }}, hora de Colombia){% else %}(sirve solo en los últimos minutos de la sesión){% endif %}.
-        Te pediremos tu ubicación y te enviaremos una clave por correo.
-        {% if mi_asistencia.inscrito is none %}
-        {% elif mi_asistencia.inscrito %}<span class="badge badge-success ms-1">Estás inscrito en la cátedra</span>
-        {% else %}<strong class="d-block mt-1">Antes debes inscribirte en la cátedra:</strong>
-        <a href="{{ url_for('catedras.detalle', id_catedra=sesion.fk_catedra) }}#inscripcion">ir a inscribirme</a>.{% endif %}
+        <i class="fas fa-qrcode me-1"></i><strong>Cómo registrar tu asistencia:</strong> escanea el <strong>código QR que muestra el ponente al final de la sesión</strong>
+        {% if ventana_qr and ventana_qr.desde and ventana_qr.hasta %}(sirve de {{ ventana_qr.desde.strftime('%H:%M') }} a {{ ventana_qr.hasta.strftime('%H:%M') }}, hora de Colombia){% else %}(sirve solo en los últimos minutos de la sesión){% endif %}.
+        No necesitas cuenta: te pediremos tu documento o correo, tu ubicación y una clave que te llega al correo.
         ¿Tienes el enlace en vez del QR? <a href="{{ url_for('registro.inicio') }}">Pégalo aquí</a>.
     </div>
 </div>
-{% endif %}
-{% endif %}
 
 {% if sesion.fk_encuesta %}
 <div class="alert {{ 'alert-info' if mostrar_encuesta else 'alert-light border' }} d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
     <span class="small">
         <i class="fas fa-clipboard-list me-1"></i>
         {% if mostrar_encuesta %}Ya puedes calificar esta sesión.
-        {% elif motivo_encuesta == 'sin_sesion' %}<a href="{{ url_for('auth.login', siguiente=url_for('encuestas.responder', id_sesion=sesion.id_sesion)) }}">Inicia sesión</a> para responder la encuesta de esta sesión.
-        {% elif motivo_encuesta == 'sin_registro' %}La encuesta de esta sesión solo la responde quien asistió.
+        {% elif motivo_encuesta == 'sin_registro' %}La encuesta de esta sesión se responde justo después de registrar tu asistencia con el QR.
         {% elif motivo_encuesta == 'ya_respondida' %}Ya respondiste la encuesta de esta sesión. ¡Gracias!
         {% endif %}
     </span>

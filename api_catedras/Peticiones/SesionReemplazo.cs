@@ -80,12 +80,10 @@ public class SesionReemplazo
 
     [StringLength(300, MinimumLength = 1,
         ErrorMessage = "El campo 'enlace_virtual' debe tener entre 1 y 300 caracteres.")]
+    [RegularExpression(@"^https?://\S+$", ErrorMessage = "El campo 'enlace_virtual' debe empezar por http:// o https://.")]
     [JsonPropertyName("enlace_virtual")]
     public string? EnlaceVirtual { get; set; }
 
-    [Range(1, int.MaxValue, ErrorMessage = "El campo 'cupo' debe ser mayor que 0.")]
-    [JsonPropertyName("cupo")]
-    public int? Cupo { get; set; }
 
     [Required(ErrorMessage = "El campo 'estado' es obligatorio.")]
     [RegularExpression("^(PROGRAMADA|ABIERTA|CERRADA|MIGRADA)$",

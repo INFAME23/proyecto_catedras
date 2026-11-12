@@ -82,15 +82,10 @@ def rol_requerido(*roles):
 
 
 def endpoint_de_inicio():
-    """A dónde llevar al usuario recién autenticado, según su rol (el login es
-    uno solo, RF-S3). Si tiene varios gana el más amplio: ADMIN, PONENTE,
-    ESTUDIANTE. Sin ninguno de los tres, al inicio público."""
+    """A dónde llevar al usuario recién autenticado. v7.1 · D55: solo el ADMINISTRADOR
+    inicia sesión, así que va al panel de administración; cualquier otro caso, al inicio público."""
     if tiene_rol(ROL_ADMIN):
         return 'admin.panel'
-    if tiene_rol(ROL_PONENTE):
-        return 'ponente.inicio'
-    if tiene_rol(ROL_ESTUDIANTE):
-        return 'estudiante.inicio'
     return 'catedras.inicio'
 
 

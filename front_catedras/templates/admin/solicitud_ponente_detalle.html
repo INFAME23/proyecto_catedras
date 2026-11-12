@@ -1,0 +1,208 @@
+{% extends 'admin/base_admin.html' %}
+{# ==========================================================================
+   admin/solicitud_ponente_detalle.html  ·  Subversión v7.1 (D56)
+   Una solicitud «Soy ponente» completa y la decisión del administrador.
+   v7.1 · D58: el ponente propone una CÁTEDRA NUEVA con fecha y hora; al aprobar, la cátedra se crea sola con los
+   datos de la tarjeta «Cátedra que se creará» (sugeridos, editables). Esos campos están fuera del <form> de la
+   decisión pero le pertenecen (atributo form="form-decision").
+   ========================================================================== #}
+{% block titulo %}Solicitud {{ s.id_solicitud }} · Bandeja de ponentes{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.solicitudes_ponente_listar') }}">Bandeja de ponentes</a></li>
+        <li class="breadcrumb-item active">Solicitud {{ s.id_solicitud }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <h1 class="h3 fw-bold mb-0"><i class="fas fa-user-tie text-primary-custom me-2"></i>{{ s.nombre_completo }}</h1>
+    {% if s.estado == 'PENDIENTE' %}<span class="badge badge-warning">Pendiente</span>
+    {% elif s.estado == 'APROBADA' %}<span class="badge badge-success">Aprobada</span>
+    {% else %}<span class="badge badge-danger">Rechazada</span>{% endif %}
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header fw-bold"><i class="fas fa-id-card me-2"></i>Datos personales</div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Documento</dt>
+                    <dd class="col-sm-8">{{ s.nombre_tipo_documento }} · {{ s.numero_documento }}</dd>
+                    <dt class="col-sm-4">Perfil profesional</dt>
+                    <dd class="col-sm-8">{{ s.perfil_profesional }}</dd>
+                    <dt class="col-sm-4">Dirección</dt>
+                    <dd class="col-sm-8">{{ s.direccion }}</dd>
+                    <dt class="col-sm-4">Teléfono</dt>
+                    <dd class="col-sm-8">{{ s.telefono }}</dd>
+                    <dt class="col-sm-4">Correo institucional</dt>
+                    <dd class="col-sm-8">
+                        <a href="mailto:{{ s.correo_institucional }}">{{ s.correo_institucional }}</a>
+                        {% if not s.correo_es_institucional %}
+                        <span class="badge badge-warning ms-1" title="El dominio no está en el parámetro DOMINIOS_INSTITUCIONALES">dominio no institucional</span>
+                        {% endif %}
+                    </dd>
+                    <dt class="col-sm-4">Recibida</dt>
+                    <dd class="col-sm-8 mb-0">{{ s.creado_en|fecha_hora }}</dd>
+                </dl>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header fw-bold"><i class="fas fa-microphone-alt me-2"></i>Ponencia</div>
+            <div class="card-body">
+                <h2 class="h5 fw-bold">{{ s.titulo_ponencia }}</h2>
+                <p class="text-muted small fw-semibold mb-1">Resumen</p>
+                <p class="mb-3" style="white-space: pre-line;">{{ s.resumen_ponencia }}</p>
+                <hr>
+                <p class="text-muted small fw-semibold mb-1">Cátedra</p>
+                {% if s.inicio_propuesto %}
+                <p class="mb-1"><strong>Cátedra nueva</strong>: la quiere dictar el
+                    <strong>{{ s.inicio_propuesto|fecha_hora('%Y-%m-%d') }}</strong>, de
+                    <strong>{{ s.inicio_propuesto|fecha_hora('%H:%M') }}</strong> a <strong>{{ s.fin_propuesto|fecha_hora('%H:%M') }}</strong> (hora de Colombia).</p>
+                {% if s.fk_modalidad or s.fk_sede or s.fk_periodo %}
+                <p class="mb-1 small text-muted">Eligió: modalidad <strong>{{ s.nombre_modalidad or s.fk_modalidad or '—' }}</strong>
+                    · sede <strong>{{ s.nombre_sede or s.fk_sede or '—' }}</strong> · periodo <strong>{{ s.fk_periodo|trim or '—' }}</strong>.</p>
+                {% endif %}
+                {% endif %}
+                {% if s.fk_catedra %}
+                <p class="mb-0">Cátedra creada: <a href="{{ url_for('admin.catedras_detalle', id_catedra=s.fk_catedra) }}">{{ s.nombre_catedra }}</a>
+                    {% if s.fk_sesion %}· <a href="{{ url_for('admin.sesiones_detalle', id_sesion=s.fk_sesion) }}">su sesión</a> ({{ s.inicio_sesion|fecha_hora }}){% endif %}</p>
+                {% elif s.fk_sesion %}
+                <p class="mb-0">Sesión elegida (solicitud anterior a «cátedra nueva»):
+                    <a href="{{ url_for('admin.sesiones_detalle', id_sesion=s.fk_sesion) }}">{{ s.nombre_catedra }}</a>
+                    · reunión {{ s.numero_reunion }} · {{ s.inicio_sesion|fecha_hora }}</p>
+                {% elif not s.inicio_propuesto %}
+                <p class="mb-0">No eligió sesión ni fecha.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if crea_catedra %}
+        <div class="card shadow-sm mt-4" id="catedra-a-crear">
+            <div class="card-header fw-bold"><i class="fas fa-book-open me-2"></i>Cátedra que se creará al aprobar</div>
+            <div class="card-body">
+                <p class="text-muted small">La modalidad, la sede y el periodo son los que eligió el ponente (si lo dejó vacío, son sugeridos); los demás valores son sugeridos. Todos los puedes cambiar. Al aprobar, la cátedra se crea sola con una sesión en esta fecha y hora
+                    y la persona queda como su ponente; también se genera el QR de la sesión. Entre una cátedra y otra debe haber al menos una hora (todas usan el mismo enlace de ingreso).</p>
+                {% for aviso in avisos %}
+                <div class="alert alert-danger small py-2 mb-2" role="alert">{{ aviso }}</div>
+                {% endfor %}
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label" for="nombre_catedra">Nombre de la cátedra</label>
+                        <input class="form-control" id="nombre_catedra" name="nombre_catedra" form="form-decision" maxlength="200" value="{{ valores.nombre_catedra }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="inicio">Inicio</label>
+                        <input type="datetime-local" class="form-control" id="inicio" name="inicio" form="form-decision" required value="{{ valores.inicio }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="fin">Fin</label>
+                        <input type="datetime-local" class="form-control" id="fin" name="fin" form="form-decision" required value="{{ valores.fin }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="fk_modalidad">Modalidad</label>
+                        <select class="form-select" id="fk_modalidad" name="fk_modalidad" form="form-decision" required>
+                            <option value="">Selecciona…</option>
+                            {% for m in opciones.modalidades %}<option value="{{ m.id_modalidad }}" {{ 'selected' if valores.fk_modalidad == m.id_modalidad }}>{{ m.nombre }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="fk_sede">Sede</label>
+                        <select class="form-select" id="fk_sede" name="fk_sede" form="form-decision" required>
+                            <option value="">Selecciona…</option>
+                            {% for x in opciones.sedes %}<option value="{{ x.id_sede }}" {{ 'selected' if valores.fk_sede == x.id_sede }}>{{ x.nombre }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="lugar">Salón o lugar <span class="text-muted fw-normal">(opcional)</span></label>
+                        <input class="form-control" id="lugar" name="lugar" form="form-decision" maxlength="200" value="{{ valores.lugar }}" placeholder="Aula 101">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="fk_periodo">Periodo académico</label>
+                        <select class="form-select" id="fk_periodo" name="fk_periodo" form="form-decision" required>
+                            <option value="">Selecciona…</option>
+                            {% for p in opciones.periodos %}<option value="{{ p.id_periodo|trim }}" {{ 'selected' if valores.fk_periodo == p.id_periodo|trim }}>{{ p.id_periodo|trim }} ({{ p.fecha_ini }} a {{ p.fecha_fin }})</option>{% endfor %}
+                        </select>
+                        {% if not valores.fk_periodo %}<div class="form-text text-warning">Ningún periodo cubre esa fecha: elige uno.</div>{% endif %}
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="enlace_virtual">Enlace de ingreso <span class="text-muted fw-normal">(recomendado en virtual o híbrida)</span></label>
+                        <input type="url" class="form-control" id="enlace_virtual" name="enlace_virtual" form="form-decision" maxlength="300"
+                               value="{{ valores.enlace_virtual }}" placeholder="https://meet.google.com/…">
+                        <div class="form-text">Es el enlace con el que la gente entra a la sesión. Debe empezar por http:// o https://.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="fk_tipo_evento">Tipo de evento</label>
+                        <select class="form-select" id="fk_tipo_evento" name="fk_tipo_evento" form="form-decision">
+                            {% for te in opciones.tipos_evento %}<option value="{{ te.id_tipo_evento|trim }}" {{ 'selected' if valores.fk_tipo_evento == te.id_tipo_evento|trim }}>{{ te.nombre }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="id_evento_asis">Código ASIS <span class="text-muted fw-normal">(opcional)</span></label>
+                        <input class="form-control" id="id_evento_asis" name="id_evento_asis" form="form-decision" maxlength="9" pattern="[0-9]{9}" inputmode="numeric"
+                               value="{{ valores.id_evento_asis }}" placeholder="9 dígitos">
+                        <div class="form-text">Vacío = se asigna el siguiente código libre.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-header fw-bold"><i class="fas fa-gavel me-2"></i>Decisión</div>
+            <div class="card-body">
+                {% if s.estado == 'PENDIENTE' %}
+                <form method="post" action="{{ url_for('admin.solicitudes_ponente_resolver', id_solicitud=s.id_solicitud) }}" id="form-decision">
+                    <label class="form-label" for="observacion">Observación <span class="text-muted fw-normal">(obligatoria al rechazar)</span></label>
+                    <textarea class="form-control mb-1" id="observacion" name="observacion" rows="4" maxlength="500"
+                              placeholder="Motivo o nota para la persona…"></textarea>
+                    <div class="form-text mb-3">Máximo 500 caracteres.</div>
+                    <div class="d-grid gap-2">
+                        {# El texto de confirm va en data-confirmar (Jinja lo escapa): un apellido con comilla no rompe el JavaScript. #}
+                        <button class="btn btn-primary" type="submit" name="decision" value="aprobar"
+                                data-confirmar="¿Aprobar a {{ s.nombre_completo }} como ponente?{% if crea_catedra %} Se creará la cátedra y su sesión.{% elif s.fk_sesion %} Se le asignará a la sesión elegida.{% endif %}"
+                                onclick="return confirm(this.dataset.confirmar);">
+                            <i class="fas fa-check me-1"></i>{{ 'Aprobar y crear la cátedra' if crea_catedra else 'Aprobar ponente y ponencia' }}
+                        </button>
+                        {# formnovalidate: rechazar no exige los datos de la cátedra (solo el motivo). #}
+                        <button class="btn btn-outline-danger" type="submit" name="decision" value="rechazar" id="btn-rechazar" formnovalidate
+                                data-confirmar="¿Rechazar la solicitud de {{ s.nombre_completo }}?"
+                                onclick="var o = document.getElementById('observacion'); if (!o.value.trim()) { o.focus(); alert('Escribe el motivo del rechazo.'); return false; } return confirm(this.dataset.confirmar);">
+                            <i class="fas fa-times me-1"></i>Rechazar
+                        </button>
+                    </div>
+                </form>
+                <p class="text-muted small mt-3 mb-0">
+                    Al aprobar, la persona se registra con su documento (si ya existía, se reutiliza) y
+                    {% if crea_catedra %}se <strong>crea la cátedra</strong> con su sesión y su QR, y la persona queda como su <strong>PONENTE</strong>{% elif s.fk_sesion %}se asigna a la sesión como <strong>PONENTE</strong>{% else %}queda registrada{% endif %}.
+                    Esta decisión no se puede deshacer.
+                </p>
+                {% else %}
+                <p class="mb-2">
+                    {% if s.estado == 'APROBADA' %}<i class="fas fa-check-circle text-success me-1"></i>Aprobada{% else %}<i class="fas fa-times-circle text-danger me-1"></i>Rechazada{% endif %}
+                    el {{ s.resuelto_en|fecha_hora }}.
+                </p>
+                {% if s.observacion_admin %}
+                <p class="text-muted small fw-semibold mb-1">Observación</p>
+                <p style="white-space: pre-line;">{{ s.observacion_admin }}</p>
+                {% endif %}
+                {% if s.fk_asistente %}
+                <p class="mb-1"><a href="{{ url_for('admin.asistentes_detalle', id_asistente=s.fk_asistente) }}"><i class="fas fa-user me-1"></i>Ver a la persona registrada (asistente {{ s.fk_asistente }})</a></p>
+                {% endif %}
+                {% if s.estado == 'APROBADA' and s.fk_catedra %}
+                <p class="mb-1"><a href="{{ url_for('admin.catedras_detalle', id_catedra=s.fk_catedra) }}"><i class="fas fa-book-open me-1"></i>Ver la cátedra creada ({{ s.fk_catedra }})</a></p>
+                {% endif %}
+                {% if s.estado == 'APROBADA' and s.fk_sesion %}
+                <p class="mb-0"><a href="{{ url_for('admin.ponencias_listar', fk_sesion=s.fk_sesion) }}"><i class="fas fa-chalkboard-teacher me-1"></i>Ver ponentes de la sesión</a></p>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

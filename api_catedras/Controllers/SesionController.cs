@@ -111,6 +111,11 @@ public class SesionController : ControllerBase
             // RF125: 'fin' no es posterior a 'inicio'. La BD no se tocó.
             return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
         }
+        catch (PostgresException ex) when (ex.SqlState == "P0001")
+        {
+            // Regla de negocio de la base de datos (v7.1 D57): el horario está fuera de los periodos en que se pueden programar cátedras.
+            return Problema(409, "conflicto", ex.MessageText, null);
+        }
         catch (NpgsqlException ex)
         {
             // FK inexistente (cátedra, modalidad, sede, periodo, encuesta) o
@@ -142,6 +147,11 @@ public class SesionController : ControllerBase
         {
             return Problema(404, "no_encontrado", "Sesión no encontrada.", ex.Message);
         }
+        catch (PostgresException ex) when (ex.SqlState == "P0001")
+        {
+            // Regla de negocio de la base de datos (v7.1 D57): el horario está fuera de los periodos en que se pueden programar cátedras.
+            return Problema(409, "conflicto", ex.MessageText, null);
+        }
         catch (NpgsqlException ex)
         {
             return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
@@ -170,6 +180,11 @@ public class SesionController : ControllerBase
         catch (NoEncontradoExcepcion ex)
         {
             return Problema(404, "no_encontrado", "Sesión no encontrada.", ex.Message);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "P0001")
+        {
+            // Regla de negocio de la base de datos (v7.1 D57): el horario está fuera de los periodos en que se pueden programar cátedras.
+            return Problema(409, "conflicto", ex.MessageText, null);
         }
         catch (NpgsqlException ex)
         {

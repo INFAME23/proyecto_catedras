@@ -1,4 +1,4 @@
-﻿/* ============================================
+/* ============================================
    MANUAL DE MARCA USBMED - ESTILOS
    ============================================ */
 
@@ -507,3 +507,129 @@ main {
 @media (prefers-reduced-motion: reduce) {
     .admin-grupo > summary::after { transition: none; }
 }
+
+/* ============================================
+   CALENDARIO PÚBLICO Y «SOY PONENTE» (v7.1 · D56)
+   FullCalendar toma los colores de la marca por variables propias.
+   ============================================ */
+.calendario-card:hover {
+    transform: none;
+    box-shadow: var(--shadow-sm);
+}
+
+.calendario-card .fc {
+    --fc-border-color: var(--gray-mid);
+    --fc-button-bg-color: var(--secondary);
+    --fc-button-border-color: var(--secondary);
+    --fc-button-hover-bg-color: var(--secondary-light);
+    --fc-button-hover-border-color: var(--secondary-light);
+    --fc-button-active-bg-color: var(--primary);
+    --fc-button-active-border-color: var(--primary);
+    --fc-today-bg-color: rgba(239, 125, 0, 0.08);
+    --fc-now-indicator-color: var(--primary);
+    --fc-event-text-color: #fff;
+    font-family: var(--font-family);
+}
+
+.calendario-card .fc .fc-toolbar-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+/* "noviembre de 2026" -> "Noviembre de 2026" (capitalize pondría mayúscula también a "de"). */
+.calendario-card .fc .fc-toolbar-title::first-letter {
+    text-transform: uppercase;
+}
+
+.calendario-card .fc .fc-button:focus-visible {
+    box-shadow: 0 0 0 4px rgba(239, 125, 0, 0.3);
+}
+
+/* Bootstrap pinta los <a> de azul: se devuelven los colores de la marca. */
+.calendario-card .fc a,
+.calendario-card .fc .fc-col-header-cell-cushion,
+.calendario-card .fc .fc-daygrid-day-number {
+    color: var(--secondary);
+    text-decoration: none;
+}
+
+.calendario-card .fc a:hover {
+    color: var(--primary-dark);
+}
+
+.calendario-card .fc .fc-day-other .fc-daygrid-day-number {
+    color: var(--gray-text);
+}
+
+.calendario-card .fc .fc-event {
+    cursor: pointer;
+    border-radius: 6px;
+}
+
+/* En las vistas de semana el evento es un bloque de color: texto blanco. */
+.calendario-card .fc .fc-timegrid-event,
+.calendario-card .fc .fc-timegrid-event a {
+    color: #fff;
+}
+
+.calendario-card .fc .fc-daygrid-event {
+    font-size: 0.78rem;
+}
+
+.calendario-card .fc .fc-daygrid-more-link {
+    font-weight: 600;
+    color: var(--primary-dark);
+}
+
+/* Leyenda bajo el calendario (los colores salen de COLOR_MODALIDAD en routes/calendario.py). */
+.calendario-punto {
+    display: inline-block;
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 3px;
+    margin-right: 0.35rem;
+    vertical-align: -1px;
+}
+
+.calendario-punto.mod-presencial { background: #EF7D00; }
+.calendario-punto.mod-virtual { background: #1D1D1B; }
+.calendario-punto.mod-telepresencial { background: #2F6F8F; }
+.calendario-punto.mod-hibrida { background: #8A4B00; }
+/* Campo trampa antispam del formulario «Soy ponente»: fuera de pantalla, no display:none (algunos robots lo ignoran). */
+.trampa-formulario {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+@media (max-width: 768px) {
+    .calendario-card .fc .fc-toolbar { flex-direction: column; gap: 0.5rem; }
+    /* La lista del celular: sin el nombre del día a la derecha (ya está en el encabezado) y con los títulos largos partidos. */
+    .calendario-card .fc .fc-list-day-side-text { display: none; }
+    .calendario-card .fc .fc-list-event-title { overflow-wrap: anywhere; }
+    .calendario-card .fc .fc-list-event-time { white-space: nowrap; width: 1%; }
+    .calendario-card .fc .fc-list-event-graphic { width: 1%; }
+}
+/* «Soy ponente» (D56/D57): el <form> queda entre .modal-content y .modal-body, y Bootstrap solo hace scroll
+   en el cuerpo cuando el cuerpo es hijo directo del contenido. Con el form como columna flexible el cuerpo
+   se desplaza (barra de scroll) y el encabezado y los botones quedan siempre a la vista. */
+.modal-dialog-scrollable .modal-content > form {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
+}
+
+.modal-dialog-scrollable .modal-content > form > .modal-body {
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) var(--gray-mid);
+}
+
+.modal-dialog-scrollable .modal-content > form > .modal-body::-webkit-scrollbar { width: 10px; }
+.modal-dialog-scrollable .modal-content > form > .modal-body::-webkit-scrollbar-track { background: var(--gray-mid); border-radius: 8px; }
+.modal-dialog-scrollable .modal-content > form > .modal-body::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 8px; }

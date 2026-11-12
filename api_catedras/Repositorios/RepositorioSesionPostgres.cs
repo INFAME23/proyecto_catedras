@@ -76,7 +76,7 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             CALL catedras.sp_guardar_sesion(
                 @FkCatedra, @Inicio, @Fin, @FkModalidad, @FkSede, @FkPeriodo,
                 @NumeroReunion, @NumeroReunionAsis, @Titulo, @FkEncuesta,
-                @Lugar, @EnlaceVirtual, @Cupo, @Estado, CAST(@Enlace AS jsonb), NULL);";
+                @Lugar, @EnlaceVirtual, CAST(NULL AS integer), @Estado, CAST(@Enlace AS jsonb), NULL);";
 
         string? enlaceJson = enlaceInicial is null
             ? null
@@ -105,7 +105,6 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             sesion.FkEncuesta,
             sesion.Lugar,
             sesion.EnlaceVirtual,
-            sesion.Cupo,
             sesion.Estado,
             Enlace = enlaceJson,
         });
@@ -152,8 +151,6 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             ? (vEncuesta is null ? null : Convert.ToInt64(vEncuesta)) : actual.FkEncuesta;
         string? lugar = datos.TryGetValue("lugar", out var vLugar) ? (string?)vLugar : actual.Lugar;
         string? enlaceVirtual = datos.TryGetValue("enlace_virtual", out var vEnlace) ? (string?)vEnlace : actual.EnlaceVirtual;
-        int? cupo = datos.TryGetValue("cupo", out var vCupo)
-            ? (vCupo is null ? null : Convert.ToInt32(vCupo)) : actual.Cupo;
         string estado = datos.TryGetValue("estado", out var vEstado) ? (string)vEstado! : actual.Estado;
 
         // 3) Procedimiento con el conjunto COMPLETO. Rango o cupo inválidos,
@@ -162,7 +159,7 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             CALL catedras.sp_actualizar_sesion(
                 @idSesion, @fkCatedra, @numeroReunion, @numeroReunionAsis, @titulo,
                 @inicio, @fin, @fkModalidad, @fkSede, @fkPeriodo, @fkEncuesta,
-                @lugar, @enlaceVirtual, @cupo, @estado, NULL);";
+                @lugar, @enlaceVirtual, CAST(NULL AS integer), @estado, NULL);";
         string? resultadoJson = await conexion.QuerySingleAsync<string?>(sqlActualizar, new
         {
             idSesion,
@@ -178,7 +175,6 @@ public class RepositorioSesionPostgres : IRepositorioSesion
             fkEncuesta,
             lugar,
             enlaceVirtual,
-            cupo,
             estado,
         });
 

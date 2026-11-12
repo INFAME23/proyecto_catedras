@@ -1,0 +1,85 @@
+{% extends 'admin/base_admin.html' %}
+{# ==========================================================================
+   admin/restriccion_form.html  ·  Subversión v7.1 (D57)
+   Crear o editar una ventana de programación.
+   ========================================================================== #}
+{% block titulo %}{{ 'Nueva ventana' if modo == 'nueva' else 'Editar ventana' }} · Periodos y horarios{% endblock %}
+{% block contenido %}
+{% set marcados = v.dias_semana or [] %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.restricciones_listar') }}">Periodos y horarios de programación</a></li>
+        <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-user-clock text-primary-custom me-2"></i>{{ 'Nueva ventana de programación' if modo == 'nueva' else 'Editar ventana ' ~ id_restriccion }}</h1>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post" novalidate
+              action="{{ url_for('admin.restricciones_nueva') if modo == 'nueva' else url_for('admin.restricciones_editar', id_restriccion=id_restriccion) }}">
+
+            <div class="mb-3">
+                <label class="form-label" for="nombre">Nombre</label>
+                <input class="form-control{{ ' is-invalid' if errores.get('nombre') }}" id="nombre" name="nombre" maxlength="100" required
+                       placeholder="Periodo 2026-2" value="{{ v.nombre or '' }}">
+                {% if errores.get('nombre') %}<div class="invalid-feedback">{{ errores['nombre'] }}</div>{% endif %}
+            </div>
+
+            <h2 class="h6 fw-bold text-primary-custom"><i class="fas fa-calendar-alt me-1"></i>Fechas del periodo</h2>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="fecha_desde">Desde</label>
+                    <input type="date" class="form-control{{ ' is-invalid' if errores.get('fecha_desde') }}" id="fecha_desde" name="fecha_desde" required value="{{ v.fecha_desde or '' }}">
+                    {% if errores.get('fecha_desde') %}<div class="invalid-feedback">{{ errores['fecha_desde'] }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="fecha_hasta">Hasta (inclusive)</label>
+                    <input type="date" class="form-control{{ ' is-invalid' if errores.get('fecha_hasta') }}" id="fecha_hasta" name="fecha_hasta" required value="{{ v.fecha_hasta or '' }}">
+                    {% if errores.get('fecha_hasta') %}<div class="invalid-feedback">{{ errores['fecha_hasta'] }}</div>{% endif %}
+                </div>
+            </div>
+
+            <h2 class="h6 fw-bold text-primary-custom"><i class="fas fa-clock me-1"></i>Horario del día <span class="text-muted fw-normal">(opcional)</span></h2>
+            <div class="row g-3 mb-1">
+                <div class="col-md-6">
+                    <label class="form-label" for="hora_desde">Desde las</label>
+                    <input type="time" class="form-control{{ ' is-invalid' if errores.get('hora_desde') }}" id="hora_desde" name="hora_desde" value="{{ (v.hora_desde or '')[:5] }}">
+                    {% if errores.get('hora_desde') %}<div class="invalid-feedback">{{ errores['hora_desde'] }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="hora_hasta">Hasta las</label>
+                    <input type="time" class="form-control{{ ' is-invalid' if errores.get('hora_hasta') }}" id="hora_hasta" name="hora_hasta" value="{{ (v.hora_hasta or '')[:5] }}">
+                    {% if errores.get('hora_hasta') %}<div class="invalid-feedback">{{ errores['hora_hasta'] }}</div>{% endif %}
+                </div>
+            </div>
+            <div class="form-text mb-3">
+                Una sesión debe empezar a partir de la primera hora y terminar a más tardar a la segunda, el mismo día. Escribe las dos o ninguna
+                (vacío = a cualquier hora). Hora de Colombia.
+            </div>
+
+            <h2 class="h6 fw-bold text-primary-custom"><i class="fas fa-calendar-week me-1"></i>Días de la semana <span class="text-muted fw-normal">(opcional)</span></h2>
+            <div class="d-flex flex-wrap gap-3 mb-1">
+                {% for numero, nombre, _ in dias_semana %}
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="dia{{ numero }}" name="dias_semana" value="{{ numero }}" {{ 'checked' if numero in marcados }}>
+                    <label class="form-check-label" for="dia{{ numero }}">{{ nombre }}</label>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="form-text mb-3">Sin marcar ninguno = todos los días.</div>
+
+            <div class="form-check form-switch mb-4">
+                <input class="form-check-input" type="checkbox" role="switch" id="activo" name="activo" {{ 'checked' if v.activo }}>
+                <label class="form-check-label" for="activo">Activa (limita la programación). Desactívala para pausarla sin borrarla.</label>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
+                <a class="btn btn-secondary" href="{{ url_for('admin.restricciones_listar') }}">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

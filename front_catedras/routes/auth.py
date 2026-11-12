@@ -51,6 +51,11 @@ def login():
         return render_template('login.html', siguiente=siguiente, usuario=usuario), (
             401 if ex.codigo == 401 else 200)
 
+    # v7.1 · D55: solo el administrador inicia sesión (la API ya lo exige; esto es el cinturón del front).
+    if 'ADMIN' not in list(respuesta.get('roles', [])):
+        flash(MENSAJE_GENERICO, 'error')
+        return render_template('login.html', siguiente=siguiente, usuario=usuario), 401
+
     datos = respuesta['usuario']
     session.clear()                              # nunca se reutiliza una sesión anterior
     session['usuario'] = {
@@ -59,7 +64,7 @@ def login():
         'fk_asistente': datos['fk_asistente'],
     }
     session['roles'] = list(respuesta.get('roles', []))
-    # v7.1 · D54: primer ingreso (clave inicial = código de estudiante): hasta que la cambie, el
+    # v7.1 · D54: si a esta cuenta se le exigió cambiar la clave (clave temporal), hasta que la cambie, el
     # before_request de app.py solo le deja ver la pantalla de cambiar la clave.
     session['debe_cambiar'] = bool(datos.get('debe_cambiar_clave'))
     if session['debe_cambiar']:
@@ -68,7 +73,7 @@ def login():
     flash(f"Bienvenido, {datos['usuario']}.", 'exito')
     if siguiente:
         return redirect(siguiente)
-    # v7.1 · RF-S3: un solo login; el destino depende del rol (admin, ponente o estudiante).
+    # v7.1 · D55: solo el administrador inicia sesión: va al panel de administración.
     return redirect(url_for(endpoint_de_inicio()))
 
 

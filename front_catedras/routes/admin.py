@@ -23,20 +23,21 @@
 #  exigir nada (ADR D28).
 # ==========================================================================
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-import secrets
-import string
-
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
 from auth_helpers import ROL_ADMIN, exigir_rol, usuario_actual
 from servicios.api_catedras import (ErrorApi, actualizar_parcial, crear, eliminar, listar,
                                     obtener, reemplazar)
-from servicios.fechas import a_local, desde_input
-from servicios.qr_sesiones import asegurar_qr_de_catedra
+from servicios.fechas import ZONA_COLOMBIA, a_local, desde_input, fecha_hora
+from servicios.api_catedras import consultar
+from servicios.qr_sesiones import (asegurar_qr_de_catedra, emitir_qr, estado_de_ventana, qr_de_sesion,
+                                   svg_qr, url_de_registro)
 from routes.sesiones import (ROLES_PONENCIA, asignar_ponente, buscar_candidatos, ponentes_de,
                              quitar_ponente)
+from routes.admin_solicitudes import contar_pendientes, registrar_rutas   # v7.1 · D56: bandeja de ponentes
+from routes import admin_restricciones   # v7.1 · D57: periodos y horarios en que se pueden programar cátedras
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -50,7 +51,15 @@ def _solo_administradores():
 
 @admin_bp.route('/')
 def panel():
-    return render_template('admin/panel.html')
+    # v7.1 · D56: cuántas solicitudes «Soy ponente» esperan decisión (None = la API no respondió).
+    return render_template('admin/panel.html', solicitudes_pendientes=contar_pendientes())
+
+
+# v7.1 · D56: la bandeja de solicitudes de ponente (routes/admin_solicitudes.py) cuelga de este mismo
+# blueprint, así hereda la guardia de ADMIN de arriba.
+registrar_rutas(admin_bp)
+# v7.1 · D57: periodos y horarios de programación (routes/admin_restricciones.py), también colgados de este blueprint.
+admin_restricciones.registrar_rutas(admin_bp)
 
 
 # ==========================================================================
@@ -1397,7 +1406,7 @@ def _leer_form_catedra():
 
 # Maestro-detalle #1 en el formulario: las sesiones de la cátedra.
 CAMPOS_SESION_FILA = ('titulo', 'inicio', 'fin', 'fk_modalidad', 'fk_sede', 'fk_periodo',
-                      'fk_encuesta', 'lugar', 'cupo')
+                      'fk_encuesta', 'lugar', 'enlace_virtual')
 
 
 def _sesion_de_fila(fila):
@@ -1413,12 +1422,12 @@ def _sesion_de_fila(fila):
         'fk_periodo': fila['fk_periodo'],
         'fk_encuesta': _entero_o_none(fila['fk_encuesta']),
         'lugar': fila['lugar'] or None,
-        'cupo': _entero_o_none(fila['cupo']),
+        'enlace_virtual': fila['enlace_virtual'] or None,     # v7.1 · D59: enlace de ingreso
     }
 
 
-def _render_catedra_form(modo, catedra, errores, filas_sesiones=(), sesiones_existentes=None):
-    return render_template('admin/catedra_form.html', modo=modo, catedra=catedra, errores=errores,
+def _render_catedra_form(modo, catedra, errores, filas_sesiones=(), sesiones_existentes=None, choques=()):
+    return render_template('admin/catedra_form.html', modo=modo, catedra=catedra, errores=errores, choques=list(choques),
                            tipos_evento=_opciones('TipoEvento'), dependencias=_opciones('Dependencia'),
                            filas_sesiones=list(filas_sesiones), sesiones_existentes=sesiones_existentes or [],
                            **_catalogos_sesion())
@@ -1462,6 +1471,16 @@ def catedras_nueva():
     # y la API guarda cátedra + sesiones en un solo CALL (sp_guardar_catedra).
     filas = _filas('ses', CAMPOS_SESION_FILA, clave='inicio')
     if filas:
+        # v7.1 · D52/D55: que ninguna sesión se cruce con otra en el mismo salón (si no se puede consultar, no se crea nada).
+        try:
+            choques = _choques_del_formulario(filas)
+        except ErrorApi as ex:
+            flash('No se pudo verificar la disponibilidad del horario, así que no se creó nada. '
+                  f"Intenta de nuevo en un momento. {ex.detalle or ''}".strip(), 'error')
+            return _render_catedra_form('nueva', datos, [], filas)
+        if choques:
+            # Fijos en la página (no flash: un flash de error ya no se borra, pero esto es una lista larga).
+            return _render_catedra_form('nueva', datos, [], filas, choques=choques)
         datos['sesiones'] = [_sesion_de_fila(f) for f in filas]
     try:
         respuesta = crear('Catedra', datos)
@@ -1474,7 +1493,7 @@ def catedras_nueva():
     flash(f"Cátedra creada con id {respuesta['id_catedra']}{sufijo} "
           f"(nombre ASIS: '{respuesta['nombre_asis']}').", 'exito')
     if filas:
-        # v7.1 · D53: cada sesión nace con su QR de cierre (el ponente lo ve en «Ver QR»).
+        # v7.1 · D53: cada sesión nace con su QR de cierre (se ve en «QR de asistencia» de la sesión).
         qr_hechos, qr_total = asegurar_qr_de_catedra(respuesta['id_catedra'], usuario_actual().get('id_usuario'))
         if qr_hechos != qr_total:
             flash(f'Se generó el QR de {qr_hechos} de {qr_total} sesiones.', 'error')
@@ -2105,7 +2124,6 @@ def _leer_form_sesion():
         'fk_encuesta': _entero_o_none(request.form.get('fk_encuesta')),
         'lugar': _texto_o_none('lugar'),
         'enlace_virtual': _texto_o_none('enlace_virtual'),
-        'cupo': _entero_o_none(request.form.get('cupo')),
         'estado': request.form.get('estado') or 'PROGRAMADA',
     }
 
@@ -2406,98 +2424,6 @@ def usuarios_nuevo():
 
     flash(f"Usuario '{datos['usuario']}' creado.", 'exito')
     return redirect(url_for('admin.usuarios_listar'))
-
-
-# ==========================================================================
-#  v7.1 · NUEVO PONENTE EN UN PASO  (D48)
-# --------------------------------------------------------------------------
-#  El administrador da de alta a un ponente SIN buscarlo antes en la base de
-#  datos: escribe sus datos y la pantalla crea, en este orden, la persona
-#  (Asistente), su cuenta (Usuario) y el rol PONENTE. Si un paso falla se
-#  deshacen los anteriores (la API no tiene una operación que lo haga todo
-#  junto, así que se compensa aquí) para no dejar personas o cuentas a medias.
-#  Al terminar se muestra UNA vez el usuario y la clave temporal para
-#  entregárselos; la clave no se guarda en ningún lado del front.
-# ==========================================================================
-
-def _clave_temporal():
-    """12 caracteres, sin los que se confunden al dictarlos (0/O, 1/l/I)."""
-    alfabeto = ''.join(c for c in string.ascii_letters + string.digits if c not in '0O1lI')
-    return ''.join(secrets.choice(alfabeto) for _ in range(12))
-
-
-def _deshacer(pasos):
-    """Borra lo ya creado, del último al primero. Un fallo aquí no se oculta:
-    se avisa para que el administrador lo revise a mano."""
-    for recurso, id_valor in reversed(pasos):
-        try:
-            eliminar(recurso, id_valor)
-        except ErrorApi:
-            flash(f"No se pudo deshacer {recurso} {id_valor}: revísalo en /admin.", 'error')
-
-
-@admin_bp.route('/ponentes/nuevo', methods=['GET', 'POST'])
-def ponentes_nuevo():
-    if request.method == 'GET':
-        return render_template('admin/ponente_nuevo.html', f={'es_externo': True}, errores=[], creado=None)
-
-    f = {campo: request.form.get(campo, '').strip() for campo in
-         ('nombres', 'apellidos', 'correo_institucional', 'correo_personal', 'celular', 'id_asis', 'usuario')}
-    f['es_externo'] = request.form.get('es_externo') == 'on'
-    clave = request.form.get('clave', '') or _clave_temporal()
-
-    def volver(ex=None, mensaje=None):
-        if ex is not None:
-            _avisar(ex)
-        if mensaje:
-            flash(mensaje, 'error')
-        return render_template('admin/ponente_nuevo.html', f=f, errores=ex.errores if ex else [], creado=None)
-
-    if not (f['correo_institucional'] or f['correo_personal']):
-        return volver(mensaje='Escribe al menos un correo: a él llegará el código si el ponente olvida su clave.')
-
-    datos = {'nombres': f['nombres'], 'apellidos': f['apellidos'], 'es_externo': f['es_externo'], 'activo': True}
-    for campo in ('correo_institucional', 'correo_personal', 'celular', 'id_asis'):
-        if f[campo]:
-            datos[campo] = f[campo]
-
-    creados = []          # (recurso, id) en el orden en que se crearon
-    try:
-        asistente = crear('Asistente', datos)
-        creados.append(('Asistente', asistente['id_asistente']))
-        # v7.1 · D54: la clave la eligió/generó el administrador: al primer ingreso el ponente debe cambiarla.
-        usuario = crear('Usuario', {'fk_asistente': asistente['id_asistente'], 'usuario': f['usuario'],
-                                    'clave': clave, 'activo': True, 'debe_cambiar_clave': True})
-        creados.append(('Usuario', usuario['id_usuario']))
-        crear('RolPorUsuario', {'fk_usuario': usuario['id_usuario'], 'fk_rol': 'PONENTE'})
-    except ErrorApi as ex:
-        _deshacer(creados)
-        return volver(ex)
-
-    return render_template('admin/ponente_nuevo.html', f=f, errores=[], creado={
-        'id_asistente': asistente['id_asistente'], 'id_usuario': usuario['id_usuario'],
-        'usuario': f['usuario'], 'clave': clave,
-        'nombre': f"{f['nombres']} {f['apellidos']}",
-        'correo': f['correo_institucional'] or f['correo_personal']})
-
-
-@admin_bp.route('/inscripciones')
-def inscripciones_listar():
-    """v7.1 · D50 · Inscripciones de estudiantes a cátedras (solo lectura).
-    Filtros: ?fk_catedra=, ?fk_asistente= y ?todas=1 (incluye las canceladas)."""
-    fk_catedra = _entero_o_none(request.args.get('fk_catedra'))
-    fk_asistente = _entero_o_none(request.args.get('fk_asistente'))
-    todas = request.args.get('todas') == '1'
-    filtros = {'fkCatedra': fk_catedra, 'fkAsistente': fk_asistente}
-    if todas:
-        filtros['soloActivas'] = 'false'
-    try:
-        inscripciones = listar('InscripcionCatedra', limite=1000, **filtros)
-    except ErrorApi as ex:
-        _avisar(ex)
-        inscripciones = []
-    return render_template('admin/inscripcion_lista.html', inscripciones=inscripciones,
-                           fk_catedra=fk_catedra, fk_asistente=fk_asistente, todas=todas)
 
 
 @admin_bp.route('/usuarios/<int:id_usuario>/exigir-cambio-clave', methods=['POST'])
@@ -3429,3 +3355,167 @@ def bitacora_listar():
         entradas = []
     return render_template('admin/bitacora_lista.html', entradas=entradas, tabla=tabla, limite=limite,
                            tablas=TABLAS_BITACORA, limites=LIMITES_BITACORA)
+
+
+# ==========================================================================
+#  v7.1 · D52/D53/D55 · QR DE ASISTENCIA DE UNA SESIÓN Y DISPONIBILIDAD DE HORARIO
+# --------------------------------------------------------------------------
+#  Antes lo hacía el ponente desde su panel; como ahora solo el administrador inicia sesión, vive aquí.
+#  El administrador abre la pantalla del QR de la sesión (para proyectarlo o compartirlo al final) y ve en
+#  vivo quién registró su asistencia. Un horario NO está disponible si otra sesión se traslapa con él en la
+#  misma sede FÍSICA y el mismo salón (sin salón escrito cuenta como choque, es lo prudente; una sede virtual
+#  no tiene salón y no se revisa) o, desde la D59, si queda a menos de una hora de CUALQUIER otra sesión
+#  (de cualquier sede o modalidad: todas usan el mismo enlace). La regla la calcula la BD (sp_sesiones_en_conflicto,
+#  migraciones 050 y 059).
+# ==========================================================================
+_MOTIVO = {'LUGAR': 'el mismo salón en esa sede', 'PONENTE': 'ya participa la misma persona'}
+
+# v7.1 · D59: entre dos sesiones (de cualquier cátedra, sede o modalidad) debe haber al menos esto, porque todas usan el
+# mismo enlace de ingreso. La BD manda (parámetro MINUTOS_ENTRE_SESIONES, 60 por defecto); aquí solo se usa para
+# avisar de las sesiones escritas en el MISMO formulario, que la BD todavía no ve.
+MINUTOS_ENTRE_SESIONES = 60
+
+
+def _motivo_choque(m, c):
+    if m == 'HORARIO':
+        return ('es a la misma hora (no puede haber dos cátedras a la vez)' if c.get('solapa')
+                else 'queda a menos de una hora de distancia (todas las cátedras usan el mismo enlace)')
+    return _MOTIVO.get(m, m)
+
+
+def _describe_choque(c):
+    """Una sesión que choca, en una línea legible (hora de Colombia)."""
+    motivos = ' y '.join(_motivo_choque(m, c) for m in (c.get('motivos') or []))
+    donde = ', '.join(x for x in (c.get('fk_sede'), c.get('lugar')) if x)
+    return (f"«{c['nombre_catedra']}» (reunión {c['numero_reunion']}, "
+            f"{fecha_hora(c['inicio'], '%Y-%m-%d %H:%M')}–{fecha_hora(c['fin'], '%H:%M')}"
+            f"{', ' + donde if donde else ''}): {motivos}")
+
+
+def _conflictos_de_horario(inicio, fin, sede=None, lugar=None):
+    """Sesiones que chocan con ese horario por salón. 'inicio'/'fin': texto ISO con zona. Lanza ErrorApi."""
+    r = consultar('Disponibilidad/conflictos', inicio=inicio, fin=fin, fkSede=sede or None, lugar=lugar or None)
+    return r['conflictos']
+
+
+def _choques_del_formulario(filas):
+    """Textos con los choques de las sesiones escritas: contra la BD y entre ellas mismas (dos que se
+    traslapan en la misma sede física y el mismo salón, o sin salón escrito)."""
+    avisos = []
+    rangos = []
+    for n, f in enumerate(filas, start=1):
+        inicio, fin = desde_input(f['inicio']), desde_input(f['fin'])
+        for c in _conflictos_de_horario(inicio, fin, f.get('fk_sede'), f.get('lugar')):
+            avisos.append(f"Sesión {n} choca con {_describe_choque(c)}.")
+        try:
+            rangos.append((n, datetime.fromisoformat(inicio), datetime.fromisoformat(fin), f.get('fk_sede'),
+                           (f.get('lugar') or '').strip().lower()))
+        except (TypeError, ValueError):
+            pass        # fecha ilegible: la API la rechaza con su 422 al crear
+    margen = timedelta(minutes=MINUTOS_ENTRE_SESIONES)
+    for i, (n1, a1, b1, s1, l1) in enumerate(rangos):
+        for n2, a2, b2, s2, l2 in rangos[i + 1:]:
+            if a1 < b2 + margen and b1 + margen > a2:
+                avisos.append(f"Las sesiones {n1} y {n2} de esta misma cátedra se cruzan o quedan a menos de una hora "
+                              "una de otra: todas las cátedras usan el mismo enlace, así que no pueden estar pegadas.")
+    return avisos
+
+
+def _hora_choque(c):
+    return {**c, 'hora': f"{fecha_hora(c['inicio'], '%H:%M')}–{fecha_hora(c['fin'], '%H:%M')}",
+            'fecha': fecha_hora(c['inicio'], '%Y-%m-%d'),
+            'texto': _describe_choque(c) if c.get('motivos') else None}
+
+
+@admin_bp.route('/catedras/disponibilidad')
+def catedras_disponibilidad():
+    """¿Está libre este horario? ?inicio=&fin= (datetime-local) &sede= &lugar= . JSON para static/disponibilidad.js."""
+    inicio, fin = desde_input(request.args.get('inicio')), desde_input(request.args.get('fin'))
+    if not inicio or not fin:
+        return jsonify(error='Escribe el inicio y el fin para consultar.'), 400
+    try:
+        conflictos = _conflictos_de_horario(inicio, fin, request.args.get('sede'), request.args.get('lugar'))
+    except ErrorApi as ex:
+        return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), (400 if ex.codigo in (400, 422) else 502)
+    # v7.1 · D57: además de los cruces, ¿el horario cabe en los periodos y horarios de programación? (None = sí)
+    fuera = admin_restricciones.fuera_de_periodo(inicio, fin)
+    return jsonify(disponible=not conflictos and not fuera, conflictos=[_hora_choque(c) for c in conflictos],
+                   fuera_de_periodo=fuera)
+
+
+@admin_bp.route('/catedras/agenda')
+def catedras_agenda():
+    """Qué hay ocupado en una fecha: ?fecha=AAAA-MM-DD &sede= (opcional)."""
+    try:
+        dia = datetime.strptime(request.args.get('fecha', ''), '%Y-%m-%d').replace(tzinfo=ZONA_COLOMBIA)
+    except ValueError:
+        return jsonify(error='Elige una fecha.'), 400
+    try:
+        r = consultar('Disponibilidad/agenda', desde=dia.isoformat(), hasta=(dia + timedelta(days=1)).isoformat(),
+                      fkSede=request.args.get('sede') or None)
+    except ErrorApi as ex:
+        return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), 502
+    return jsonify(fecha=dia.strftime('%Y-%m-%d'), sesiones=[_hora_choque(c) for c in r['datos']])
+
+
+def _resumen_asistencia(id_sesion):
+    """(filas, total) de quienes registraron su asistencia a la sesión (con hora y ubicación)."""
+    r = consultar('QrSesion/asistencia', fkSesion=id_sesion)
+    filas = r['datos'] if r else []
+    return filas, len(filas)
+
+
+@admin_bp.route('/sesiones/<int:id_sesion>/qr', methods=['GET', 'POST'])
+def sesiones_qr(id_sesion):
+    try:
+        sesion = obtener('Sesion', id_sesion)
+        catedra = obtener('Catedra', sesion['fk_catedra'])
+    except ErrorApi as ex:
+        if ex.codigo == 404:
+            abort(404)
+        _avisar(ex)
+        return redirect(url_for('admin.sesiones_listar'))
+
+    if request.method == 'POST':
+        regenerar = request.form.get('regenerar') == '1'
+        try:
+            qr = emitir_qr(id_sesion, usuario_actual().get('id_usuario'), regenerar)
+            flash('Se generó un QR nuevo (el anterior ya no sirve).' if regenerar and not qr['ya_existia']
+                  else 'El QR de la sesión está listo.', 'exito')
+        except ErrorApi as ex:
+            _avisar(ex)
+        return redirect(url_for('admin.sesiones_qr', id_sesion=id_sesion))
+
+    error = None
+    qr = None
+    try:
+        qr = qr_de_sesion(id_sesion)
+    except ErrorApi as ex:
+        error = ex
+    filas, total = [], 0
+    try:
+        filas, total = _resumen_asistencia(id_sesion)
+    except ErrorApi as ex:
+        error = error or ex
+
+    url = svg = None
+    if qr:
+        url = url_de_registro(qr['token'])
+        svg = svg_qr(url)
+    return render_template('admin/sesion_qr.html', sesion=sesion, catedra=catedra, qr=qr, estado=estado_de_ventana(qr),
+                           url=url, svg=svg, filas=filas, total=total, error=error,
+                           desde=a_local(qr['ventana_desde']) if qr else None,
+                           hasta=a_local(qr['ventana_hasta']) if qr else None)
+
+
+@admin_bp.route('/sesiones/<int:id_sesion>/asistencia')
+def sesiones_asistencia_json(id_sesion):
+    """JSON para refrescar la lista sin recargar la página (lo llama la pantalla del QR)."""
+    try:
+        filas, total = _resumen_asistencia(id_sesion)
+        estado = estado_de_ventana(qr_de_sesion(id_sesion))
+    except ErrorApi as ex:
+        return jsonify(error=f"{ex.mensaje} {ex.detalle or ''}".strip()), 502
+    for f in filas:
+        f['hora'] = fecha_hora(f['registrado_en'], '%H:%M:%S') if f.get('registrado_en') else None
+    return jsonify(filas=filas, total=total, estado=estado)

@@ -23,25 +23,24 @@
 #  'ponentes_de' en routes/sesiones.py.
 # ==========================================================================
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import session, Blueprint, abort, flash, redirect, render_template, request, url_for
 
-from auth_helpers import sesion_activa, usuario_actual
 from servicios.api_catedras import ErrorApi, crear, listar, obtener
 
 encuestas_bp = Blueprint('encuestas', __name__)
 
 
 def _mi_registro(id_sesion):
-    """El 'RegistroAsistencia' del usuario autenticado en esta sesión, o
-    None si no hay sesión, no se registró, o la API falla."""
-    if not sesion_activa():
+    """El 'RegistroAsistencia' que ESTA persona acaba de crear al registrar su asistencia a la sesión, o None.
+    v7.1 · D55: ya no hay cuentas de estudiante; routes/registro.py deja en la cookie firmada
+    ('registro_reciente') el registro que se acaba de crear y solo ese permite responder la encuesta."""
+    reciente = session.get('registro_reciente')
+    if not reciente or reciente.get('sesion') != id_sesion:
         return None
-    fk_asistente = usuario_actual()['fk_asistente']
     try:
-        registros = listar('RegistroAsistencia', fkSesion=id_sesion, fkAsistente=fk_asistente)
+        return obtener('RegistroAsistencia', reciente['registro'])
     except ErrorApi:
         return None
-    return registros[0] if registros else None
 
 
 def _ya_respondida(fk_encuesta, id_registro):
@@ -65,8 +64,6 @@ def estado_encuesta_sesion(sesion):
     """
     if not sesion.get('fk_encuesta'):
         return False, 'sin_encuesta'
-    if not sesion_activa():
-        return False, 'sin_sesion'
     registro = _mi_registro(sesion['id_sesion'])
     if registro is None:
         return False, 'sin_registro'
@@ -117,12 +114,10 @@ def responder(id_sesion):
         return redirect(url_for('sesiones.detalle', id_sesion=id_sesion))
 
     puede, motivo = estado_encuesta_sesion(sesion)
-    if motivo == 'sin_sesion':
-        return redirect(url_for('auth.login', siguiente=request.path))
     if not puede:
         mensajes = {
             'sin_encuesta': 'Esta sesión no tiene una encuesta asignada.',
-            'sin_registro': 'No tienes un registro de asistencia en esta sesión: solo puede responder quien asistió.',
+            'sin_registro': 'La encuesta se responde justo después de registrar tu asistencia con el QR de la sesión.',
             'ya_respondida': 'Ya respondiste la encuesta de esta sesión. ¡Gracias!',
         }
         categoria = 'exito' if motivo == 'ya_respondida' else 'error'

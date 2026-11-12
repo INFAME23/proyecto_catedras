@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+{# ==========================================================================
+   calendario.html  ·  Subversión v7.1 (D56)
+   Calendario PÚBLICO de las sesiones de las cátedras + el botón «Soy ponente»,
+   que abre el formulario de postulación. La postulación llega a la bandeja del
+   administrador (/admin/solicitudes-ponente).
+   Las sesiones las pinta static/calendario.js con FullCalendar, pidiéndolas a
+   /calendario/eventos (que lee GET /api/Disponibilidad/agenda).
+   ========================================================================== #}
+{% macro campo(nombre, etiqueta, tipo='text', ayuda=None, extra='') %}
+    <label class="form-label" for="f_{{ nombre }}">{{ etiqueta }}</label>
+    <input class="form-control{{ ' is-invalid' if errores.get(nombre) }}" id="f_{{ nombre }}" name="{{ nombre }}"
+           type="{{ tipo }}" value="{{ valores.get(nombre, '') }}" required {{ extra|safe }}>
+    {% if errores.get(nombre) %}<div class="invalid-feedback">{{ errores[nombre] }}</div>{% endif %}
+    {% if ayuda %}<div class="form-text">{{ ayuda }}</div>{% endif %}
+{% endmacro %}
+
+{% block titulo %}Calendario · Cátedras USB{% endblock %}
+{% block contenido %}
+<div class="bg-secondary-custom text-white p-4 rounded-3 mb-4 d-flex flex-wrap align-items-center justify-content-between gap-3 animate-fade-in">
+    <div>
+        <h1 class="fw-bold mb-1"><i class="fas fa-calendar-alt me-2"></i>Calendario de cátedras</h1>
+        <p class="text-white-50 mb-0">Las sesiones programadas, con su fecha, hora, sede y modalidad. Toca una sesión para ver su detalle.</p>
+    </div>
+    <button type="button" class="btn btn-primary btn-lg" id="btn-soy-ponente" data-bs-toggle="modal" data-bs-target="#modal-ponente">
+        <i class="fas fa-chalkboard-teacher me-2"></i>Soy ponente
+    </button>
+</div>
+
+<div class="alert alert-danger d-none" id="calendario-error" role="alert"></div>
+
+<div class="card calendario-card mb-3">
+    <div class="card-body">
+        <div id="calendario" data-eventos="{{ url_for('calendario.eventos') }}"
+             data-abrir-formulario="{{ '1' if abrir_formulario else '0' }}"></div>
+    </div>
+</div>
+
+<div class="d-flex flex-wrap gap-3 small text-muted mb-4" aria-label="Leyenda de modalidades">
+    <span><span class="calendario-punto mod-presencial"></span> Presencial</span>
+    <span><span class="calendario-punto mod-virtual"></span> Virtual</span>
+    <span><span class="calendario-punto mod-telepresencial"></span> Telepresencial</span>
+    <span><span class="calendario-punto mod-hibrida"></span> Híbrida</span>
+</div>
+
+{# ---------------------------------------------------------------------- #}
+{#  Detalle de una sesión (se llena desde el evento tocado)                #}
+{# ---------------------------------------------------------------------- #}
+<div class="modal fade" id="modal-sesion" tabindex="-1" aria-labelledby="modal-sesion-titulo" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5 fw-bold" id="modal-sesion-titulo"></h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2"><i class="fas fa-clock text-primary-custom me-2"></i><span data-sesion="cuando"></span></li>
+                    <li class="mb-2"><i class="fas fa-map-marker-alt text-primary-custom me-2"></i><span data-sesion="donde"></span></li>
+                    <li class="mb-2"><i class="fas fa-video text-primary-custom me-2"></i><span data-sesion="modalidad"></span></li>
+                    <li><i class="fas fa-hashtag text-primary-custom me-2"></i><span data-sesion="reunion"></span></li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <a class="btn btn-outline-primary" data-sesion="enlace" href="#"><i class="fas fa-eye me-1"></i>Ver detalle</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ---------------------------------------------------------------------- #}
+{#  Formulario «Soy ponente»                                               #}
+{# ---------------------------------------------------------------------- #}
+<div class="modal fade" id="modal-ponente" tabindex="-1" aria-labelledby="modal-ponente-titulo" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="post" action="{{ url_for('calendario.enviar_ponente') }}" id="form-ponente" novalidate>
+                <div class="modal-header">
+                    <h2 class="modal-title h5 fw-bold" id="modal-ponente-titulo">
+                        <i class="fas fa-chalkboard-teacher text-primary-custom me-2"></i>Soy ponente
+                    </h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        Cuéntanos quién eres, sobre qué quieres hablar y cuándo. Tu solicitud llega al equipo administrador, que la
+                        aprueba o no (y, si la aprueba, crea tu cátedra); te contactará al correo institucional que escribas.
+                    </p>
+
+                    {% if error_general %}
+                    <div class="alert alert-danger" role="alert">{{ error_general }}</div>
+                    {% endif %}
+                    {% for aviso in avisos %}
+                    <div class="alert alert-warning small" role="alert">{{ aviso }}</div>
+                    {% endfor %}
+
+                    <h3 class="h6 fw-bold text-primary-custom mt-2"><i class="fas fa-id-card me-2"></i>Datos personales</h3>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">{{ campo('nombres', 'Nombres', extra='maxlength="100" autocomplete="given-name"') }}</div>
+                        <div class="col-md-6">{{ campo('apellidos', 'Apellidos', extra='maxlength="100" autocomplete="family-name"') }}</div>
+
+                        <div class="col-md-5">
+                            <label class="form-label" for="f_fk_tipo_documento">Tipo de documento</label>
+                            <select class="form-select{{ ' is-invalid' if errores.get('fk_tipo_documento') }}" id="f_fk_tipo_documento" name="fk_tipo_documento" required>
+                                <option value="">Selecciona…</option>
+                                {% for t in tipos_documento %}
+                                <option value="{{ t.id }}" {{ 'selected' if valores.get('fk_tipo_documento') == t.id }}>{{ t.nombre }}</option>
+                                {% endfor %}
+                            </select>
+                            {% if errores.get('fk_tipo_documento') %}<div class="invalid-feedback">{{ errores['fk_tipo_documento'] }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-7">{{ campo('numero_documento', 'Número de documento', ayuda='De 4 a 20 letras, números o guiones.', extra='maxlength="20" pattern="[0-9A-Za-z\\-]{4,20}" inputmode="text"') }}</div>
+
+                        <div class="col-12">{{ campo('perfil_profesional', 'Perfil profesional', ayuda='Tu profesión, cargo o área (p. ej. «Ingeniera de sistemas, docente de ciencias de la computación»).', extra='maxlength="200"') }}</div>
+
+                        <div class="col-md-7">{{ campo('direccion', 'Dirección', extra='maxlength="200" autocomplete="street-address"') }}</div>
+                        <div class="col-md-5">{{ campo('telefono', 'Teléfono', 'tel', extra='maxlength="20" autocomplete="tel"') }}</div>
+
+                        <div class="col-12">{{ campo('correo_institucional', 'Correo institucional', 'email', ayuda='Es el correo al que te responderemos.', extra='maxlength="254" autocomplete="email"') }}</div>
+                    </div>
+
+                    <h3 class="h6 fw-bold text-primary-custom"><i class="fas fa-microphone-alt me-2"></i>Tu ponencia</h3>
+                    <div class="row g-3 mb-3">
+                        <div class="col-12">{{ campo('titulo_ponencia', 'Ponencia', ayuda='El título de lo que quieres presentar.', extra='maxlength="200"') }}</div>
+                        <div class="col-12">
+                            <label class="form-label" for="f_resumen_ponencia">Resumen de la ponencia</label>
+                            <textarea class="form-control{{ ' is-invalid' if errores.get('resumen_ponencia') }}" id="f_resumen_ponencia" name="resumen_ponencia"
+                                      rows="5" minlength="30" maxlength="2000" required>{{ valores.get('resumen_ponencia', '') }}</textarea>
+                            {% if errores.get('resumen_ponencia') %}<div class="invalid-feedback">{{ errores['resumen_ponencia'] }}</div>{% endif %}
+                            <div class="form-text"><span id="resumen-contador">0</span>/2000 · mínimo 30 caracteres.</div>
+                        </div>
+                    </div>
+
+                    <h3 class="h6 fw-bold text-primary-custom"><i class="fas fa-book-open me-2"></i>Cátedra nueva</h3>
+                    <p class="small text-muted mb-2">
+                        Tu ponencia se dictará como una <strong>cátedra nueva</strong>. Elige la fecha y la hora en que quieres darla:
+                        si el administrador aprueba tu solicitud, la cátedra se crea automáticamente en ese horario (hora de Colombia),
+                        con la modalidad, la sede y el periodo que elijas (el administrador los puede ajustar).
+                    </p>
+                    {% if ventanas %}
+                    <div class="alert alert-info small py-2" role="note" id="ventanas-programacion">
+                        <i class="fas fa-user-clock me-1"></i><strong>Las cátedras solo se programan en:</strong>
+                        <ul class="mb-0 mt-1">{% for w in ventanas %}<li>{{ w.texto }}</li>{% endfor %}</ul>
+                    </div>
+                    {% endif %}
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="f_inicio">Fecha y hora de inicio</label>
+                            <input type="datetime-local" class="form-control{{ ' is-invalid' if errores.get('inicio') }}" id="f_inicio" name="inicio" required value="{{ valores.get('inicio', '') }}">
+                            {% if errores.get('inicio') %}<div class="invalid-feedback">{{ errores['inicio'] }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="f_fin">Fecha y hora de fin</label>
+                            <input type="datetime-local" class="form-control{{ ' is-invalid' if errores.get('fin') }}" id="f_fin" name="fin" required value="{{ valores.get('fin', '') }}">
+                            {% if errores.get('fin') %}<div class="invalid-feedback">{{ errores['fin'] }}</div>{% endif %}
+                        </div>
+                        <div class="col-12"><div class="form-text mt-0">Debe ser una fecha futura; el fin, posterior al inicio y la cátedra no puede durar más de 24 horas.</div></div>
+
+                        <div class="col-md-4">
+                            <label class="form-label" for="f_fk_modalidad">Modalidad</label>
+                            <select class="form-select{{ ' is-invalid' if errores.get('fk_modalidad') }}" id="f_fk_modalidad" name="fk_modalidad" required>
+                                <option value="">Selecciona…</option>
+                                {% for m in opciones.modalidades %}
+                                <option value="{{ m.id_modalidad }}" {{ 'selected' if valores.get('fk_modalidad') == m.id_modalidad }}>{{ m.nombre }}</option>
+                                {% endfor %}
+                            </select>
+                            {% if errores.get('fk_modalidad') %}<div class="invalid-feedback">{{ errores['fk_modalidad'] }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="f_fk_sede">Sede</label>
+                            <select class="form-select{{ ' is-invalid' if errores.get('fk_sede') }}" id="f_fk_sede" name="fk_sede" required>
+                                <option value="">Selecciona…</option>
+                                {% for s in opciones.sedes %}
+                                <option value="{{ s.id_sede }}" {{ 'selected' if valores.get('fk_sede') == s.id_sede }}>{{ s.nombre }}</option>
+                                {% endfor %}
+                            </select>
+                            {% if errores.get('fk_sede') %}<div class="invalid-feedback">{{ errores['fk_sede'] }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="f_fk_periodo">Periodo académico</label>
+                            <select class="form-select{{ ' is-invalid' if errores.get('fk_periodo') }}" id="f_fk_periodo" name="fk_periodo" required>
+                                <option value="">Selecciona…</option>
+                                {% for p in opciones.periodos %}
+                                <option value="{{ p.id_periodo|trim }}" data-ini="{{ p.fecha_ini }}" data-fin="{{ p.fecha_fin }}" {{ 'selected' if valores.get('fk_periodo') == p.id_periodo|trim }}>{{ p.id_periodo|trim }} ({{ p.fecha_ini }} a {{ p.fecha_fin }})</option>
+                                {% endfor %}
+                            </select>
+                            {% if errores.get('fk_periodo') %}<div class="invalid-feedback">{{ errores['fk_periodo'] }}</div>{% endif %}
+                        </div>
+                        <div class="col-12"><div class="form-text mt-0">La fecha de tu cátedra debe caer dentro del periodo académico que elijas (al poner la fecha se elige solo el periodo que la cubre).</div></div>
+                    </div>
+
+                    {# Campo trampa antispam: oculto para las personas. #}
+                    <div class="trampa-formulario" aria-hidden="true">
+                        <label for="f_sitio_web">Sitio web</label>
+                        <input type="text" id="f_sitio_web" name="sitio_web" tabindex="-1" autocomplete="off">
+                    </div>
+
+                    <div class="form-check">
+                        <input class="form-check-input{{ ' is-invalid' if errores.get('acepta_datos') }}" type="checkbox" id="f_acepta_datos" name="acepta_datos" value="1" required>
+                        <label class="form-check-label small" for="f_acepta_datos">
+                            Autorizo el tratamiento de mis datos personales para evaluar mi postulación como ponente (Ley 1581 de 2012).
+                        </label>
+                        {% if errores.get('acepta_datos') %}<div class="invalid-feedback d-block">{{ errores['acepta_datos'] }}</div>{% endif %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane me-1"></i>Enviar solicitud</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.15/locales/es.global.min.js"></script>
+<script src="{{ url_for('static', filename='calendario.js') }}"></script>
+{% endblock %}

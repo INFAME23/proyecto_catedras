@@ -36,15 +36,12 @@ public class QrSesion
     [JsonPropertyName("revocado_en")]
     public DateTime? RevocadoEn { get; set; }
 
-    [JsonPropertyName("requiere_inscripcion")]
-    public bool RequiereInscripcion { get; set; }
-
     /// <summary>true si ya había uno vigente y se devolvió ese; false si se acaba de crear.</summary>
     [JsonPropertyName("ya_existia")]
     public bool YaExistia { get; set; }
 }
 
-/// <summary>Una persona en la lista de asistencia de una sesión.</summary>
+/// <summary>Una persona que registró su asistencia a una sesión (v7.1 · D55: ya no hay inscripción ni lista de inscritos).</summary>
 public class AsistenciaSesion
 {
     [JsonPropertyName("fk_asistente")]
@@ -59,14 +56,7 @@ public class AsistenciaSesion
     [JsonPropertyName("apellidos")]
     public string? Apellidos { get; set; }
 
-    /// <summary>¿Tiene inscripción ACTIVA en la cátedra de la sesión?</summary>
-    [JsonPropertyName("inscrito")]
-    public bool Inscrito { get; set; }
-
-    /// <summary>¿Registró asistencia a ESTA sesión?</summary>
-    [JsonPropertyName("asistio")]
-    public bool Asistio { get; set; }
-
+    /// <summary>Cuándo registró su asistencia a esta sesión.</summary>
     [JsonPropertyName("registrado_en")]
     public DateTime? RegistradoEn { get; set; }
 

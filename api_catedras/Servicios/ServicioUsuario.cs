@@ -147,46 +147,25 @@ public class ServicioUsuario : IServicioUsuario
         return filas;
     }
 
-    // v7.1 · D54: un estudiante vigente SIN cuenta entra por primera vez con su correo institucional y su
-    // código como clave: se le crea la cuenta (rol ESTUDIANTE, debe cambiar la clave). Devuelve null si no
-    // aplica (no es un correo, no hay tal estudiante, ya tiene cuenta, o la clave no es su código): el
-    // llamador responde lo mismo de siempre (D27). El hash se calcula AQUÍ (Regla 3).
-    private async Task<Usuario?> ProvisionarPrimerIngresoAsync(string login, string clave)
-    {
-        if (!login.Contains('@'))
-            return null;
-
-        var candidato = await _repositorio.BuscarEstudianteSinCuentaAsync(login);
-        if (candidato is null)
-            return null;
-
-        // Comparación en tiempo constante: no se filtra cuántos caracteres del código acertó.
-        var escrito = System.Text.Encoding.UTF8.GetBytes(clave.Trim());
-        var esperado = System.Text.Encoding.UTF8.GetBytes(candidato.Value.IdAsis);
-        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(escrito, esperado))
-            return null;
-
-        return await _repositorio.ProvisionarCuentaEstudianteAsync(login, Hashear(candidato.Value.IdAsis));
-    }
-
+    // v7.1 · D55: SOLO EL ADMINISTRADOR INICIA SESIÓN. Estudiantes y ponentes ya no tienen cuenta que entre: la
+    // asistencia es pública (por el QR) y todo lo demás lo gestiona el administrador. Se exige el rol ADMIN
+    // VIGENTE; quien tenga usuario y clave correctos pero no sea administrador recibe el mismo rechazo (D27), y no
+    // se le anota acceso.
     public async Task<(Usuario Usuario, List<string> Roles)?> LoginAsync(UsuarioLogin peticion)
     {
-        // v7.1 · D54: 'usuario' puede ser el nombre de usuario o el CORREO INSTITUCIONAL de la persona.
         string login = peticion.Usuario!.Trim();
         var usuario = await _repositorio.ObtenerPorLoginAsync(login);
 
-        if (usuario is null)
-        {
-            // Primer ingreso de un estudiante (su clave es su código: ya está comprobada).
-            usuario = await ProvisionarPrimerIngresoAsync(login, peticion.Clave!);
-            if (usuario is null)
-                return null;
-        }
-        // Tres causas, un solo resultado (ADR D27): no existe, está inactivo o
-        // la clave no coincide. El '||' corta en la primera que se cumple; el
-        // Verify solo se ejecuta si el usuario existe y está activo.
-        else if (!usuario.Activo
+        // Cuatro causas, un solo resultado (ADR D27): no existe, está inactivo, la clave no coincide o no es
+        // administrador. El '||' corta en la primera que se cumple; el Verify solo se ejecuta si el usuario
+        // existe y está activo.
+        if (usuario is null
+            || !usuario.Activo
             || !BCrypt.Net.BCrypt.Verify(peticion.Clave!, usuario.ClaveHash))
+            return null;
+
+        var roles = await _repositorioRoles.ObtenerVigentesAsync(usuario.IdUsuario);
+        if (!roles.Contains("ADMIN"))
             return null;
 
         await _repositorio.ActualizarUltimoAccesoAsync(usuario.IdUsuario);
@@ -195,7 +174,6 @@ public class ServicioUsuario : IServicioUsuario
         // la respuesta muestre el acceso que acaba de ocurrir.
         usuario.UltimoAcceso = DateTime.UtcNow;
 
-        var roles = await _repositorioRoles.ObtenerVigentesAsync(usuario.IdUsuario);
         return (usuario, roles);
     }
 

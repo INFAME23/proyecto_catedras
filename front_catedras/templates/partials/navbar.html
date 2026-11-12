@@ -19,26 +19,17 @@
                         <i class="fas fa-book-open"></i> Catálogo
                     </a>
                 </li>
+                {# v7.1 · D56: calendario público de sesiones (con el botón «Soy ponente»). #}
+                <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint in ('calendario.calendario', 'calendario.enviar_ponente') }}" href="{{ url_for('calendario.calendario') }}">
+                        <i class="fas fa-calendar-alt"></i> Calendario
+                    </a>
+                </li>
                 {# v5: la entrada a /admin solo se ofrece a quien tiene el rol ADMIN. #}
                 {% if tiene_rol('ADMIN') %}
                 <li class="nav-item">
                     <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}" href="{{ url_for('admin.panel') }}">
                         <i class="fas fa-cogs"></i> Administración
-                    </a>
-                </li>
-                {% endif %}
-                {# v7.1 · RF-S3: cada panel se ofrece solo a quien tiene el rol. #}
-                {% if tiene_algun_rol('PONENTE', 'ADMIN') %}
-                <li class="nav-item">
-                    <a class="nav-link {{ 'active' if request.endpoint == 'ponente.inicio' }}" href="{{ url_for('ponente.inicio') }}">
-                        <i class="fas fa-chalkboard-teacher"></i> Ponente
-                    </a>
-                </li>
-                {% endif %}
-                {% if tiene_rol('ESTUDIANTE') %}
-                <li class="nav-item">
-                    <a class="nav-link {{ 'active' if request.endpoint == 'estudiante.inicio' }}" href="{{ url_for('estudiante.inicio') }}">
-                        <i class="fas fa-user-graduate"></i> Mi panel
                     </a>
                 </li>
                 {% endif %}
@@ -59,8 +50,9 @@
                 </form>
             </div>
             {% else %}
+            {# Sin sesión el botón dice solo «Administración»: lleva a iniciar sesión y, al entrar, el administrador cae en su panel. #}
             <a class="btn btn-outline-primary btn-sm" href="{{ url_for('auth.login') }}">
-                <i class="fas fa-sign-in-alt me-1"></i>Iniciar sesión
+                <i class="fas fa-cogs me-1"></i>Administración
             </a>
             {% endif %}
         </div>

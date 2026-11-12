@@ -21,7 +21,6 @@
 
 from flask import Blueprint, abort, render_template, request
 
-from auth_helpers import ROL_ESTUDIANTE, sesion_activa, tiene_rol, usuario_actual
 from servicios.api_catedras import ErrorApi, listar, obtener
 
 catedras_bp = Blueprint('catedras', __name__)
@@ -127,18 +126,6 @@ def detalle(id_catedra):
     except ErrorApi as ex:
         error_sesiones = ex
 
-    # v7.1 · D50: a un ESTUDIANTE con sesión se le ofrece inscribirse (o cancelar).
-    # 'inscrita' es True/False, o None si no se pudo saber (no se ofrece nada).
-    es_estudiante = sesion_activa() and tiene_rol(ROL_ESTUDIANTE)
-    inscrita = None
-    if es_estudiante:
-        try:
-            inscrita = bool(listar('InscripcionCatedra', limite=1, fkCatedra=id_catedra,
-                                   fkAsistente=usuario_actual()['fk_asistente']))
-        except ErrorApi:
-            inscrita = None
-
     return render_template('detalle_catedra.html', error=error, catedra=catedra,
                            dependencia=dependencia, tipo_evento=tipo_evento,
-                           sesiones=sesiones, error_sesiones=error_sesiones,
-                           es_estudiante=es_estudiante, inscrita=inscrita)
+                           sesiones=sesiones, error_sesiones=error_sesiones)

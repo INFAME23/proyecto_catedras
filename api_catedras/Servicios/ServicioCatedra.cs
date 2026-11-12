@@ -100,7 +100,6 @@ public class ServicioCatedra : IServicioCatedra
                 FkEncuesta = s.FkEncuesta,
                 Lugar = s.Lugar,
                 EnlaceVirtual = s.EnlaceVirtual,
-                Cupo = s.Cupo,
                 Estado = s.Estado ?? "PROGRAMADA",
             });
         }

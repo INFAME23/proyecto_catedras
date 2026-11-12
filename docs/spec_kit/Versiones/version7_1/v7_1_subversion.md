@@ -29,15 +29,15 @@
 |---|---|---|
 | RF-S1 | Geolocalización obligatoria al autorregistrar | BD `045` · API (`ClaveAccesoValidar`, `RegistroAsistencia`, repo/servicio de `ClaveAcceso`) · front (`geolocalizacion.js`, `registro_validar.html`, `routes/registro.py`) · admin (macro `macros_geo.html`) |
 | RF-S2 | Panel de estudiante funcional | front (`routes/estudiante.py`, `estudiante_panel.html`) |
-| RF-S3 | Cuentas reales de Estudiante y Ponente | BD `046` · front (`auth_helpers.py`, `auth.py`, `ponente.py`, `estudiante.py`, navbar) |
+| RF-S3 | Cuentas reales de Estudiante y Ponente (**sin efecto desde D55: solo el administrador inicia sesión**) | BD `046` |
 | RF-S4 | Estudiante semilla | BD `048` |
 | RF-S5 | Cambio de contraseña para cualquier usuario autenticado | API (`POST /api/Usuario/{id}/cambiar-clave`, recuperación) · front (`routes/perfil.py`) · BD `047` |
 | RF-S6 | Correo real para el código | front (`servicios/correo.py`, `config.py`, `env.ejemplo`, compose) |
 | RF-S7 | `/admin` con barra lateral colapsable (reemplazada por categorías desplegables, D51) | front (`admin/base_admin.html`, `admin/panel.html`, `estilo.css`) |
 
-Migraciones nuevas (en orden; se montan en el compose como `z045`…`z053`):
+Migraciones nuevas (en orden; se montan en el compose como `z045`…`z058`):
 `045_geolocalizacion_registro` · `046_roles_estudiante_ponente` ·
-`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra` · `050_disponibilidad_sesiones` · `051_qr_sesion` · `052_primer_ingreso_estudiante` · `053_qr_canal_por_modalidad`.
+`047_codigo_recuperacion` · `048_semilla_estudiante` · `049_inscripcion_catedra` · `050_disponibilidad_sesiones` · `051_qr_sesion` · `052_primer_ingreso_estudiante` · `053_qr_canal_por_modalidad` · `054_sin_inscripcion_ni_cupo_login_admin` · `055_solicitud_ponente` · `056_restriccion_programacion` · `057_solicitud_ponente_catedra_nueva` · `058_solicitud_ponente_modalidad_sede_periodo` · `059_separacion_entre_sesiones_enlace`.
 
 ## 3. Decisiones (ADR de la v7.1, continúan después de D37)
 
@@ -311,6 +311,134 @@ institucional registrado no puede usar este camino (entra por usuario con cuenta
 Pruebas: capas 545/1 (+20; la fallida es la de siempre), `verificar_v71.ps1` 112/0 (+23 de D54, contra la API y PostgreSQL reales; repetible, y la migración se
 volvió a aplicar encima sin errores), `front_catedras/pruebas/prueba_primer_ingreso_v71.py` 42/0, recorrido del front contra la API real (19 casos) y
 `verificar_v5.ps1` sigue en 63/0. Un error propio se cazó con la BD real: `rpad` **recorta** los textos largos y dejaba el nombre de usuario en `est.`; corregido.
+
+**D55 — Solo el administrador inicia sesión; se quitan la inscripción a cátedras y el cupo.** Cambio de alcance pedido después de D43–D54. **Lo que queda sin efecto
+de las decisiones anteriores:** D43 (paneles `/estudiante` y `/ponente`), D46 (el estudiante ve «Registrar mi asistencia» y el token), D47 (calendario del ponente
+solo propio), D48 («Nuevo ponente» con cuenta), D49 (el ponente crea cátedras y se asigna), D50 (inscripción a cátedras), D54 en lo de estudiantes (correo institucional como
+usuario, clave inicial = código, primer ingreso que crea la cuenta) y la regla «con el QR solo registra quien está inscrito» de D53. Esos textos se conservan arriba como
+historia; esto es lo que vale ahora.
+**Login.** `ServicioUsuario.LoginAsync` exige el rol **ADMIN vigente** (además de usuario activo y clave correcta); cualquier otra cuenta recibe el mismo 401 de siempre (D27) y
+no se le anota acceso. El front también lo comprueba. No hay cuentas de estudiante ni de ponente que entren: quedan como **personas** (`asistente`) y como `Ponencia` de las sesiones
+(eso lo asigna el administrador en `/admin`). El login vuelve a ser solo por **nombre de usuario** (se borraron la búsqueda por correo y la creación de cuentas en el primer ingreso:
+`sp_buscar_estudiante_sin_cuenta`, `sp_provisionar_cuenta_estudiante`). Se conserva `debe_cambiar_clave` (cambio obligatorio para una cuenta con clave temporal, el botón «Exigir
+cambio de clave» y el disparador que lo apaga) porque sirve a cualquier administrador nuevo. Las cuentas ya existentes de estudiante o ponente (p. ej. `alejandro.zuleta`) quedan sin
+poder entrar; no se borraron.
+**Qué pasó con lo que hacía el ponente.** Se movió al administrador: **crear cátedras con sus sesiones**, la **ocupación de una fecha** y el bloqueo de cruces (misma sede física y
+mismo salón, o entre las sesiones del mismo formulario) en `/admin/catedras/nueva`, y la pantalla del **QR de la sesión** con la asistencia en vivo, regenerar y proyectar en
+`/admin/sesiones/<id>/qr` (enlazada desde el detalle de la cátedra y de la sesión). El QR se sigue generando al crear la cátedra. Dejó de existir el motivo «ya participa el mismo
+ponente» en la pantalla (no hay ponente que cree), aunque `sp_sesiones_en_conflicto` lo conserva.
+**Asistencia pública.** `/registro/<token>` ya era público: quien escanea el QR se identifica con su documento o correo, recibe la clave por correo y registra con su ubicación; ya no
+hace falta estar inscrito ni tener cuenta. La página pública de la sesión explica cómo (sin mostrar el token). **La encuesta** (v6) dependía de iniciar sesión: ahora se responde
+**justo después de registrar la asistencia**, con el registro recién creado (queda en la cookie firmada; si se cierra esa página ya no se puede). La lista de asistencia del administrador
+muestra solo a quien registró (no hay inscritos).
+**Inscripción.** Se quitaron la tabla `inscripcion_catedra` (la 054 la borra **solo si está vacía**; si tiene filas la conserva y avisa), sus procedimientos, el recurso `InscripcionCatedra`
+de la API (el mapa vuelve a 39 controladores), las pantallas del estudiante y del administrador y la regla de QR. El QR de cierre se marca ahora con `enlace_registro.qr_cierre` (antes
+`requiere_inscripcion`, que queda en `false`); `fn_solicitar_clave_insc_api` se conserva como un envoltorio sin comprobación para una API anterior.
+**Cupo.** Se quitó de todo: formularios y vistas del front, modelos y peticiones de la API (el campo se ignora si llega) y la **regla RN-38** del disparador
+`fn_trg_registro_validar` (`054` lo recrea sin ella). La columna `sesion.cupo` **no se borra** porque la usan los procedimientos del script provisto; queda dormida (se escribe `NULL`).
+**Decisiones para confirmar.** (1) Si algún día el ponente debe iniciar sesión otra vez, hay que volver a la rama anterior (queda en el historial de decisiones D43–D49). (2) Ya nadie
+(salvo el administrador) puede consultar «mis cátedras» ni «mis sesiones». (3) La encuesta solo se responde en la misma página/navegador donde se registró la asistencia. (4) Las cuentas de
+estudiante o ponente que ya existieran siguen en la base sin poder entrar. (5) Hay que reconstruir la API y el front **antes** de aplicar la 054 en una base con la versión anterior.
+Pruebas: capas 528/1 (la fallida es la de siempre), `verificar_v71.ps1` 100/0 (repetible; incluye que un estudiante o un ponente con la clave correcta recibe 401, que la inscripción ya no existe
+y los cambios de clave de un administrador), `verificar_v5.ps1` sin fallos (sus dos pruebas de «login de una cuenta sin rol ADMIN» pasaron a esperar 401), `front_catedras/pruebas/prueba_d55_v71.py`
+78/0 y `prueba_panel_admin_v71.py` 14/0 (API simulada), un recorrido del front contra la API y PostgreSQL reales (28/28: login solo ADMIN, crear cátedra con QR, bloqueo de cruces, asistencia
+pública con la clave por correo a un servidor SMTP local, encuesta justo después y asistencia en vivo) y la migración 054 aplicada sobre una base nueva y sobre una con filas de inscripción.
+
+**D56 — Calendario público con «Soy ponente» y bandeja de entrada del administrador (la elección de sesión y lo que pasa al aprobar cambiaron en la D58: el ponente propone una cátedra nueva con fecha y hora y al aprobar se crea sola).** Pedido posterior a D55. Como los ponentes no tienen cuenta, quien quiere dictar una
+ponencia **se postula desde un formulario público** y el administrador decide.
+**Calendario (`/calendario`, en el navbar, sin sesión).** Cuadrícula mensual, semana y lista (FullCalendar 6 por CDN; en celular abre en lista) con las sesiones de todas las cátedras, un
+color por modalidad y, al tocar una, su detalle (fecha, hora, sede, salón, modalidad, reunión y enlace al detalle público). Las sesiones salen de `GET /api/Disponibilidad/agenda` (D52, ya traía el
+nombre de la cátedra y de la sede): el front pide el rango visible en **tramos de 30 días** (la agenda no acepta más de 31) y los junta sin repetir. Las horas se entregan como hora de pared de Colombia
+(UTC-5, sin zona) y el calendario va en `UTC`, así se ven igual en cualquier navegador. Si la API falla se muestra el error: nunca se inventan sesiones (RF93).
+**Botón «Soy ponente».** Abre un formulario con: nombres, apellidos, **tipo de documento** (cédula `CC`, pasaporte `PA`, licencia de conducción `LC`, código institucional `CI`; los dos últimos no
+estaban en el catálogo y los agrega la `055`), número de documento, **perfil profesional**, **dirección**, **teléfono**, **correo institucional**, **ponencia** (título) y **resumen de la ponencia**
+(30–2000 caracteres), más una **sesión opcional** (las de los próximos 60 días; «Propongo una cátedra nueva» si no elige ninguna; también se puede abrir desde el detalle de una sesión futura) y la
+autorización de tratamiento de datos (Ley 1581). Las reglas de cada campo las aplica la API (422 con la lista `{campo, mensaje}` que el front pinta junto a cada campo; lo escrito no se pierde).
+Campo trampa antispam (`sitio_web`). Sin captcha ni límite de envíos.
+**Bandeja (`/admin/solicitudes-ponente`, solo ADMIN, tarjeta destacada en `/admin` con el número de pendientes).** Pestañas Pendientes / Aprobadas / Rechazadas / Todas; cada solicitud abre su
+detalle con todos los datos y la decisión. **Aprobar** (observación opcional) llama a `PATCH /api/SolicitudPonente/{id}/resolver` y la **base de datos hace todo en una transacción**
+(`sp_resolver_solicitud_ponente`): busca a la persona por documento y, si no está, por **correo institucional** (es único: `uq_asistente_corinst`); si no existe la crea como **externa**
+(`asistente` + `documento_asistente`); y, si eligió sesión, la asigna como **PONENTE** (`ponencia`). Sin sesión, la persona queda registrada y la ponencia aprobada; la cátedra se crea a mano desde
+`/admin/catedras/nueva`. **Rechazar** exige el motivo. Una solicitud se resuelve **una sola vez** (otra resolución → 409) y guarda quién y cuándo (`resuelto_por`, `resuelto_en`).
+**API (controlador 40).** `SolicitudPonente`: `GET` (lista con `?estado=` y `?limite=`; 204 si no hay), `GET /{id}`, `POST` y `PATCH /{id}/resolver`; sin PUT ni DELETE. **Desviación de D25:** las reglas de
+negocio que la base de datos levanta con `RAISE` (código `P0001`: «ya hay una pendiente igual», «ya fue resuelta») responden **409**, no 500; los demás rechazos del motor (FK, unicidad) siguen en 500.
+BD: migración `055` (tabla `solicitud_ponente`, vista `v_solicitud_ponente`, 4 procedimientos), montada en el compose como `z055`.
+**Decisiones para confirmar.** (1) El correo **no** se obliga a ser del dominio institucional (hay ponentes externos): la bandeja avisa «dominio no institucional» si no está en `DOMINIOS_INSTITUCIONALES`.
+(2) La persona nueva se crea siempre como **externa** (`es_externo = true`), aunque use código institucional: ese código no es el `id_asis`. (3) Dirección y perfil profesional quedan **solo en la
+solicitud** (`asistente` no tiene esas columnas). (4) **No se envía correo** al administrador cuando llega una solicitud ni a la persona cuando se decide: el aviso es el contador del panel; el motivo del rechazo
+queda guardado pero la persona no lo recibe. (5) Se aprueba también si la sesión elegida ya empezó o se cruza con otra de esa persona (no se revisa disponibilidad al aprobar).
+Pruebas: capas 566/1 (+38; la fallida era la de las peticiones de Bitácora, ya resuelta), `front_catedras/pruebas/prueba_calendario_ponente_v71.py` 70/0 (API simulada), `prueba_panel_admin_v71.py` 14/0 y `prueba_d55_v71.py` 78/0, y un
+recorrido contra la API y PostgreSQL reales en un contenedor aparte (422/409/404/400 de la API, aprobar creando persona + documento + ponencia, reutilizar a la persona por documento y por correo,
+rechazar sin y con motivo, no resolver dos veces, y el recorrido en el navegador: enviar el formulario desde el calendario y aprobarlo en la bandeja).
+
+**D57 — Periodos y horarios en que se pueden programar cátedras; formulario «Soy ponente» con scroll; botón «Administración».** Pedido posterior a D56.
+**Periodos y horarios (`/admin/restricciones-programacion`, grupo «Estructura académica y cátedras», tarjeta «Periodos y horarios»).** El administrador define **ventanas**: nombre, fechas
+(desde/hasta, inclusive), horas opcionales (desde/hasta, van juntas) y días de la semana opcionales (sin marcar = todos), y puede **activarlas o pausarlas** sin borrarlas. **Sin ventanas activas no hay
+restricción** (el comportamiento de siempre); con alguna, una sesión solo se puede **crear o mover** a un horario que quepa en una: sus fechas de inicio y fin dentro del periodo, empezar a partir de la
+primera hora y terminar a más tardar a la segunda **el mismo día**, y caer en un día permitido; todo en hora de Colombia. **La regla vive en la base de datos** (migración `056`: disparador `trg_sesion_restriccion`
+sobre `sesion`), así vale para el formulario de cátedra (que guarda cátedra + sesiones en un solo procedimiento: si una sesión no cabe, **no se crea nada**), el de sesión y la API directa. El disparador solo
+actúa en sesiones nuevas o cuando **cambia** inicio o fin: corregir el salón de una sesión vieja no se bloquea. Un rechazo sale como `P0001` y la API lo devuelve **409** con el mensaje y las ventanas donde sí se
+puede (`Sesion` y `Catedra`; otra desviación de D25, igual que D56). Ayudas del front: aviso fijo con las ventanas activas en «Nueva cátedra» y «Nueva/Editar sesión», y el aviso en vivo de disponibilidad
+(`/admin/catedras/disponibilidad`) ahora dice «✖ fuera de los periodos…» además de los cruces. API (controlador 41): `RestriccionProgramacion` con `GET` (`?soloActivas=`; 204 si no hay), `GET /{id}`, `POST`,
+`PUT /{id}` (también activa o pausa), `DELETE /{id}` y `GET /validar?inicio=&fin=` (solo lectura).
+**«Soy ponente» con scroll.** El `<form>` quedaba entre `.modal-content` y `.modal-body`, así Bootstrap recortaba el modal en lugar de desplazar el cuerpo: se veía hasta «Tu ponencia» y nada más. `estilo.css`
+vuelve al form una columna flexible: el cuerpo hace scroll con barra y el encabezado y los botones quedan siempre a la vista.
+**Botón «Administración».** Sin sesión, el botón de la barra dice solo «Administración» (lleva a iniciar sesión; el administrador cae en su panel). Con sesión no cambia.
+**Decisiones para confirmar.** (1) Los **cruces de medianoche** no caben en una ventana con horas (si hay horas, la sesión debe empezar y terminar el mismo día). (2) Varias ventanas activas se suman:
+basta con caber en **una**. (3) Una ventana **no está ligada** a `periodo_academico` (son independientes: el nombre es libre). (4) Borrar o pausar una ventana **no toca** las sesiones ya creadas.
+(5) Que una cátedra esté «fuera de periodo» solo se impide al **crear o mover** sesiones; no se revisa al leer ni al registrar asistencia. (6) El ADMIN no tiene «saltarse la restricción»: para programar fuera hay
+que pausar o ampliar la ventana.
+Pruebas: capas 598/1 (+32; la fallida era la de las peticiones de Bitácora). Después se borraron `BitacoraCrear/Reemplazo/Actualizar.cs` (clases muertas que D36/D37-A ya había mandado quitar): capas **599/0**, `front_catedras/pruebas/prueba_restricciones_v71.py` 39/0 (API simulada), `prueba_calendario_ponente_v71.py` 70/0, `prueba_panel_admin_v71.py` 14/0 y
+`prueba_d55_v71.py` 78/0, y un recorrido contra la API y PostgreSQL reales en un contenedor aparte (crear la ventana, validar dentro/fuera de fechas, antes y después de las horas, domingo y cruce de medianoche,
+409 al crear o mover una sesión fuera, mover solo el salón de una sesión vieja sin bloqueo, cátedra con una sesión fuera = no se crea nada, pausar y borrar) y en el navegador (lista y formulario de ventanas,
+aviso en «Nueva cátedra», scroll del formulario «Soy ponente», botón «Administración»).
+
+**D58 — «Soy ponente» propone una cátedra nueva con fecha y hora; al aprobar, la cátedra se crea sola (reemplaza en parte a D56).** Pedido posterior a D57.
+**El formulario.** «Sesión a la que te postulas» se quitó. En su lugar hay **«Cátedra nueva»**: el ponente elige la **fecha y la hora de inicio y de fin** en que quiere dictarla (hora de Colombia; no se puede
+elegir el pasado y, al poner el inicio, el fin se propone dos horas después). Si el administrador definió **periodos y horarios** (D57), se le muestran. Al enviar, la API revisa que el fin sea posterior al inicio y que
+no dure más de 24 horas (400) y la base de datos que la fecha sea futura y quepa en las ventanas activas (409, con las ventanas donde sí se puede). Los errores se muestran en el formulario, que hace scroll hasta el primer aviso.
+También se quitó «Soy ponente de esta sesión» del detalle de una sesión del calendario.
+**Modalidad, sede y periodo los elige el ponente (migración `058`).** El formulario trae tres `<select>` del catálogo, obligatorios: **modalidad**, **sede** (solo las activas) y **periodo académico** (solo los activos que no han
+terminado; al poner la fecha, `calendario.js` elige solo el periodo que la cubre). Reglas (409): el periodo debe estar activo y **la fecha debe caer dentro de él** (las cátedras se dictan en periodos específicos), y la sede debe
+estar activa; se revisan al proponer y otra vez al aprobar (`fn_validar_periodo_y_sede`).
+**La decisión (`/admin/solicitudes-ponente/<id>`).** Una solicitud con fecha propuesta muestra la tarjeta **«Cátedra que se creará al aprobar»** con valores sugeridos y editables: nombre (el título de la ponencia),
+inicio y fin (los propuestos), **modalidad, sede y periodo (ya elegidos por el ponente; en una solicitud anterior a la 058 se sugiere presencial y el periodo que cubre la fecha, y la sede solo si hay una activa)**, salón,
+tipo de evento (cátedra abierta) y código ASIS (vacío = el siguiente libre). Lo que el administrador no escribe se toma de lo que eligió el ponente. Antes de aprobar se revisa que el horario no se cruce con otra sesión en esa sede y salón (D52; si no se puede consultar, no se aprueba;
+los choques se muestran y la pantalla conserva lo escrito).
+**Aprobar = crear (`sp_resolver_solicitud_ponente`, migración `057`, una sola transacción).** Persona (por documento, luego por correo; si no, nueva como externa) + **cátedra con su sesión** (reutiliza `sp_guardar_catedra`;
+el disparador de la 056 revisa periodos y horarios) + **ponencia** (PONENTE de esa sesión); la solicitud guarda `fk_catedra` y `fk_sesion`. Después el front genera el **QR de la sesión** (D53). Si algo falla (sede
+inexistente, código ASIS repetido, fecha ya pasada, fuera de periodo...) **no se crea nada** y la solicitud sigue pendiente. **Rechazar** sigue pidiendo el motivo y no crea nada. Las solicitudes anteriores a la 057
+(que elegían una sesión) se aprueban como antes. API: `POST /api/SolicitudPonente` ahora lleva `inicio` y `fin` (sin `fk_sesion`) y `PATCH .../resolver` acepta los datos de la cátedra (`nombre_catedra`, `fk_tipo_evento`,
+`id_evento_asis`, `fk_modalidad`, `fk_sede`, `fk_periodo`, `lugar`, `inicio`, `fin`); aprobar una solicitud con fecha sin modalidad, sede y periodo responde 400.
+**Decisiones para confirmar.** (1) Lo que el ponente **no** elige (salón, tipo de evento, nombre ASIS) lo decide el administrador al aprobar; modalidad, sede y periodo los puede cambiar.
+(2) El código ASIS automático es `máximo + 1` de los códigos existentes: es un número interno, **no** el del ASIS real; si ya existe en el ASIS, el administrador lo escribe. (3) La cátedra nace con **una** sesión (las demás se
+agregan desde la cátedra). (4) El resumen y los datos personales (dirección, perfil) quedan solo en la solicitud. (5) La cátedra se crea activa y sin dependencia ni encuesta. (6) **La fecha debe caer dentro del periodo
+elegido** (regla de la `058`): si el administrador cambia la fecha o el periodo al aprobar, también se revisa; una fecha que ningún periodo cubre no se puede proponer.
+Pruebas: capas 619/0, `front_catedras/pruebas/prueba_calendario_ponente_v71.py` 108/0, `prueba_restricciones_v71.py` 39/0, `prueba_panel_admin_v71.py` 14/0 y `prueba_d55_v71.py` 78/0 (API simulada), un recorrido
+contra la API y PostgreSQL reales (proponer con fecha pasada, fin antes del inicio, de más de 24 horas, fuera de periodo y repetida; aprobar sin datos, con sede inexistente —no queda nada—, con código ASIS repetido
+—no queda nada—, con código automático, con nombre, tipo, modalidad y fecha ajustados, con una ventana activa que no cabe; rechazar; aprobar una solicitud anterior) y en el navegador: enviar el formulario desde el
+calendario con fecha y hora, y aprobarlo creando la cátedra, su sesión, su ponente y su QR.
+
+**D59 — Una hora de margen entre sesiones, enlace de ingreso al crear la cátedra y depuración del catálogo (migración `059`).** Pedido posterior a D58.
+**Margen entre sesiones.** Todas las cátedras entran por el mismo enlace, así que **no pueden haber dos sesiones a la misma hora, en ninguna modalidad ni sede, y entre una y otra debe haber al menos 60 minutos**
+(terminar a las 10:00 y empezar a las 11:00 vale). Los minutos viven en el parámetro `MINUTOS_ENTRE_SESIONES` (60). La regla la aplica la base de datos con el disparador `trg_sesion_separacion` sobre `sesion`
+(INSERT, o UPDATE que cambie inicio o fin; toma un candado para que dos transacciones simultáneas no se la salten): cubre el formulario de cátedra, la sesión suelta, el calendario y la aprobación de un ponente; el
+rechazo es un `P0001` (409 en la API) con el nombre de la cátedra con la que choca. `fn_validar_separacion` hace la misma revisión al proponer en «Soy ponente» y al aprobar, antes de crear a la persona. `sp_sesiones_en_conflicto`
+devuelve ahora también el motivo `HORARIO` (más `solapa`: si además se traslapan) y los formularios del administrador lo muestran antes de guardar («Horario NO disponible… choca con…», y el aviso de dos sesiones del mismo formulario).
+**Solo cuentan las sesiones de cátedras activas**: una cátedra desactivada deja de ocupar el enlace (si no, el histórico desactivado bloquearía horarios que ya nadie usa). Las sesiones que ya existían **no se tocan**: solo
+cuenta lo que se cree o se mueva desde ahora.
+**Enlace de ingreso.** `sesion.enlace_virtual` ya existía; ahora se pide al **crear la cátedra** (campo «Enlace de ingreso» en cada sesión del formulario) y en la tarjeta **«Cátedra que se creará al aprobar»** de la bandeja
+(`sp_resolver_solicitud_ponente` recibe `p_enlace_virtual` y lo guarda en la sesión que crea). Es opcional pero recomendado en virtual o híbrida, debe empezar por `http://` o `https://` (hasta 300 caracteres) y se valida en
+las cuatro peticiones de sesión de la API y en la base de datos. El calendario público **no** muestra el enlace.
+**Depuración del catálogo.** Las 5.502 cátedras activas se redujeron a **500**: las demás se **desactivaron** (borrado lógico, no se borró ninguna fila: se ven con «Ver inactivas» y se reactivan al editar), con respaldo previo.
+Criterio: primero las que tienen historia real (asistencias, ponentes, enlaces, lotes de migración o una solicitud de ponente), luego las que tienen una sesión programada futura y luego las más cercanas a la fecha de hoy
+(quedaron las de octubre y noviembre de 2026 casi todas). **Decisiones para confirmar.** (1) Se desactivó y no se borró; si se quieren borrar de verdad hay que quitar antes sus asistencias y lotes (las llaves son `RESTRICT`).
+(2) Entre las 500 que quedaron hay sesiones que ya se cruzaban (el histórico venía así): la regla no las toca, pero sí impide crear otra encima. (3) El margen es por sesión, no por cátedra: dos sesiones de la misma cátedra también
+deben estar separadas. (4) Dos solicitudes de ponente **pendientes** pueden proponer la misma hora: la segunda que se apruebe será rechazada (409) y el administrador le ajusta la hora.
+(5) El script manual `db/postgres/pruebas/prueba_sp_maestro_detalle_formulario.sql` (anterior a la D59) crea varias cátedras en las mismas horas: con la `059` aplicada esas sesiones se rechazan; hay que darles horas distintas
+(o correrlo sin la `059`) antes de volver a usarlo.
+Pruebas: capas 626/0, `prueba_d55_v71.py` 86/0 y `prueba_calendario_ponente_v71.py` 111/0 (API simulada), y contra PostgreSQL real, con rollback: misma hora, a 30 minutos (antes y después) y mover una sesión rechazadas; a
+exactamente 60 minutos aceptada; editar otros datos de una sesión existente sigue permitido; una cátedra desactivada no bloquea y una activa sí.
 
 ## 4. Cómo se verificó
 

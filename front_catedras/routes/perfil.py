@@ -4,7 +4,7 @@
 #  DOS FLUJOS DISTINTOS para la clave (a propósito, y los dos existen):
 #
 #   1) CAMBIAR la clave sabiendo la actual  ->  GET/POST /perfil/clave
-#      Para cualquier usuario autenticado (admin, ponente, estudiante).
+#      Para el usuario autenticado (v7.1 · D55: solo el administrador inicia sesión).
 #      Pide clave actual + nueva + confirmación; la API verifica la actual con
 #      BCrypt. NO exige código por correo: quien conoce su clave ya demostró
 #      quién es, y obligarlo a pasar por el correo solo agrega fricción.
@@ -75,7 +75,7 @@ def cambiar_clave():
     if not sesion_activa():
         return redirect(url_for('auth.login', siguiente=url_for('perfil.cambiar_clave')))
 
-    # v7.1 · D54: primera vez (clave inicial = código de estudiante): el cambio es obligatorio.
+    # v7.1 · D54: si a la cuenta se le exigió el cambio (clave temporal), es obligatorio.
     primera_vez = bool(session.get('debe_cambiar'))
 
     def pagina(**extra):

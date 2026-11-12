@@ -2,7 +2,7 @@
     console.log('Catedras USB - Aplicacion cargada');
 
     // Solo los mensajes flash de ÉXITO (los '.alert-success.alert-dismissible' de partials/mensajes.html)
-    // se quitan solos. Los errores se quedan hasta que se cierran (hay que poder leerlos: «debes inscribirte»,
+    // se quitan solos. Los errores se quedan hasta que se cierran (hay que poder leerlos: «la clave no es correcta»,
     // «el QR ya cerró»...) y los demás '.alert' son avisos y acciones permanentes.
     document.querySelectorAll('.alert.alert-success.alert-dismissible').forEach(alert => {
         setTimeout(() => {

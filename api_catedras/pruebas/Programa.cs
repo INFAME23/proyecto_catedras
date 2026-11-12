@@ -1256,12 +1256,12 @@ int filasPutSes = await servicioSesion.ReemplazarAsync(idSes1, new SesionReempla
 {
     FkCatedra = 5498, NumeroReunion = 1, Inicio = inicioBogota, Fin = inicioBogota.AddHours(3),
     FkModalidad = "VIRTUAL", FkSede = "VIRTUAL", FkPeriodo = "2026-2", Estado = "ABIERTA",
-    EnlaceVirtual = "https://ejemplo.edu.co/sala", Cupo = 40,
+    EnlaceVirtual = "https://ejemplo.edu.co/sala",
 });
 var trasPutSes = await servicioSesion.ObtenerAsync(idSes1);
-Afirmar("PUT reemplaza todo (modalidad, estado, enlace, cupo y fin)",
+Afirmar("PUT reemplaza todo (modalidad, estado, enlace y fin)",
     filasPutSes == 1 && trasPutSes.FkModalidad == "VIRTUAL" && trasPutSes.Estado == "ABIERTA"
-    && trasPutSes.Cupo == 40 && trasPutSes.Fin == new DateTime(2026, 10, 20, 22, 0, 0, DateTimeKind.Utc));
+    && trasPutSes.Fin == new DateTime(2026, 10, 20, 22, 0, 0, DateTimeKind.Utc));
 
 await AfirmarLanza<ArgumentException>(
     "PUT con fin anterior a inicio lanza ArgumentException",
@@ -2331,42 +2331,6 @@ Afirmar("EnlaceInicial con minutos fuera de 0..1440 no es válido (-> 422)",
     !EsValida(new EnlaceInicial { MinutosAntes = 2000 }));
 
 // ---------------------------------------------------------------------------
-//  v7.1 · D50 · Inscripción de una persona a una cátedra
-// ---------------------------------------------------------------------------
-Console.WriteLine("\n== v7.1 · Prueba de capas: inscripción a una cátedra ==\n");
-var repoInsc71 = new RepositorioInscripcionCatedraFalso();
-var servicioInsc71 = new ServicioInscripcionCatedra(repoInsc71);
-
-Afirmar("Inscribir por primera vez devuelve true (inscripción nueva)",
-    await servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 }));
-Afirmar("Inscribir OTRA VEZ la misma persona devuelve false (ya estaba; no se duplica)",
-    !await servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 }));
-var lista71 = await servicioInsc71.ListarAsync(5, null, null, null);
-Afirmar("Listar por persona trae 1 inscripción ACTIVA", lista71.Total == 1 && lista71.Datos[0].Estado == "ACTIVA");
-await AfirmarLanza<NoEncontradoExcepcion>(
-    "Inscribir en una cátedra inactiva o inexistente lanza NoEncontradoExcepcion (404)",
-    () => servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 999, FkAsistente = 5 }));
-await AfirmarLanza<NoEncontradoExcepcion>(
-    "Inscribir a una persona inexistente lanza NoEncontradoExcepcion (404)",
-    () => servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 999 }));
-await servicioInsc71.CancelarAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 });
-Afirmar("Cancelar deja la inscripción CANCELADA y ya no sale en el listado por defecto",
-    (await servicioInsc71.ListarAsync(5, null, null, null)).Total == 0
-    && (await servicioInsc71.ListarAsync(5, null, false, null)).Datos[0].Estado == "CANCELADA");
-await AfirmarLanza<NoEncontradoExcepcion>(
-    "Cancelar sin inscripción activa lanza NoEncontradoExcepcion (404)",
-    () => servicioInsc71.CancelarAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 }));
-Afirmar("Volver a inscribirse tras cancelar la reactiva (devuelve true)",
-    await servicioInsc71.InscribirAsync(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 })
-    && (await servicioInsc71.ListarAsync(5, null, null, null)).Total == 1);
-await AfirmarLanza<ArgumentException>(
-    "Listar con limite 0 lanza ArgumentException (400)",
-    () => servicioInsc71.ListarAsync(null, null, null, 0));
-Afirmar("InscripcionCatedraAccion exige fk_catedra y fk_asistente",
-    !EsValida(new InscripcionCatedraAccion()) && !EsValida(new InscripcionCatedraAccion { FkCatedra = 10 })
-    && EsValida(new InscripcionCatedraAccion { FkCatedra = 10, FkAsistente = 5 }));
-
-// ---------------------------------------------------------------------------
 //  v7.1 · D52 · Disponibilidad de horario (solo lectura)
 // ---------------------------------------------------------------------------
 Console.WriteLine("\n== v7.1 · Prueba de capas: disponibilidad de horario ==\n");
@@ -2414,8 +2378,8 @@ var repoQr71 = new RepositorioQrSesionFalso();
 var servicioQr71 = new ServicioQrSesion(repoQr71);
 
 var qrNuevo71 = await servicioQr71.EmitirAsync(new QrSesionEmitir { FkSesion = 7, FkUsuario = 3 });
-Afirmar("Emitir el QR de una sesión lo crea: ya_existia = false y exige inscripción",
-    !qrNuevo71.YaExistia && qrNuevo71.RequiereInscripcion && qrNuevo71.Token != Guid.Empty && qrNuevo71.FkSesion == 7);
+Afirmar("Emitir el QR de una sesión lo crea: ya_existia = false (y ya no exige inscripción)",
+    !qrNuevo71.YaExistia && qrNuevo71.Token != Guid.Empty && qrNuevo71.FkSesion == 7);
 Afirmar("...la ventana se abre ANTES de que termine la sesión y se cierra cuando termina (fin = 18:00, abre 17:45)",
     qrNuevo71.VentanaHasta == RepositorioQrSesionFalso.FinSesion && qrNuevo71.VentanaDesde == RepositorioQrSesionFalso.FinSesion.AddMinutes(-15));
 Afirmar("...y quedó registrado quién lo emitió", repoQr71.UltimoUsuario == 3);
@@ -2435,80 +2399,396 @@ await AfirmarLanza<ArgumentException>(
     "La asistencia sin 'fkSesion' lanza ArgumentException (400)",
     () => servicioQr71.AsistenciaAsync(0));
 var asis71 = await servicioQr71.AsistenciaAsync(7);
-Afirmar("La asistencia trae inscritos y quién asistió (con la persona que asistió sin inscribirse)",
-    asis71.Count == 3 && asis71.Count(a => a.Asistio) == 2 && asis71.Count(a => a.Inscrito) == 2
-    && asis71.Any(a => a.Asistio && !a.Inscrito));
+Afirmar("La asistencia lista a quien registró (con hora y ubicación), sin lista de inscritos (D55)",
+    asis71.Count == 2 && asis71.All(a => a.RegistradoEn is not null) && asis71[0].Latitud is not null);
 Afirmar("QrSesionEmitir exige fk_sesion", !EsValida(new QrSesionEmitir()) && EsValida(new QrSesionEmitir { FkSesion = 7 }));
 
 // ---------------------------------------------------------------------------
-//  v7.1 · D54 · Usuario = correo institucional; clave inicial = código; primer ingreso
+//  v7.1 · D55 · Solo el ADMINISTRADOR inicia sesión; cambio obligatorio de clave a quien se le marque
 // ---------------------------------------------------------------------------
-Console.WriteLine("\n== v7.1 · Prueba de capas: correo institucional y primer ingreso ==\n");
-var repoUsr54 = new RepositorioUsuarioFalso();
-var servicioUsr54 = new ServicioUsuario(repoUsr54, new RepositorioRolPorUsuarioFalso(), new RepositorioCodigoRecuperacionFalso());
+Console.WriteLine("\n== v7.1 · Prueba de capas: solo el administrador inicia sesión ==\n");
+var repoUsr55 = new RepositorioUsuarioFalso();
+var repoRoles55 = new RepositorioRolPorUsuarioFalso();
+var servicioUsr55 = new ServicioUsuario(repoUsr55, repoRoles55, new RepositorioCodigoRecuperacionFalso());
 
-var porCorreo54 = await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "admin.catedras@usbmed.edu.co", Clave = "Admin12345" });
-Afirmar("Login con el CORREO INSTITUCIONAL de una cuenta existente funciona (es la misma cuenta)",
-    porCorreo54 is not null && porCorreo54.Value.Usuario.NombreUsuario == "admin" && !porCorreo54.Value.Usuario.DebeCambiarClave);
-Afirmar("...sin importar mayúsculas ni espacios alrededor",
-    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "  ADMIN.Catedras@USBMED.edu.co ", Clave = "Admin12345" }) is not null);
-Afirmar("...con el correo y una clave incorrecta devuelve null (el mismo rechazo de siempre, D27)",
-    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "admin.catedras@usbmed.edu.co", Clave = "otra" }) is null);
-Afirmar("El nombre de usuario de siempre sigue funcionando",
-    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "Admin12345" }) is not null);
+var admin55 = await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "admin", Clave = "Admin12345" });
+Afirmar("El administrador (usuario con el rol ADMIN vigente) inicia sesión", admin55 is not null && admin55.Value.Roles.Contains("ADMIN"));
 
-Afirmar("Un correo que no es de ningún estudiante, con cualquier clave, devuelve null",
-    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "nadie@usbmed.edu.co", Clave = "3000999111" }) is null);
-await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "inexistente", Clave = "3000999111" });
-Afirmar("...y un 'usuario' sin @ que no existe NO busca estudiantes (no hay primer ingreso sin correo)", repoUsr54.BusquedasDeCandidato == 1);
-Afirmar("Estudiante sin cuenta con una clave que NO es su código: rechazado y NO se crea la cuenta",
-    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "12345678" }) is null
-    && await repoUsr54.ObtenerPorLoginAsync("estudiante.prueba") is null);
+var estu55 = await servicioUsr55.CrearAsync(new UsuarioCrear { FkAsistente = 70, Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" });
+int accesosAntes55 = repoUsr55.LlamadasUltimoAcceso;
+Afirmar("Una cuenta con la clave correcta pero SIN ningún rol NO inicia sesión (null, el mismo rechazo de siempre, D27)",
+    await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" }) is null);
+await repoRoles55.CrearAsync(new RolPorUsuario { FkUsuario = estu55.IdUsuario, FkRol = "ESTUDIANTE", FechaIni = new DateOnly(2026, 1, 1) });
+Afirmar("...con el rol ESTUDIANTE tampoco", await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" }) is null);
+await repoRoles55.CrearAsync(new RolPorUsuario { FkUsuario = estu55.IdUsuario, FkRol = "PONENTE", FechaIni = new DateOnly(2026, 1, 1) });
+Afirmar("...ni con ESTUDIANTE y PONENTE juntos", await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" }) is null);
+Afirmar("...y a quien no puede entrar NO se le anota acceso", repoUsr55.LlamadasUltimoAcceso == accesosAntes55);
+await repoRoles55.CrearAsync(new RolPorUsuario { FkUsuario = estu55.IdUsuario, FkRol = "ADMIN", FechaIni = new DateOnly(2026, 1, 1) });
+var ahoraAdmin55 = await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "Clave-Estudiante-1" });
+Afirmar("Cuando se le da el rol ADMIN, entra (el rol es lo que manda, no la persona)", ahoraAdmin55 is not null && ahoraAdmin55.Value.Roles.Contains("ADMIN"));
+Afirmar("Con el rol ADMIN pero la clave mal escrita, no entra",
+    await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "otra-clave" }) is null);
+Afirmar("Un correo institucional ya no es un nombre de usuario válido para entrar",
+    await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "3000999111" }) is null);
 
-var primero54 = await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "Estudiante.Prueba@usbmed.edu.co", Clave = "3000999111" });
-Afirmar("PRIMER INGRESO: correo institucional + código de estudiante como clave -> entra y se crea la cuenta",
-    primero54 is not null && primero54.Value.Usuario.NombreUsuario == "estudiante.prueba" && primero54.Value.Usuario.FkAsistente == 50);
-Afirmar("...marcada para cambiar la clave en este primer ingreso", primero54!.Value.Usuario.DebeCambiarClave);
-var guardado54 = await repoUsr54.ObtenerPorLoginAsync("estudiante.prueba");
-Afirmar("...con la clave inicial guardada como hash BCrypt del código, NUNCA el código en claro (Regla 3)",
-    guardado54 is not null && guardado54.ClaveHash != "3000999111" && BCrypt.Net.BCrypt.Verify("3000999111", guardado54.ClaveHash));
-Afirmar("...y se anotó el acceso", repoUsr54.LlamadasUltimoAcceso >= 1);
-var segundo54 = await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "3000999111" });
-Afirmar("El segundo ingreso ya es el login normal (BCrypt) y sigue pidiendo cambiar la clave",
-    segundo54 is not null && segundo54.Value.Usuario.DebeCambiarClave);
-Afirmar("...con una clave incorrecta se rechaza",
-    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "3000999112" }) is null);
+// cambio obligatorio de clave (sirve para cualquier cuenta, p. ej. un administrador nuevo con clave temporal)
+var conFlag55 = await servicioUsr55.CrearAsync(new UsuarioCrear { FkAsistente = 71, Usuario = "admin.nuevo", Clave = "Temporal-1234", DebeCambiarClave = true });
+Afirmar("Crear una cuenta con debe_cambiar_clave = true la deja marcada",
+    (await servicioUsr55.ObtenerAsync(conFlag55.IdUsuario)).DebeCambiarClave);
+var sinFlag55 = await servicioUsr55.CrearAsync(new UsuarioCrear { FkAsistente = 72, Usuario = "admin.otro", Clave = "Temporal-1234" });
+Afirmar("...y sin pedirlo no se marca", !(await servicioUsr55.ObtenerAsync(sinFlag55.IdUsuario)).DebeCambiarClave);
+await servicioUsr55.ExigirCambioClaveAsync(sinFlag55.IdUsuario);
+Afirmar("El administrador puede exigir el cambio a una cuenta existente", (await servicioUsr55.ObtenerAsync(sinFlag55.IdUsuario)).DebeCambiarClave);
+await AfirmarLanza<NoEncontradoExcepcion>("Exigir el cambio a un usuario inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioUsr55.ExigirCambioClaveAsync(99999));
+Afirmar("Cambiar la clave apaga la exigencia",
+    await servicioUsr55.CambiarClaveAsync(sinFlag55.IdUsuario, new UsuarioCambiarClave { ClaveActual = "Temporal-1234", ClaveNueva = "Definitiva-5678" })
+    && !(await servicioUsr55.ObtenerAsync(sinFlag55.IdUsuario)).DebeCambiarClave);
 
-Afirmar("Al cambiar la clave, deja de exigirse el cambio",
-    await servicioUsr54.CambiarClaveAsync(segundo54!.Value.Usuario.IdUsuario,
-        new UsuarioCambiarClave { ClaveActual = "3000999111", ClaveNueva = "Mi-Clave-Nueva-54" })
-    && !(await servicioUsr54.ObtenerAsync(segundo54.Value.Usuario.IdUsuario)).DebeCambiarClave);
-var tras54 = await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "Mi-Clave-Nueva-54" });
-Afirmar("...y entra con la clave nueva sin que se le vuelva a pedir cambiarla",
-    tras54 is not null && !tras54.Value.Usuario.DebeCambiarClave);
-Afirmar("...la clave inicial (el código) ya no sirve",
-    await servicioUsr54.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "3000999111" }) is null);
+// ============================================================================
+//  v7.1 · D56 · Bandeja de ponentes: ServicioSolicitudPonente + repositorio falso
+//  El formulario «Soy ponente» del calendario crea la solicitud (PENDIENTE); el ADMIN la aprueba o la rechaza UNA vez.
+//  Que aprobar cree al asistente, su documento y la ponencia es de la BASE DE DATOS (un procedimiento): aquí se prueba
+//  lo que decide el servicio (limpieza de datos, motivo obligatorio, filtros) y las reglas de forma de la petición.
+// ============================================================================
+Console.WriteLine("\n== v7.1 · D56 · Bandeja de ponentes: ServicioSolicitudPonente + repositorio falso ==\n");
+var repoSolicitudes = new RepositorioSolicitudPonenteFalso();
+var servicioSolicitudes = new ServicioSolicitudPonente(repoSolicitudes);
 
-var conFlag54 = await servicioUsr54.CrearAsync(new UsuarioCrear { FkAsistente = 70, Usuario = "ponente.nuevo", Clave = "Temporal-1234", DebeCambiarClave = true });
-Afirmar("Crear una cuenta con debe_cambiar_clave = true (lo que hace el administrador con la clave temporal de un ponente) la deja marcada",
-    (await servicioUsr54.ObtenerAsync(conFlag54.IdUsuario)).DebeCambiarClave);
-var sinFlag54 = await servicioUsr54.CrearAsync(new UsuarioCrear { FkAsistente = 71, Usuario = "ponente.otro", Clave = "Temporal-1234" });
-Afirmar("...y sin pedirlo no se marca",
-    !(await servicioUsr54.ObtenerAsync(sinFlag54.IdUsuario)).DebeCambiarClave);
-await servicioUsr54.ExigirCambioClaveAsync(sinFlag54.IdUsuario);
-Afirmar("El administrador puede exigir el cambio de clave a una cuenta existente (ExigirCambioClave)",
-    (await servicioUsr54.ObtenerAsync(sinFlag54.IdUsuario)).DebeCambiarClave);
+SolicitudPonenteCrear PeticionPonente() => new()
+{
+    Nombres = "Ana", Apellidos = "Perez", FkTipoDocumento = "PA", NumeroDocumento = "AB123456",
+    PerfilProfesional = "Ingeniera de sistemas", Direccion = "Calle 10 # 20-30", Telefono = "+57 300 123 4567",
+    CorreoInstitucional = "ana@usbmed.edu.co", TituloPonencia = "IA en el aula",
+    ResumenPonencia = "Un resumen con mas de treinta caracteres para pasar la regla.",
+    Inicio = DateTimeOffset.UtcNow.AddDays(10), Fin = DateTimeOffset.UtcNow.AddDays(10).AddHours(2),
+    FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-2",
+};
+
+bool EsValidaPonente(SolicitudPonenteCrear p, out List<System.ComponentModel.DataAnnotations.ValidationResult> errores)
+{
+    errores = new();
+    return System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+        p, new System.ComponentModel.DataAnnotations.ValidationContext(p), errores, validateAllProperties: true);
+}
+
+Afirmar("La petición completa y bien escrita es válida", EsValidaPonente(PeticionPonente(), out _));
+foreach (var (caso, ajustePonente) in new (string, Action<SolicitudPonenteCrear>)[]
+{
+    ("sin nombres", p => p.Nombres = null),
+    ("con tipo de documento TI (solo CC, PA, LC o CI)", p => p.FkTipoDocumento = "TI"),
+    ("con número de documento de 3 caracteres", p => p.NumeroDocumento = "ab1"),
+    ("con número de documento con espacios", p => p.NumeroDocumento = "AB 123456"),
+    ("con teléfono con letras", p => p.Telefono = "abc12345"),
+    ("con correo sin arroba", p => p.CorreoInstitucional = "ana.usbmed.edu.co"),
+    ("con resumen de menos de 30 caracteres", p => p.ResumenPonencia = "muy corto"),
+    ("con resumen de más de 2000 caracteres", p => p.ResumenPonencia = new string('x', 2001)),
+    ("con título de ponencia de 3 caracteres", p => p.TituloPonencia = "IA"),
+    ("sin fecha y hora de inicio", p => p.Inicio = null),
+    ("sin fecha y hora de fin", p => p.Fin = null),
+    ("sin modalidad", p => p.FkModalidad = null),
+    ("sin sede", p => p.FkSede = null),
+    ("sin periodo", p => p.FkPeriodo = null),
+    ("con el periodo escrito como 'segundo'", p => p.FkPeriodo = "segundo"),
+    ("con el periodo 2026-4 (solo hay 1, 2 y 3 por año)", p => p.FkPeriodo = "2026-4"),
+    ("con la modalidad de más de 15 caracteres", p => p.FkModalidad = new string('M', 16)),
+})
+{
+    var mala = PeticionPonente();
+    ajustePonente(mala);
+    Afirmar($"Una petición {caso} se rechaza (422 en la API)", !EsValidaPonente(mala, out _));
+}
+foreach (var tipo in new[] { "CC", "PA", "LC", "CI" })
+{
+    var buena = PeticionPonente();
+    buena.FkTipoDocumento = tipo;
+    Afirmar($"El tipo de documento {tipo} es válido", EsValidaPonente(buena, out _));
+}
+
+// D58: la petición ya no trae 'fk_sesion' (se propone una cátedra nueva con fecha y hora).
+Afirmar("SolicitudPonenteCrear ya no tiene 'FkSesion' y sí 'Inicio' y 'Fin' (cátedra nueva con fecha y hora)",
+    typeof(SolicitudPonenteCrear).GetProperty("FkSesion") is null
+    && typeof(SolicitudPonenteCrear).GetProperty("Inicio") is not null && typeof(SolicitudPonenteCrear).GetProperty("Fin") is not null);
+var finAntes = PeticionPonente();
+finAntes.Fin = finAntes.Inicio!.Value.AddHours(-1);
+await AfirmarLanza<ArgumentException>("Crear() con el fin antes del inicio lanza ArgumentException (400)", () => servicioSolicitudes.CrearAsync(finAntes));
+var finIgual = PeticionPonente();
+finIgual.Fin = finIgual.Inicio;
+await AfirmarLanza<ArgumentException>("Crear() con el fin igual al inicio lanza ArgumentException (400)", () => servicioSolicitudes.CrearAsync(finIgual));
+var muyLarga = PeticionPonente();
+muyLarga.Fin = muyLarga.Inicio!.Value.AddHours(24).AddMinutes(1);
+await AfirmarLanza<ArgumentException>("Crear() de una cátedra de más de 24 horas lanza ArgumentException (400)", () => servicioSolicitudes.CrearAsync(muyLarga));
+
+// D58: la petición trae la modalidad, la sede y el periodo que el ponente elige.
+Afirmar("SolicitudPonenteCrear trae modalidad, sede y periodo",
+    new[] { "FkModalidad", "FkSede", "FkPeriodo" }.All(n => typeof(SolicitudPonenteCrear).GetProperty(n) is not null));
+
+var sucia = PeticionPonente();
+sucia.FkModalidad = " presencial ";
+sucia.FkSede = " SAN_BENITO ";
+sucia.FkPeriodo = " 2026-2 ";
+sucia.Nombres = "  Ana   María ";
+sucia.FkTipoDocumento = " pa ";
+sucia.CorreoInstitucional = " Ana@USBMED.edu.co ";
+sucia.ResumenPonencia = "  Linea uno del resumen.\nLinea dos del resumen, con salto.  ";
+var recibida = await servicioSolicitudes.CrearAsync(sucia);
+Afirmar("Crear() deja la solicitud PENDIENTE", recibida.Estado == "PENDIENTE" && recibida.IdSolicitud > 0);
+Afirmar("Crear() limpia espacios del nombre, normaliza el tipo (mayúsculas) y el correo (minúsculas)",
+    recibida.Nombres == "Ana María" && recibida.FkTipoDocumento == "PA" && recibida.CorreoInstitucional == "ana@usbmed.edu.co");
+Afirmar("Crear() deja la modalidad en mayúsculas y sin espacios, y la sede y el periodo sin espacios",
+    recibida.FkModalidad == "PRESENCIAL" && recibida.FkSede == "SAN_BENITO" && recibida.FkPeriodo == "2026-2");
+Afirmar("Crear() respeta los saltos de línea del resumen (solo recorta los extremos)",
+    recibida.ResumenPonencia == "Linea uno del resumen.\nLinea dos del resumen, con salto.");
+
+var relleno = PeticionPonente();
+relleno.ResumenPonencia = "                  muy corto                  ";
+await AfirmarLanza<ArgumentException>(
+    "Crear() con un resumen que, sin espacios sobrantes, queda por debajo de 30 caracteres lanza ArgumentException (400)",
+    () => servicioSolicitudes.CrearAsync(relleno));
+await AfirmarLanza<InvalidOperationException>(
+    "Crear() de nuevo la MISMA solicitud pendiente falla (la base de datos responde P0001; en la API real -> 409)",
+    () => servicioSolicitudes.CrearAsync(PeticionPonente()));
+await servicioSolicitudes.CrearAsync(new SolicitudPonenteCrear
+{
+    Nombres = "Luis", Apellidos = "Gomez", FkTipoDocumento = "CC", NumeroDocumento = "99887766",
+    PerfilProfesional = "Biologo", Direccion = "Carrera 5 # 6-7", Telefono = "3005550000",
+    CorreoInstitucional = "luis@gmail.com", TituloPonencia = "Biodiversidad urbana",
+    ResumenPonencia = "Un resumen largo sobre biodiversidad urbana en la ciudad.",
+    Inicio = DateTimeOffset.UtcNow.AddDays(20), Fin = DateTimeOffset.UtcNow.AddDays(20).AddHours(3),
+    FkModalidad = "VIRTUAL", FkSede = "VIRTUAL", FkPeriodo = "2026-2",
+});
+// Una tercera, para aprobarla SIN escribir nada (toma lo que el ponente eligió).
+await servicioSolicitudes.CrearAsync(new SolicitudPonenteCrear
+{
+    Nombres = "Eva", Apellidos = "Rios", FkTipoDocumento = "CI", NumeroDocumento = "COD-5544",
+    PerfilProfesional = "Historiadora", Direccion = "Calle 9 # 8-7", Telefono = "3115550000",
+    CorreoInstitucional = "eva@usbmed.edu.co", TituloPonencia = "Memoria urbana",
+    ResumenPonencia = "Un resumen largo sobre la memoria urbana de la ciudad de Medellin.",
+    Inicio = DateTimeOffset.UtcNow.AddDays(30), Fin = DateTimeOffset.UtcNow.AddDays(30).AddHours(2),
+    FkModalidad = "HIBRIDA", FkSede = "BELLO", FkPeriodo = "2026-2",
+});
+
+var (todasSol, totalSol) = await servicioSolicitudes.ListarAsync(null, null);
+Afirmar("Listar() sin filtro trae las 3 solicitudes", totalSol == 3 && todasSol.Count == 3);
+var (pendientesSol, _) = await servicioSolicitudes.ListarAsync("pendiente", null);
+Afirmar("Listar(estado=pendiente) acepta minúsculas y trae las 3 pendientes", pendientesSol.Count == 3);
+var (aprobadasSol, totalAprobadas) = await servicioSolicitudes.ListarAsync("APROBADA", null);
+Afirmar("Listar(estado=APROBADA) sin resultados devuelve total 0 (la API responde 204)", totalAprobadas == 0 && aprobadasSol.Count == 0);
+await AfirmarLanza<ArgumentException>("Listar(estado inventado) lanza ArgumentException (400)", () => servicioSolicitudes.ListarAsync("QUIZAS", null));
+await AfirmarLanza<ArgumentException>("Listar(limite 0) lanza ArgumentException (400)", () => servicioSolicitudes.ListarAsync(null, 0));
+
+var primeraSol = await servicioSolicitudes.ObtenerAsync(recibida.IdSolicitud);
+Afirmar("Obtener() trae la solicitud por su id", primeraSol.TituloPonencia == "IA en el aula");
+await AfirmarLanza<NoEncontradoExcepcion>("Obtener() de un id inexistente lanza NoEncontradoExcepcion (404)", () => servicioSolicitudes.ObtenerAsync(9999));
+
+await AfirmarLanza<ArgumentException>(
+    "Resolver(rechazar) sin observación lanza ArgumentException (el motivo es obligatorio)",
+    () => servicioSolicitudes.ResolverAsync(recibida.IdSolicitud, new SolicitudPonenteResolver { Aprobar = false }));
+await AfirmarLanza<ArgumentException>(
+    "Resolver(rechazar) con la observación en blanco también",
+    () => servicioSolicitudes.ResolverAsync(recibida.IdSolicitud, new SolicitudPonenteResolver { Aprobar = false, Observacion = "   " }));
+Afirmar("...y la solicitud sigue PENDIENTE", (await servicioSolicitudes.ObtenerAsync(recibida.IdSolicitud)).Estado == "PENDIENTE");
+
+// D58: al aprobar una solicitud con fecha propuesta se crea la cátedra: hacen falta modalidad, sede y periodo
+// (los del administrador o, si no escribe, los que eligió el ponente). Una solicitud anterior a la 058 no los trae.
+var filaRecibida = (await repoSolicitudes.ObtenerUnoAsync(recibida.IdSolicitud))!;
+(string? modPonente, string? sedePonente, string? perPonente) = (filaRecibida.FkModalidad, filaRecibida.FkSede, filaRecibida.FkPeriodo);
+(filaRecibida.FkModalidad, filaRecibida.FkSede, filaRecibida.FkPeriodo) = (null, null, null);
+await AfirmarLanza<ArgumentException>(
+    "Resolver(aprobar) una cátedra nueva sin modalidad, sede y periodo lanza ArgumentException (400)",
+    () => servicioSolicitudes.ResolverAsync(recibida.IdSolicitud, new SolicitudPonenteResolver { Aprobar = true }));
+await AfirmarLanza<ArgumentException>(
+    "Resolver(aprobar) con la sede en blanco también",
+    () => servicioSolicitudes.ResolverAsync(recibida.IdSolicitud,
+        new SolicitudPonenteResolver { Aprobar = true, FkModalidad = "PRESENCIAL", FkSede = "   ", FkPeriodo = "2026-2" }));
+await AfirmarLanza<ArgumentException>(
+    "Resolver(aprobar) ajustando el fin antes del inicio lanza ArgumentException (400)",
+    () => servicioSolicitudes.ResolverAsync(recibida.IdSolicitud, new SolicitudPonenteResolver
+    {
+        Aprobar = true, FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-2",
+        Inicio = DateTimeOffset.UtcNow.AddDays(5), Fin = DateTimeOffset.UtcNow.AddDays(5).AddHours(-1),
+    }));
+Afirmar("...y la solicitud sigue PENDIENTE y sin cátedra", (await servicioSolicitudes.ObtenerAsync(recibida.IdSolicitud)) is { Estado: "PENDIENTE", FkCatedra: null });
+(filaRecibida.FkModalidad, filaRecibida.FkSede, filaRecibida.FkPeriodo) = (modPonente, sedePonente, perPonente);
+
+var aprobada = await servicioSolicitudes.ResolverAsync(recibida.IdSolicitud, new SolicitudPonenteResolver
+{
+    Aprobar = true, Observacion = "  Bienvenida  ", ResueltoPor = 3,
+    FkModalidad = " presencial ", FkSede = " SAN_BENITO ", FkPeriodo = "2026-2", FkTipoEvento = "caab", Lugar = "  Aula 101 ", NombreCatedra = "   ",
+});
+Afirmar("Resolver(aprobar) la deja APROBADA con la persona creada y quién decidió",
+    aprobada.Estado == "APROBADA" && aprobada.FkAsistente is not null && aprobada.ResueltoPor == 3 && aprobada.ResueltoEn is not null);
+Afirmar("...y recorta la observación", aprobada.ObservacionAdmin == "Bienvenida");
+Afirmar("...y crea la cátedra con su sesión (la solicitud queda enlazada a las dos)", aprobada.FkCatedra is not null && aprobada.FkSesion is not null);
+Afirmar("...con los datos limpios: modalidad en mayúsculas, sede y lugar sin espacios, nombre vacío = título de la ponencia",
+    repoSolicitudes.UltimaCatedra is { FkModalidad: "PRESENCIAL", FkSede: "SAN_BENITO", FkPeriodo: "2026-2", FkTipoEvento: "CAAB", Lugar: "Aula 101", NombreCatedra: null });
+// Eva eligió modalidad, sede y periodo: aprobarla sin escribir nada es válido (la base de datos usa lo del ponente).
+var aprobadaEva = await servicioSolicitudes.ResolverAsync(3, new SolicitudPonenteResolver { Aprobar = true, ResueltoPor = 3 });
+Afirmar("Resolver(aprobar) sin datos de cátedra funciona si el ponente ya eligió modalidad, sede y periodo (se crea la cátedra)",
+    aprobadaEva.Estado == "APROBADA" && aprobadaEva.FkCatedra is not null && aprobadaEva.FkModalidad == "HIBRIDA"
+    && repoSolicitudes.UltimaCatedra is { FkModalidad: null, FkSede: null, FkPeriodo: null });
+await AfirmarLanza<InvalidOperationException>(
+    "Resolver() una solicitud ya resuelta falla (la base de datos responde P0001; en la API real -> 409)",
+    () => servicioSolicitudes.ResolverAsync(recibida.IdSolicitud, new SolicitudPonenteResolver { Aprobar = false, Observacion = "tarde" }));
+
+var rechazada = await servicioSolicitudes.ResolverAsync(2,
+    new SolicitudPonenteResolver { Aprobar = false, Observacion = "No corresponde al tema de la cátedra." });
+Afirmar("Resolver(rechazar) con motivo la deja RECHAZADA sin crear a la persona",
+    rechazada.Estado == "RECHAZADA" && rechazada.FkAsistente is null && rechazada.ObservacionAdmin!.StartsWith("No corresponde"));
 await AfirmarLanza<NoEncontradoExcepcion>(
-    "Exigir el cambio a un usuario inexistente lanza NoEncontradoExcepcion (404)",
-    () => servicioUsr54.ExigirCambioClaveAsync(99999));
+    "Resolver() un id inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioSolicitudes.ResolverAsync(9999, new SolicitudPonenteResolver { Aprobar = true }));
+await AfirmarLanza<NoEncontradoExcepcion>(
+    "...y también al rechazar un id inexistente",
+    () => servicioSolicitudes.ResolverAsync(9999, new SolicitudPonenteResolver { Aprobar = false, Observacion = "x" }));
+var (aprobadasSol2, _) = await servicioSolicitudes.ListarAsync("APROBADA", null);
+var (pendientesSol2, _) = await servicioSolicitudes.ListarAsync("PENDIENTE", null);
+Afirmar("Tras decidir, los filtros reparten 2 aprobadas, 1 rechazada y 0 pendientes", aprobadasSol2.Count == 2 && pendientesSol2.Count == 0);
+
+Afirmar("IRepositorioSolicitudPonente solo declara listar, consultar, crear y resolver (no se edita ni se borra)",
+    string.Join(",", typeof(IRepositorioSolicitudPonente).GetMethods().Select(m => m.Name).OrderBy(n => n))
+        == "CrearAsync,ObtenerTodosAsync,ObtenerUnoAsync,ResolverAsync");
+
+// ----- v7.1 · D59: enlace de ingreso al crear la cátedra + margen de una hora entre sesiones -----
+bool EnlaceValido(object peticion, string? valor)
+{
+    var contexto = new System.ComponentModel.DataAnnotations.ValidationContext(peticion) { MemberName = "EnlaceVirtual" };
+    return System.ComponentModel.DataAnnotations.Validator.TryValidateProperty(valor, contexto, new List<System.ComponentModel.DataAnnotations.ValidationResult>());
+}
+var decision59 = new SolicitudPonenteResolver { Aprobar = true };
+Afirmar("D59: el enlace de ingreso con http:// o https:// es válido en la decisión del administrador",
+    EnlaceValido(decision59, "https://meet.example.com/abc-defg") && EnlaceValido(decision59, "http://sala.ejemplo.edu.co/x"));
+Afirmar("...vacío o en blanco también (es opcional)", EnlaceValido(decision59, null) && EnlaceValido(decision59, "") && EnlaceValido(decision59, "   "));
+Afirmar("...ftp://, texto suelto, con espacios o de más de 300 caracteres NO",
+    !EnlaceValido(decision59, "ftp://sala.example.com") && !EnlaceValido(decision59, "meet.example.com/abc")
+    && !EnlaceValido(decision59, "https://meet.example.com/a b") && !EnlaceValido(decision59, "https://" + new string('a', 300)));
+Afirmar("D59: la misma regla (http/https) vale en las 4 peticiones de sesión (crear, actualizar, reemplazar, inicial de la cátedra)",
+    new object[] { new SesionCrear(), new SesionActualizar(), new SesionReemplazo(), new SesionInicial() }
+        .All(p => EnlaceValido(p, "https://meet.example.com/abc") && !EnlaceValido(p, "ftp://x.example.com") && !EnlaceValido(p, "no es un enlace")));
+
+var solicitud59 = await servicioSolicitudes.CrearAsync(PeticionPonente());
+var conEnlace59 = await servicioSolicitudes.ResolverAsync(solicitud59.IdSolicitud, new SolicitudPonenteResolver
+{
+    Aprobar = true, ResueltoPor = 3, FkModalidad = "VIRTUAL", FkSede = "VIRTUAL", FkPeriodo = "2026-2",
+    EnlaceVirtual = "  https://meet.example.com/abc-defg  ",
+});
+Afirmar("D59: al aprobar, el enlace de ingreso llega limpio (sin espacios) al repositorio para guardarse en la sesión que se crea",
+    conEnlace59.FkCatedra is not null && repoSolicitudes.UltimaCatedra is { EnlaceVirtual: "https://meet.example.com/abc-defg" });
+var sinEnlace59 = await servicioSolicitudes.CrearAsync(PeticionPonente());
+await servicioSolicitudes.ResolverAsync(sinEnlace59.IdSolicitud, new SolicitudPonenteResolver
+    { Aprobar = true, FkModalidad = "PRESENCIAL", FkSede = "SAN_BENITO", FkPeriodo = "2026-2", EnlaceVirtual = "   " });
+Afirmar("...y un enlace en blanco llega como null (no se guarda un texto vacío)", repoSolicitudes.UltimaCatedra is { EnlaceVirtual: null });
+
+var ocupadas59 = System.Text.Json.JsonSerializer.Deserialize<List<SesionOcupada>>(
+    "[{\"id_sesion\":1,\"fk_catedra\":2,\"nombre_catedra\":\"X\",\"numero_reunion\":1,\"inicio\":\"2030-03-02T15:00:00+00:00\",\"fin\":\"2030-03-02T17:00:00+00:00\"," +
+    "\"fk_sede\":\"VIRTUAL\",\"lugar\":null,\"fk_modalidad\":\"VIRTUAL\",\"estado\":\"PROGRAMADA\",\"solapa\":false,\"motivos\":[\"HORARIO\"]}]")!;
+Afirmar("D59: la API entiende el motivo HORARIO y si además se traslapa (solapa) que devuelve sp_sesiones_en_conflicto",
+    ocupadas59.Count == 1 && ocupadas59[0].Motivos!.SequenceEqual(new[] { "HORARIO" }) && ocupadas59[0].Solapa == false);
+
+// ============================================================================
+//  v7.1 · D57 · Ventanas de programación: ServicioRestriccionProgramacion + repositorio falso
+//  El administrador define los periodos, horas y días en que se pueden programar sesiones. Qué sesión cabe en una ventana
+//  lo decide la BASE DE DATOS (disparador sobre 'sesion', se prueba contra PostgreSQL real): aquí se prueban las reglas que
+//  cruzan campos (fechas, horas juntas, días) y la normalización.
+// ============================================================================
+Console.WriteLine("\n== v7.1 · D57 · Ventanas de programación: ServicioRestriccionProgramacion + repositorio falso ==\n");
+var servicioVentanas = new ServicioRestriccionProgramacion(new RepositorioRestriccionProgramacionFalso());
+
+RestriccionProgramacionEscribir VentanaValida() => new()
+{
+    Nombre = "Periodo 2026-2", FechaDesde = new DateOnly(2026, 8, 3), FechaHasta = new DateOnly(2026, 12, 5),
+    HoraDesde = "06:00", HoraHasta = "21:00", DiasSemana = [6, 1, 3, 2, 2],
+};
+
+bool VentanaEsValida(RestriccionProgramacionEscribir p)
+{
+    var errores = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+    return System.ComponentModel.DataAnnotations.Validator.TryValidateObject(
+        p, new System.ComponentModel.DataAnnotations.ValidationContext(p), errores, validateAllProperties: true);
+}
+
+Afirmar("La ventana completa y bien escrita es válida", VentanaEsValida(VentanaValida()));
+foreach (var (casoV, ajusteVentana) in new (string, Action<RestriccionProgramacionEscribir>)[]
+{
+    ("sin nombre", p => p.Nombre = null),
+    ("con nombre de 2 caracteres", p => p.Nombre = "ab"),
+    ("sin fecha_desde", p => p.FechaDesde = null),
+    ("sin fecha_hasta", p => p.FechaHasta = null),
+    ("con hora_desde 25:00", p => p.HoraDesde = "25:00"),
+    ("con hora_hasta '9am'", p => p.HoraHasta = "9am"),
+})
+{
+    var malaV = VentanaValida();
+    ajusteVentana(malaV);
+    Afirmar($"Una ventana {casoV} se rechaza (422 en la API)", !VentanaEsValida(malaV));
+}
+
+var ventanaCreada = await servicioVentanas.CrearAsync(VentanaValida());
+Afirmar("Crear() guarda la ventana y la deja activa por defecto", ventanaCreada.IdRestriccion > 0 && ventanaCreada.Activo);
+Afirmar("...con los días ordenados y sin repetir (6,1,3,2,2 -> 1,2,3,6)", string.Join(",", ventanaCreada.DiasSemana!) == "1,2,3,6");
+
+var sinDias = VentanaValida();
+sinDias.DiasSemana = null;
+sinDias.HoraDesde = null;
+sinDias.HoraHasta = null;
+var libre = await servicioVentanas.CrearAsync(sinDias);
+Afirmar("Sin horas y sin días la ventana solo limita las fechas", libre.HoraDesde is null && libre.DiasSemana is null);
+
+var todosLosDias = VentanaValida();
+todosLosDias.DiasSemana = [1, 2, 3, 4, 5, 6, 7];
+Afirmar("Marcar los 7 días es lo mismo que no limitar el día (queda null)", (await servicioVentanas.CrearAsync(todosLosDias)).DiasSemana is null);
+
+foreach (var (casoV2, cambioV2) in new (string, Action<RestriccionProgramacionEscribir>)[]
+{
+    ("fecha_hasta anterior a fecha_desde", p => p.FechaHasta = new DateOnly(2026, 7, 1)),
+    ("solo hora_desde (sin hora_hasta)", p => p.HoraHasta = null),
+    ("solo hora_hasta (sin hora_desde)", p => p.HoraDesde = null),
+    ("hora_hasta igual a hora_desde", p => p.HoraHasta = "06:00"),
+    ("hora_hasta anterior a hora_desde", p => p.HoraHasta = "05:59"),
+    ("un día 0", p => p.DiasSemana = [0, 1]),
+    ("un día 8", p => p.DiasSemana = [1, 8]),
+})
+{
+    var malaV2 = VentanaValida();
+    cambioV2(malaV2);
+    await AfirmarLanza<ArgumentException>($"Crear() con {casoV2} lanza ArgumentException (400)", () => servicioVentanas.CrearAsync(malaV2));
+}
+
+var (activasV, totalV) = await servicioVentanas.ListarAsync(true, null);
+Afirmar("Listar(soloActivas) trae las 3 activas", totalV == 3 && activasV.All(v => v.Activo));
+await AfirmarLanza<ArgumentException>("Listar(limite 0) lanza ArgumentException (400)", () => servicioVentanas.ListarAsync(false, 0));
+
+var pausada = VentanaValida();
+pausada.Activo = false;
+var reemplazada = await servicioVentanas.ReemplazarAsync(ventanaCreada.IdRestriccion, pausada);
+Afirmar("Reemplazar() con activo=false pausa la ventana", !reemplazada.Activo && reemplazada.IdRestriccion == ventanaCreada.IdRestriccion);
+var (activasV2, _) = await servicioVentanas.ListarAsync(true, null);
+Afirmar("...y ya no sale entre las activas", activasV2.Count == 2);
+await AfirmarLanza<NoEncontradoExcepcion>("Reemplazar() un id inexistente lanza NoEncontradoExcepcion (404)", () => servicioVentanas.ReemplazarAsync(9999, VentanaValida()));
+await AfirmarLanza<ArgumentException>("Reemplazar() con datos incoherentes lanza ArgumentException (400) sin buscar la fila",
+    () => servicioVentanas.ReemplazarAsync(9999, new RestriccionProgramacionEscribir { Nombre = "x y z", FechaDesde = new DateOnly(2026, 2, 1), FechaHasta = new DateOnly(2026, 1, 1) }));
+
+Afirmar("Obtener() trae la ventana por su id", (await servicioVentanas.ObtenerAsync(ventanaCreada.IdRestriccion)).Nombre == "Periodo 2026-2");
+await AfirmarLanza<NoEncontradoExcepcion>("Obtener() un id inexistente lanza NoEncontradoExcepcion (404)", () => servicioVentanas.ObtenerAsync(9999));
+Afirmar("Eliminar() borra la ventana (1 fila)", await servicioVentanas.EliminarAsync(libre.IdRestriccion) == 1);
+await AfirmarLanza<NoEncontradoExcepcion>("Eliminar() otra vez lanza NoEncontradoExcepcion (404)", () => servicioVentanas.EliminarAsync(libre.IdRestriccion));
+
+var ini57 = new DateTimeOffset(2026, 9, 1, 14, 0, 0, TimeSpan.FromHours(-5));
+Afirmar("Validar() consulta el horario y devuelve el veredicto", (await servicioVentanas.ValidarAsync(ini57, ini57.AddHours(2))).Permitido);
+await AfirmarLanza<ArgumentException>("Validar() sin fechas lanza ArgumentException (400)", () => servicioVentanas.ValidarAsync(null, null));
+await AfirmarLanza<ArgumentException>("Validar() con fin <= inicio lanza ArgumentException (400)", () => servicioVentanas.ValidarAsync(ini57, ini57));
+
+Afirmar("IRepositorioRestriccionProgramacion no tiene método de borrado lógico ni de PATCH (activar/pausar es un PUT)",
+    typeof(IRepositorioRestriccionProgramacion).GetMethods().All(m => !m.Name.Contains("Desactivar") && !m.Name.Contains("Actualizar")));
 
 // ---- Cuenta de control --------------------------------------------------------
 Console.WriteLine("\n== Cuenta de control: 37 tablas, 37 recursos ==\n");
-// v7.1: D50 agrega InscripcionCatedra (tabla de la migración 049), D52 agrega Disponibilidad (consultas de
-// solo lectura) y D53 agrega QrSesion (el QR de cierre: enlace_registro + asistencia). 37 del script + 3.
-Afirmar("La API declara 40 controladores (los 37 de bdcatedras + InscripcionCatedra + Disponibilidad + QrSesion de la v7.1)",
+// v7.1: D52 agrega Disponibilidad (consultas de solo lectura), D53 agrega QrSesion (el QR de cierre: enlace_registro +
+// asistencia), D56 agrega SolicitudPonente (la bandeja de ponentes) y D57 agrega RestriccionProgramacion (periodos y horarios).
+// La inscripción (D50) se quitó en la D55. 37 del script + 4.
+Afirmar("La API declara 41 controladores (los 37 de bdcatedras + Disponibilidad + QrSesion + SolicitudPonente + RestriccionProgramacion de la v7.1)",
     typeof(ApiCatedras.Controllers.BitacoraController).Assembly.GetTypes()
-        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 40);
+        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 41);
 
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
@@ -3722,7 +4002,6 @@ class RepositorioSesionFalso : IRepositorioSesion
         if (datos.TryGetValue("fk_encuesta", out var e)) s.FkEncuesta = (long?)e;
         if (datos.TryGetValue("lugar", out var l)) s.Lugar = (string?)l;
         if (datos.TryGetValue("enlace_virtual", out var ev)) s.EnlaceVirtual = (string?)ev;
-        if (datos.TryGetValue("cupo", out var cu)) s.Cupo = (int?)cu;
         if (datos.TryGetValue("estado", out var es)) s.Estado = (string)es!;
         return Task.FromResult(1);
     }
@@ -3730,6 +4009,122 @@ class RepositorioSesionFalso : IRepositorioSesion
     public Task<int> EliminarAsync(long idSesion) =>
         Task.FromResult(_tabla.Remove(idSesion) ? 1 : 0);
 }
+
+// ==========================================================================
+//  v7.1 · D57 · Repositorio FALSO de 'RestriccionProgramacion'. Guarda las ventanas en memoria y responde
+//  «permitido» a todo en ValidarAsync (qué horario cabe lo decide la base de datos real, no este falso).
+// ==========================================================================
+class RepositorioRestriccionProgramacionFalso : IRepositorioRestriccionProgramacion
+{
+    private readonly List<RestriccionProgramacion> _tabla = new();
+    private long _siguiente = 1;
+
+    private static RestriccionProgramacion Armar(long id, string nombre, DateOnly desde, DateOnly hasta,
+                                                 string? horaDesde, string? horaHasta, string? dias, bool activo) => new()
+    {
+        IdRestriccion = id, Nombre = nombre, FechaDesde = desde, FechaHasta = hasta, HoraDesde = horaDesde, HoraHasta = horaHasta,
+        DiasSemana = dias?.Split(',').Select(int.Parse).ToList(), Activo = activo, CreadoEn = DateTimeOffset.UtcNow,
+    };
+
+    public Task<List<RestriccionProgramacion>> ObtenerTodosAsync(bool soloActivas, int limite) =>
+        Task.FromResult(_tabla.Where(r => !soloActivas || r.Activo).Take(limite).ToList());
+
+    public Task<RestriccionProgramacion?> ObtenerUnoAsync(long idRestriccion) =>
+        Task.FromResult(_tabla.FirstOrDefault(r => r.IdRestriccion == idRestriccion));
+
+    public Task<RestriccionProgramacion> CrearAsync(string nombre, DateOnly fechaDesde, DateOnly fechaHasta,
+                                                    string? horaDesde, string? horaHasta, string? dias, bool activo)
+    {
+        var fila = Armar(_siguiente++, nombre, fechaDesde, fechaHasta, horaDesde, horaHasta, dias, activo);
+        _tabla.Add(fila);
+        return Task.FromResult(fila);
+    }
+
+    public Task<RestriccionProgramacion?> ReemplazarAsync(long idRestriccion, string nombre, DateOnly fechaDesde,
+        DateOnly fechaHasta, string? horaDesde, string? horaHasta, string? dias, bool activo)
+    {
+        int i = _tabla.FindIndex(r => r.IdRestriccion == idRestriccion);
+        if (i < 0)
+            return Task.FromResult<RestriccionProgramacion?>(null);
+        _tabla[i] = Armar(idRestriccion, nombre, fechaDesde, fechaHasta, horaDesde, horaHasta, dias, activo);
+        return Task.FromResult<RestriccionProgramacion?>(_tabla[i]);
+    }
+
+    public Task<int> EliminarAsync(long idRestriccion) => Task.FromResult(_tabla.RemoveAll(r => r.IdRestriccion == idRestriccion));
+
+    public Task<ValidacionHorario> ValidarAsync(DateTimeOffset inicio, DateTimeOffset fin) =>
+        Task.FromResult(new ValidacionHorario { Permitido = true, HayRestricciones = _tabla.Any(r => r.Activo) });
+}
+
+
+// ==========================================================================
+//  v7.1 · D56 · Repositorio FALSO de 'SolicitudPonente'. Simula lo que hace la base de datos en
+//  sp_crear_solicitud_ponente (una pendiente igual -> P0001) y sp_resolver_solicitud_ponente
+//  (ya resuelta -> P0001; aprobar crea a la persona y, si la solicitud propone fecha, la cátedra con su sesión).
+//  P0001 se simula con InvalidOperationException. 'UltimaCatedra' guarda los datos con que se creó la última cátedra.
+// ==========================================================================
+class RepositorioSolicitudPonenteFalso : IRepositorioSolicitudPonente
+{
+    private readonly List<SolicitudPonente> _tabla = new();
+    private long _siguiente = 1;
+    private long _siguienteAsistente = 500;
+    private long _siguienteCatedra = 7000;
+
+    /// <summary>Los datos con que se creó la última cátedra al aprobar (para que la prueba vea lo que llegó al repositorio).</summary>
+    public SolicitudPonenteResolver? UltimaCatedra { get; private set; }
+
+    public Task<List<SolicitudPonente>> ObtenerTodosAsync(string? estado, int limite) =>
+        Task.FromResult(_tabla.Where(s => estado is null || s.Estado == estado).Take(limite).ToList());
+
+    public Task<SolicitudPonente?> ObtenerUnoAsync(long idSolicitud) =>
+        Task.FromResult(_tabla.FirstOrDefault(s => s.IdSolicitud == idSolicitud));
+
+    public Task<SolicitudPonente> CrearAsync(SolicitudPonenteCrear d)
+    {
+        if (_tabla.Any(s => s.Estado == "PENDIENTE" && s.FkTipoDocumento == d.FkTipoDocumento
+                         && s.NumeroDocumento == d.NumeroDocumento
+                         && string.Equals(s.TituloPonencia, d.TituloPonencia, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Ya hay una solicitud pendiente de este documento con la misma ponencia (simulado).");
+
+        var fila = new SolicitudPonente
+        {
+            IdSolicitud = _siguiente++, Nombres = d.Nombres!, Apellidos = d.Apellidos!,
+            NombreCompleto = $"{d.Nombres} {d.Apellidos}", FkTipoDocumento = d.FkTipoDocumento!,
+            NumeroDocumento = d.NumeroDocumento!, PerfilProfesional = d.PerfilProfesional!, Direccion = d.Direccion!,
+            Telefono = d.Telefono!, CorreoInstitucional = d.CorreoInstitucional!, TituloPonencia = d.TituloPonencia!,
+            ResumenPonencia = d.ResumenPonencia!, InicioPropuesto = d.Inicio, FinPropuesto = d.Fin, FkModalidad = d.FkModalidad, FkSede = d.FkSede, FkPeriodo = d.FkPeriodo, Estado = "PENDIENTE", CreadoEn = DateTimeOffset.UtcNow,
+        };
+        _tabla.Add(fila);
+        return Task.FromResult(fila);
+    }
+
+    public Task<SolicitudPonente?> ResolverAsync(long idSolicitud, SolicitudPonenteResolver datos)
+    {
+        bool aprobar = datos.Aprobar!.Value;
+        var fila = _tabla.FirstOrDefault(s => s.IdSolicitud == idSolicitud);
+        if (fila is null)
+            return Task.FromResult<SolicitudPonente?>(null);
+        if (fila.Estado != "PENDIENTE")
+            throw new InvalidOperationException($"La solicitud {idSolicitud} ya fue resuelta ({fila.Estado}) (simulado).");
+
+        fila.Estado = aprobar ? "APROBADA" : "RECHAZADA";
+        fila.ObservacionAdmin = datos.Observacion;
+        fila.ResueltoPor = datos.ResueltoPor;
+        fila.ResueltoEn = DateTimeOffset.UtcNow;
+        if (aprobar)
+        {
+            fila.FkAsistente = _siguienteAsistente++;
+            if (fila.InicioPropuesto is not null)
+            {
+                UltimaCatedra = datos;
+                fila.FkCatedra = _siguienteCatedra++;
+                fila.FkSesion = fila.FkCatedra * 10;
+            }
+        }
+        return Task.FromResult<SolicitudPonente?>(fila);
+    }
+}
+
 
 // ==========================================================================
 //  v4 · Repositorio FALSO de 'Ponencia' (llave compuesta SIN vigencia).
@@ -3816,11 +4211,8 @@ class RepositorioUsuarioFalso : IRepositorioUsuario
     public Task<Usuario?> ObtenerPorIdAsync(long idUsuario) =>
         Task.FromResult(_tabla.TryGetValue(idUsuario, out var u) ? u : null);
 
-    // v7.1 · D54: por nombre de usuario O por correo institucional (como sp_consultar_usuario_por_login).
     public Task<Usuario?> ObtenerPorLoginAsync(string usuario) =>
-        Task.FromResult(_tabla.Values.FirstOrDefault(u => u.NombreUsuario == usuario
-            || (usuario.Contains('@') && _correos.TryGetValue(u.FkAsistente, out var c)
-                && c.Equals(usuario, StringComparison.OrdinalIgnoreCase))));
+        Task.FromResult(_tabla.Values.FirstOrDefault(u => u.NombreUsuario == usuario));
 
     public Task<(long IdUsuario, DateTime CreadoEn)> CrearAsync(Usuario usuario)
     {
@@ -3858,39 +4250,6 @@ class RepositorioUsuarioFalso : IRepositorioUsuario
 
     public Task<int> EliminarAsync(long idUsuario) =>
         Task.FromResult(_tabla.Remove(idUsuario) ? 1 : 0);
-
-    // ---- v7.1 · D54: login por correo institucional y primer ingreso de un estudiante ----
-    // fk_asistente -> correo institucional (la persona 1 es el admin de la semilla).
-    private readonly Dictionary<long, string> _correos = new() { [1] = "admin.catedras@usbmed.edu.co" };
-
-    // Estudiantes vigentes: correo institucional -> (id_asistente, id_asis). El 50 no tiene cuenta todavía.
-    private readonly Dictionary<string, (long Id, string Asis)> _estudiantes =
-        new(StringComparer.OrdinalIgnoreCase) { ["estudiante.prueba@usbmed.edu.co"] = (50, "3000999111") };
-
-    public int BusquedasDeCandidato { get; private set; }
-
-    public Task<(long IdAsistente, string IdAsis)?> BuscarEstudianteSinCuentaAsync(string correo)
-    {
-        BusquedasDeCandidato++;
-        if (_estudiantes.TryGetValue(correo.Trim(), out var e) && !_tabla.Values.Any(u => u.FkAsistente == e.Id))
-            return Task.FromResult<(long, string)?>((e.Id, e.Asis));
-        return Task.FromResult<(long, string)?>(null);
-    }
-
-    public Task<Usuario?> ProvisionarCuentaEstudianteAsync(string correo, string claveHash)
-    {
-        if (!_estudiantes.TryGetValue(correo.Trim(), out var e) || _tabla.Values.Any(u => u.FkAsistente == e.Id))
-            return Task.FromResult<Usuario?>(null);
-
-        _correos[e.Id] = correo.Trim();
-        var u = new Usuario
-        {
-            IdUsuario = _siguienteId++, FkAsistente = e.Id, NombreUsuario = correo.Split('@')[0].ToLowerInvariant(),
-            ClaveHash = claveHash, Activo = true, DebeCambiarClave = true, CreadoEn = DateTime.UtcNow,
-        };
-        _tabla[u.IdUsuario] = u;
-        return Task.FromResult<Usuario?>(u);
-    }
 
     public Task FijarDebeCambiarClaveAsync(long idUsuario, bool valor)
     {
@@ -4554,54 +4913,6 @@ class RepositorioRespuestaItemFalso : IRepositorioRespuestaItem
 }
 
 // ==========================================================================
-//  v7.1 · D50 · Repositorio FALSO de 'InscripcionCatedra'. Simula los tres
-//  procedimientos de la migración 049: cátedra 10 y personas 5 y 6 existen;
-//  cancelar conserva la fila (CANCELADA) y volver a inscribirse la reactiva.
-// ==========================================================================
-class RepositorioInscripcionCatedraFalso : IRepositorioInscripcionCatedra
-{
-    private readonly List<InscripcionCatedra> _tabla = new();
-    private long _siguiente = 1;
-
-    public Task<List<InscripcionCatedra>> ObtenerTodosAsync(long? fkAsistente, long? fkCatedra, bool soloActivas, int limite) =>
-        Task.FromResult(_tabla
-            .Where(i => (fkAsistente is null || i.FkAsistente == fkAsistente)
-                     && (fkCatedra is null || i.FkCatedra == fkCatedra)
-                     && (!soloActivas || i.Estado == "ACTIVA"))
-            .Take(limite).ToList());
-
-    public Task<string> InscribirAsync(long fkCatedra, long fkAsistente)
-    {
-        if (fkCatedra != 10) return Task.FromResult("CATEDRA_NO_DISPONIBLE");
-        if (fkAsistente != 5 && fkAsistente != 6) return Task.FromResult("PERSONA_NO_DISPONIBLE");
-
-        var existente = _tabla.FirstOrDefault(i => i.FkCatedra == fkCatedra && i.FkAsistente == fkAsistente);
-        if (existente is null)
-        {
-            _tabla.Add(new InscripcionCatedra { IdInscripcion = _siguiente++, FkCatedra = fkCatedra, FkAsistente = fkAsistente,
-                                                Estado = "ACTIVA", InscritaEn = DateTime.UtcNow });
-            return Task.FromResult("INSCRITA");
-        }
-        if (existente.Estado == "CANCELADA")
-        {
-            existente.Estado = "ACTIVA";
-            existente.CanceladaEn = null;
-            return Task.FromResult("INSCRITA");
-        }
-        return Task.FromResult("YA_INSCRITA");
-    }
-
-    public Task<string> CancelarAsync(long fkCatedra, long fkAsistente)
-    {
-        var existente = _tabla.FirstOrDefault(i => i.FkCatedra == fkCatedra && i.FkAsistente == fkAsistente && i.Estado == "ACTIVA");
-        if (existente is null) return Task.FromResult("NO_INSCRITA");
-        existente.Estado = "CANCELADA";
-        existente.CanceladaEn = DateTime.UtcNow;
-        return Task.FromResult("CANCELADA");
-    }
-}
-
-// ==========================================================================
 //  v7.1 · D52 · Repositorio FALSO de 'Disponibilidad'. Guarda los últimos
 //  parámetros recibidos y simula una sola sesión ocupada: la de las 14:00 a
 //  las 16:00 del 20-oct-2026 (hora de Colombia) en SAN_BENITO, donde participa el ponente 7.
@@ -4647,7 +4958,7 @@ class RepositorioDisponibilidadFalso : IRepositorioDisponibilidad
 // ==========================================================================
 //  v7.1 · D53 · Repositorio FALSO de 'QrSesion'. La sesión 7 existe y termina a las
 //  18:00 UTC del 20-oct-2026; emitir crea un QR con ventana [17:45, 18:00); regenerar
-//  revoca el vigente. La asistencia simulada: 2 inscritos (1 asistió) + 1 que asistió sin inscribirse.
+//  revoca el vigente. La asistencia simulada: 2 personas que registraron.
 // ==========================================================================
 class RepositorioQrSesionFalso : IRepositorioQrSesion
 {
@@ -4675,7 +4986,7 @@ class RepositorioQrSesionFalso : IRepositorioQrSesion
         {
             IdEnlace = _siguiente++, FkSesion = 7, Token = Guid.NewGuid(),
             VentanaDesde = FinSesion.AddMinutes(-15), VentanaHasta = FinSesion,
-            RequiereInscripcion = true, YaExistia = false,
+            YaExistia = false,
         };
         return Task.FromResult<QrSesion?>(_vigente);
     }
@@ -4685,8 +4996,7 @@ class RepositorioQrSesionFalso : IRepositorioQrSesion
 
     public Task<List<AsistenciaSesion>> AsistenciaAsync(long fkSesion) => Task.FromResult(new List<AsistenciaSesion>
     {
-        new() { FkAsistente = 1, Nombres = "Ana", Apellidos = "A", Inscrito = true, Asistio = true, RegistradoEn = FinSesion.AddMinutes(-5), Latitud = 6.24m, Longitud = -75.58m, Origen = "QR" },
-        new() { FkAsistente = 2, Nombres = "Beto", Apellidos = "B", Inscrito = true, Asistio = false },
-        new() { FkAsistente = 3, Nombres = "Cami", Apellidos = "C", Inscrito = false, Asistio = true, RegistradoEn = FinSesion.AddMinutes(-3), Origen = "QR" },
+        new() { FkAsistente = 1, Nombres = "Ana", Apellidos = "A", RegistradoEn = FinSesion.AddMinutes(-5), Latitud = 6.24m, Longitud = -75.58m, Origen = "QR" },
+        new() { FkAsistente = 3, Nombres = "Cami", Apellidos = "C", RegistradoEn = FinSesion.AddMinutes(-3), Origen = "QR" },
     });
 }

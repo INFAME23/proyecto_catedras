@@ -1,0 +1,82 @@
+{% extends 'admin/base_admin.html' %}
+{# ==========================================================================
+   admin/restriccion_lista.html  ·  Subversión v7.1 (D57)
+   Periodos y horarios en que se pueden programar cátedras.
+   ========================================================================== #}
+{% block titulo %}Periodos y horarios de programación · Administración{% endblock %}
+{% block contenido %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Periodos y horarios de programación</li>
+    </ol>
+</nav>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <h1 class="h3 fw-bold mb-0"><i class="fas fa-user-clock text-primary-custom me-2"></i>Periodos y horarios de programación</h1>
+    <a class="btn btn-primary" href="{{ url_for('admin.restricciones_nueva') }}"><i class="fas fa-plus me-1"></i>Nueva ventana</a>
+</div>
+<p class="text-muted small">
+    Las cátedras se dictan en periodos específicos. Cada <strong>ventana</strong> dice en qué fechas, a qué horas y qué días de la semana
+    se pueden programar sesiones. Con al menos una ventana <strong>activa</strong>, no se puede crear ni mover una sesión a un horario que no
+    quepa en alguna de ellas (la regla la aplica la base de datos: vale para cátedras nuevas, sesiones nuevas y cambios de fecha u hora).
+    Las sesiones que ya existen no cambian.
+</p>
+
+{% if error %}
+<div class="alert alert-danger" role="alert">{{ error.mensaje }} {{ error.detalle or '' }}</div>
+{% elif not hay_activas %}
+<div class="alert alert-warning small" role="alert" id="aviso-sin-restriccion">
+    <i class="fas fa-info-circle me-1"></i><strong>Hoy no hay restricción:</strong> sin ninguna ventana activa se puede programar en cualquier fecha y hora.
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        {% if ventanas %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Ventana</th><th>Fechas</th><th>Horas</th><th>Días</th><th>Estado</th><th class="text-end">Acciones</th></tr>
+                </thead>
+                <tbody>
+                    {% for v in ventanas %}
+                    <tr class="{{ 'text-muted' if not v.activo }}">
+                        <td class="fw-semibold">{{ v.nombre }}</td>
+                        <td class="text-nowrap">
+                            {{ v.fecha_desde }} → {{ v.fecha_hasta }}
+                            <div class="small">
+                                {% if v.periodo == 'vigente' %}<span class="badge badge-success">Hoy dentro del periodo</span>
+                                {% elif v.periodo == 'futura' %}<span class="badge badge-warning">Aún no empieza</span>
+                                {% else %}<span class="badge badge-secondary">Periodo terminado</span>{% endif %}
+                            </div>
+                        </td>
+                        <td class="text-nowrap">{% if v.hora_desde %}{{ v.hora_desde[:5] }} – {{ v.hora_hasta[:5] }}{% else %}<span class="text-muted">Todo el día</span>{% endif %}</td>
+                        <td>{% if v.dias_semana %}{% for d in v.dias_semana %}<span class="badge badge-secondary me-1">{{ abreviatura[d] }}</span>{% endfor %}{% else %}<span class="text-muted">Todos</span>{% endif %}</td>
+                        <td>
+                            <form method="post" action="{{ url_for('admin.restricciones_estado', id_restriccion=v.id_restriccion) }}" class="d-inline">
+                                <button class="btn btn-sm {{ 'btn-success' if v.activo else 'btn-outline-secondary' }}" type="submit"
+                                        title="{{ 'Activa: limita la programación. Clic para pausarla.' if v.activo else 'Pausada: no limita. Clic para activarla.' }}">
+                                    <i class="fas {{ 'fa-toggle-on' if v.activo else 'fa-toggle-off' }} me-1"></i>{{ 'Activa' if v.activo else 'Pausada' }}
+                                </button>
+                            </form>
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-primary" title="Editar" href="{{ url_for('admin.restricciones_editar', id_restriccion=v.id_restriccion) }}"><i class="fas fa-edit"></i></a>
+                            <form class="d-inline" method="post" action="{{ url_for('admin.restricciones_eliminar', id_restriccion=v.id_restriccion) }}"
+                                  data-confirmar="¿Eliminar la ventana «{{ v.nombre }}»? Las sesiones ya creadas no cambian."
+                                  onsubmit="return confirm(this.dataset.confirmar);">
+                                <button class="btn btn-sm btn-outline-danger" type="submit" title="Eliminar"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% elif not error %}
+        <p class="text-muted text-center py-4 mb-0">No hay ventanas. Crea la primera con «Nueva ventana».</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

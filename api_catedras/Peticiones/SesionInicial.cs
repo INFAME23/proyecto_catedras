@@ -84,13 +84,10 @@ public class SesionInicial
     /// <summary>Enlace virtual. Opcional; si llega, 1 a 300 caracteres.</summary>
     [StringLength(300, MinimumLength = 1,
         ErrorMessage = "El campo 'enlace_virtual' debe tener entre 1 y 300 caracteres.")]
+    [RegularExpression(@"^https?://\S+$", ErrorMessage = "El campo 'enlace_virtual' debe empezar por http:// o https://.")]
     [JsonPropertyName("enlace_virtual")]
     public string? EnlaceVirtual { get; set; }
 
-    /// <summary>Cupo. Opcional; si llega, mayor que 0 (refleja chk_sesion_cupo).</summary>
-    [Range(1, int.MaxValue, ErrorMessage = "El campo 'cupo' debe ser mayor que 0.")]
-    [JsonPropertyName("cupo")]
-    public int? Cupo { get; set; }
 
     /// <summary>Estado. Opcional (por defecto PROGRAMADA); lista cerrada (refleja chk_sesion_estado).</summary>
     [RegularExpression("^(PROGRAMADA|ABIERTA|CERRADA|MIGRADA)$",

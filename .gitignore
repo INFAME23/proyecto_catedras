@@ -34,3 +34,5 @@ out/
 #  algún día aparece un archivo .env con secretos, que no se suba.
 .env
 .env.*
+
+api_catedras/appsettings.Production.json

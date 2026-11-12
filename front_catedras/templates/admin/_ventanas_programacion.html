@@ -1,0 +1,13 @@
+{# ==========================================================================
+   admin/_ventanas_programacion.html  ·  Subversión v7.1 (D57)
+   Aviso fijo (no es un flash) con los periodos y horarios en que se pueden programar sesiones, si el
+   administrador definió alguno. Se incluye en los formularios de cátedra y de sesión.
+   ========================================================================== #}
+{% set ventanas = ventanas_programacion() %}
+{% if ventanas %}
+<div class="alert alert-info small" role="note" id="ventanas-programacion">
+    <i class="fas fa-user-clock me-1"></i><strong>Solo se pueden programar sesiones en:</strong>
+    <ul class="mb-1 mt-1">{% for w in ventanas %}<li>{{ w.texto }}</li>{% endfor %}</ul>
+    <a href="{{ url_for('admin.restricciones_listar') }}">Cambiar periodos y horarios</a>
+</div>
+{% endif %}
