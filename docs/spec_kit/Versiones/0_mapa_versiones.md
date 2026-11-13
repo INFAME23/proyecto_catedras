@@ -86,6 +86,16 @@ Requisitos `RF-S1`…`RF-S7`, decisiones D38–D55 y pendientes:
 [version7_1/v7_1_subversion.md](version7_1/v7_1_subversion.md). Agrega las
 migraciones `045`–`054`, una tabla de apoyo (`codigo_recuperacion`, sin CRUD) y UN recurso nuevo de la API (`InscripcionCatedra`, tabla `inscripcion_catedra`): el mapa pasa de 37 a 38 controladores (39 con `Disponibilidad`, y 40 con `QrSesion`: consultas y el QR de cierre, sin tabla propia).
 
+### Subversión v7.2 (2026-11-12)
+
+Mantenimiento sobre V5–V7, **no es una V8** ni agrega tablas al mapa (siguen las 37): registro público de asistencia con tres
+tipos de asistente (estudiante, docente, externo) **sin la clave por correo**, ubicación verificada contra las coordenadas de la
+sede solo en sesiones presenciales, carga idempotente de estudiantes y exportación de fin de periodo por cátedra. Requisitos
+`RF-S8`…`RF-S14`, decisiones D60–D72 y pendientes:
+[version7_2/v7_2_subversion.md](version7_2/v7_2_subversion.md). Agrega las migraciones `060`–`066` (columnas nuevas en `sede`,
+`registro_asistencia` y `asistente`, y funciones y procedimientos; sin tablas nuevas) y **tres controladores de la API**
+(`AsistenciaPublica`, `CargaEstudiante` y `Exportacion`, esta última de solo lectura): los archivos de controlador pasan de 42 a 45.
+
 ## 3. Salvedad: la FK circular con `usuario`
 
 `lote_carga_asistente` (V3) y `enlace_registro` (V5) tienen una FK a

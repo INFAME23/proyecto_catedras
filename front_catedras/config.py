@@ -16,6 +16,12 @@ class Config:
     URL_PUBLICA = (os.environ.get('URL_PUBLICA') or '').strip()
     TEMPLATES_AUTO_RELOAD = True
 
+    # v7.2 · P15: cuántos proxies de confianza hay delante del front (0 = ninguno; en Render, 1). Ver app.py (ProxyFix).
+    try:
+        PROXY_CONFIABLES = int(os.environ.get('PROXY_CONFIABLES') or 0)
+    except ValueError:
+        PROXY_CONFIABLES = 0
+
     # v7.1 · RF-S6: correo real (servicios/correo.py). Todo por entorno; ninguna
     # credencial en el código. Sin SMTP_HOST el correo queda apagado y la
     # recuperación de clave avisa que no pudo enviar el código.

@@ -77,7 +77,8 @@ public class RepositorioSedePostgres : IRepositorioSede
     {
         const string sql = @"
             CALL catedras.sp_crear_sede(
-                @IdSede, @Nombre, @Direccion, @EsVirtual, @Activo, NULL);";
+                @IdSede, @Nombre, @Direccion, @EsVirtual, @Activo, NULL,
+                @Latitud, @Longitud, @RadioMetros);";
 
         await using var conexion = new NpgsqlConnection(_cadenaConexion);
 
@@ -111,12 +112,21 @@ public class RepositorioSedePostgres : IRepositorioSede
         bool esVirtual = datos.TryGetValue("es_virtual", out var vVirtual) ? (bool)vVirtual! : actual.EsVirtual;
         bool activo = datos.TryGetValue("activo", out var vActivo) ? (bool)vActivo! : actual.Activo;
 
+        // v7.2: ubicación y radio. Si NINGUNA de las tres claves llegó, no se toca la ubicación
+        // (el procedimiento recibe p_actualizar_geo = false). Si llegó alguna, se mezcla con lo guardado:
+        // lo que no llegó se conserva y un null explícito la borra.
+        bool cambiaUbicacion = datos.ContainsKey("latitud") || datos.ContainsKey("longitud") || datos.ContainsKey("radio_metros");
+        decimal? latitud = datos.TryGetValue("latitud", out var vLat) ? (decimal?)vLat : actual.Latitud;
+        decimal? longitud = datos.TryGetValue("longitud", out var vLon) ? (decimal?)vLon : actual.Longitud;
+        int? radioMetros = datos.TryGetValue("radio_metros", out var vRadio) ? (int?)vRadio : actual.RadioMetros;
+
         // 3) Llamar al procedimiento con el conjunto COMPLETO.
         const string sqlActualizar = @"
             CALL catedras.sp_actualizar_sede(
-                @idSede, @nombre, @direccion, @esVirtual, @activo, NULL);";
+                @idSede, @nombre, @direccion, @esVirtual, @activo, NULL,
+                @latitud, @longitud, @radioMetros, @cambiaUbicacion);";
         string? resultadoJson = await conexion.QuerySingleAsync<string?>(
-            sqlActualizar, new { idSede, nombre, direccion, esVirtual, activo });
+            sqlActualizar, new { idSede, nombre, direccion, esVirtual, activo, latitud, longitud, radioMetros, cambiaUbicacion });
 
         // El procedimiento deja p_resultado en NULL si ya no existía
         // (carrera entre el paso 1 y el paso 3) — mismo "0 filas" de antes.

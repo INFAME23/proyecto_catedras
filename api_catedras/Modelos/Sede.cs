@@ -58,4 +58,28 @@ public class Sede
     /// <summary>¿La sede está activa? Por defecto true.</summary>
     [JsonPropertyName("activo")]
     public bool Activo { get; set; } = true;
+
+    // ----------------------------------------------------------------------
+    //  v7.2 (migración 060): dónde está la sede, para comprobar que quien
+    //  registra asistencia en una sesión presencial está en el lugar.
+    // ----------------------------------------------------------------------
+
+    /// <summary>Latitud en grados (-90 a 90). Null en sedes virtuales o sin completar. Va junto a la longitud.</summary>
+    [JsonPropertyName("latitud")]
+    public decimal? Latitud { get; set; }
+
+    /// <summary>Longitud en grados (-180 a 180). Va junto a la latitud.</summary>
+    [JsonPropertyName("longitud")]
+    public decimal? Longitud { get; set; }
+
+    /// <summary>Radio propio de la sede en metros (10 a 5000). Null = se usa el parámetro RADIO_VALIDACION_METROS.</summary>
+    [JsonPropertyName("radio_metros")]
+    public int? RadioMetros { get; set; }
+
+    /// <summary>
+    /// Solo lectura: el radio que de verdad se aplicará (el de la sede o, si no tiene,
+    /// el parámetro global). Lo calcula la base de datos; se ignora al escribir.
+    /// </summary>
+    [JsonPropertyName("radio_efectivo_metros")]
+    public int? RadioEfectivoMetros { get; set; }
 }

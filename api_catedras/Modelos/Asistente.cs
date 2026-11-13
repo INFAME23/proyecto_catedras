@@ -80,4 +80,16 @@ public class Asistente
     /// <summary>Lote de carga masiva que lo creó. Null si se creó a mano.</summary>
     [JsonPropertyName("fk_lote_carga")]
     public long? FkLoteCarga { get; set; }
+
+    /// <summary>Solo lectura (071). Nombres de los roles VIGENTES de su cuenta de usuario (Administrador,
+    /// Asistente...). Solo viene en el listado; [] si no tiene cuenta.</summary>
+    [JsonPropertyName("roles_cuenta")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? RolesCuenta { get; set; }
+
+    /// <summary>Solo lectura (071). Nombres de sus vinculaciones VIGENTES (Estudiante USB, Docente USB,
+    /// Publico externo...). Solo viene en el listado.</summary>
+    [JsonPropertyName("vinculaciones")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Vinculaciones { get; set; }
 }

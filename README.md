@@ -8,6 +8,47 @@ de `bdcatedras`. Se apoya en las encuestas de la v6, el login y registro de
 asistencia de la v5, las sesiones de la v4, las personas de la v3, la
 estructura académica de la v2 y la arquitectura en capas de la v1.
 
+## Subversión v7.2 (asistencia por QR con 3 tipos de asistente)
+
+Mantenimiento sobre V5–V7, **no es una V8**: sin tablas nuevas (sigue en 37 recursos) y con requisitos `RF-S8`…`RF-S14`,
+decisiones `D60`…`D72` y las migraciones `060`–`066`. Documento completo, con lo decidido, lo verificado y los riesgos:
+[docs/spec_kit/Versiones/version7_2/v7_2_subversion.md](docs/spec_kit/Versiones/version7_2/v7_2_subversion.md).
+
+- **Registro público sin clave por correo (D60).** Quien escanea el QR ve la cátedra y tres opciones: **estudiante** (con su
+  carnet), **docente** (cédula, nombre, contacto y facultad) y **externo** (cédula, nombre, contacto y de dónde viene). La clave de
+  6 dígitos de la v5 ya no se usa (sus rutinas siguen en la API y la BD, «sin efecto desde D60»).
+- **Ubicación solo en sesiones presenciales y contra la sede (D61, D62).** Si el enlace es de canal QR se pide la ubicación y debe
+  caer dentro del **radio de la sede** (`sede.latitud/longitud` + `radio_metros`, o el parámetro `RADIO_VALIDACION_METROS` = 200 m);
+  fuera del radio la asistencia **se rechaza** y no queda registro. En sesiones virtuales no se pide y `latitud`/`longitud` quedan
+  `NULL`. Se avisa **antes** de que la persona escriba nada (aviso temprano) y se vuelve a verificar dentro del procedimiento
+  almacenado. Las sesiones `HIBRIDA` quedaron fuera (la modalidad está desactivada; si existieran, se comportan como presenciales).
+- **El QR no se genera si la sede no tiene coordenadas (D72)**, con un mensaje que nombra la sede a completar en `/admin/sedes`.
+- **Carga de estudiantes** (`/carga_datos`): archivo `CC, Carnet_estudiante, Programa` + periodo en un `<select>`; es **idempotente**
+  por carnet (D68): volver a subirlo actualiza, no duplica.
+- **Exportación de fin de periodo** (`/admin/exportar`, solo ADMIN): por cátedra, un CSV de estudiantes, otro de docentes y otro de
+  externos, el catálogo del periodo y un ZIP con todo. Sirve para contar **a cuántas cátedras asistió cada estudiante** (cuántos
+  archivos contienen su carnet); el sistema no calcula ese total.
+- **IP real detrás de un proxy:** pon `PROXY_CONFIABLES=1` en Render (ver `front_catedras/env.ejemplo`). Sin eso se guarda la IP del proxy.
+
+**Aplicarlo a una base que ya existe** (el compose solo ejecuta las migraciones con un volumen nuevo), en orden y **antes** de
+desplegar la API y el front nuevos:
+
+```bash
+for f in 060_sede_coordenadas 061_registro_publico_columnas 062_qr_exige_sede_con_coordenadas 063_sp_registro_publico 064_sp_cargar_estudiante 065_programas_archivo 066_exportacion_catedras; do docker exec -i mi_v1_catedras_postgres psql -U sa -d bdcatedras_postgres_local -v ON_ERROR_STOP=1 -q < db/postgres/migraciones/$f.sql; done
+```
+
+Son idempotentes (se pueden repetir). Los 9 programas de la `065` (`INDS`, `ADMO`…) llevan datos **ficticios** con el sufijo «(mock)».
+
+**Verificarlo:**
+
+```bash
+dotnet run --project api_catedras/pruebas                      # prueba de capas (689 pasadas; 1 fallida que ya fallaba: Bitácora)
+docker exec mi_v1_catedras_front python pruebas/prueba_v72.py  # front con la API simulada (104 pasadas)
+powershell -ExecutionPolicy Bypass -File .\api_catedras\pruebas\verificar_v72.ps1   # API y PostgreSQL reales (114 pasadas); ESCRIBE datos de prueba
+```
+
+Prueba SQL de las migraciones (no deja rastro): `db/postgres/pruebas/prueba_migraciones_v72.sql` (118 casos).
+
 ## Subversión v7.1 (mantenimiento sobre V5–V7)
 
 Sin tablas de negocio nuevas en el mapa (sigue en 37 recursos) y sin romper el

@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+{% block titulo %}Registro de asistencia · Cátedras USB{% endblock %}
+{% block contenido %}
+{#
+  v7.2 · RF-S9 · Página pública tras escanear el QR. Muestra la cátedra y TRES opciones (Estudiante, Docente,
+  Externo); con ?tipo=... muestra el formulario de esa opción. Sin cuenta y sin clave por correo (D60).
+  Los textos de estado NO usan la clase '.alert': main.js borra los '.alert' a los 5 s y aquí deben quedarse.
+#}
+<div class="row justify-content-center">
+    <div class="col-md-9 col-lg-7">
+        <div class="card shadow-sm animate-fade-in">
+            <div class="card-body p-4">
+
+                {# ---------- La cátedra y la sesión ---------- #}
+                <div class="text-center mb-3">
+                    <i class="fas fa-clipboard-check fa-3x text-primary-custom mb-2"></i>
+                    <p class="text-muted small mb-1">Registro de asistencia</p>
+                    <h1 class="h4 fw-bold mb-1">{{ enlace.titulo_catedra }}</h1>
+                    <p class="text-muted mb-0">
+                        Sesión {{ enlace.numero_reunion }}{% if enlace.titulo_sesion %} · {{ enlace.titulo_sesion }}{% endif %}
+                        · {{ enlace.inicio|fecha_hora }}
+                    </p>
+                    <p class="mb-0 mt-1">
+                        <span class="badge badge-secondary">{{ enlace.modalidad|capitalize }}</span>
+                        {% if enlace.requiere_ubicacion %}<span class="badge badge-primary"><i class="fas fa-map-marker-alt me-1"></i>Se verifica tu ubicación</span>{% endif %}
+                    </p>
+                </div>
+
+                {% if not abierto %}
+                {# ---------- El registro no está abierto ---------- #}
+                <div class="border border-warning rounded-3 p-3 text-center bg-light">
+                    <i class="fas fa-lock fa-2x text-warning mb-2"></i>
+                    {% if enlace.estado_ventana == 'pendiente' %}
+                    <div class="fw-semibold">Todavía no se puede registrar la asistencia.</div>
+                    <div class="small text-muted">El registro abre el {{ enlace.ventana_desde|fecha_hora }}.</div>
+                    {% elif enlace.estado_ventana == 'revocado' %}
+                    <div class="fw-semibold">Este enlace ya no es válido.</div>
+                    <div class="small text-muted">Se generó uno nuevo para la sesión: escanea el código QR vigente.</div>
+                    {% else %}
+                    <div class="fw-semibold">El registro de esta sesión ya cerró.</div>
+                    <div class="small text-muted">Cerró el {{ enlace.ventana_hasta|fecha_hora }}.</div>
+                    {% endif %}
+                </div>
+
+                {% elif tipo is none %}
+                {# ---------- Las tres opciones ---------- #}
+                <h2 class="h6 fw-bold text-center mb-3">¿Cómo te vas a registrar?</h2>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <a class="card text-center text-decoration-none h-100 shadow-custom shadow-custom-hover" href="{{ url_for('registro.solicitar', token=token, tipo='estudiante') }}">
+                            <div class="card-body">
+                                <i class="fas fa-user-graduate fa-2x text-primary-custom mb-2"></i>
+                                <h3 class="h6 fw-bold mb-1">Estudiante</h3>
+                                <p class="text-muted small mb-0">Con tu código de estudiante.</p>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a class="card text-center text-decoration-none h-100 shadow-custom shadow-custom-hover" href="{{ url_for('registro.solicitar', token=token, tipo='docente') }}">
+                            <div class="card-body">
+                                <i class="fas fa-chalkboard-teacher fa-2x text-primary-custom mb-2"></i>
+                                <h3 class="h6 fw-bold mb-1">Docente</h3>
+                                <p class="text-muted small mb-0">Cédula, nombre, contacto y facultad.</p>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a class="card text-center text-decoration-none h-100 shadow-custom shadow-custom-hover" href="{{ url_for('registro.solicitar', token=token, tipo='externo') }}">
+                            <div class="card-body">
+                                <i class="fas fa-user-friends fa-2x text-primary-custom mb-2"></i>
+                                <h3 class="h6 fw-bold mb-1">Externo</h3>
+                                <p class="text-muted small mb-0">Cédula, nombre, contacto y de dónde vienes.</p>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+                <p class="small text-muted text-center mt-3 mb-0">No necesitas cuenta ni clave.</p>
+
+                {% else %}
+                {# ---------- El formulario de UNA opción ---------- #}
+                <h2 class="h5 fw-bold mb-3">
+                    {% if tipo == 'estudiante' %}<i class="fas fa-user-graduate text-primary-custom me-2"></i>Registro de estudiante
+                    {% elif tipo == 'docente' %}<i class="fas fa-chalkboard-teacher text-primary-custom me-2"></i>Registro de docente
+                    {% else %}<i class="fas fa-user-friends text-primary-custom me-2"></i>Registro de externo{% endif %}
+                </h2>
+
+                {# D61: si la sesión es presencial (canal QR), static/geolocalizacion.js pide la ubicación y consulta
+                   el aviso temprano antes de dejar escribir; en una sesión virtual el formulario va sin ubicación. #}
+                <form method="post" action="{{ url_for('registro.registrar', token=token, tipo=tipo) }}"
+                      {% if enlace.requiere_ubicacion %}data-requiere-ubicacion data-url-ubicacion="{{ url_for('registro.ubicacion', token=token) }}"{% endif %}>
+                    {% if enlace.requiere_ubicacion %}
+                    <input type="hidden" name="latitud" value="">
+                    <input type="hidden" name="longitud" value="">
+                    {% endif %}
+
+                    {# Con ubicación obligatoria los campos nacen BLOQUEADOS: la persona no escribe nada hasta que se
+                       comprueba que está en el lugar de la cátedra (el script los habilita). #}
+                    <fieldset {% if enlace.requiere_ubicacion %}disabled data-ubicacion-campos{% endif %}>
+                    {% if tipo == 'estudiante' %}
+                    <div class="mb-3">
+                        <label class="form-label" for="carnet">Código de estudiante (carnet)</label>
+                        <input type="text" class="form-control form-control-lg" id="carnet" name="carnet" required autofocus
+                               autocomplete="off" inputmode="numeric" minlength="5" maxlength="15" value="{{ valores.carnet }}">
+                    </div>
+                    {% else %}
+                    <div class="mb-3">
+                        <label class="form-label" for="cedula">Cédula</label>
+                        <input type="text" class="form-control" id="cedula" name="cedula" required autocomplete="off"
+                               inputmode="numeric" minlength="4" maxlength="20" value="{{ valores.cedula }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="nombre">Nombre completo</label>
+                        <input type="text" class="form-control" id="nombre" name="nombre" required autocomplete="name"
+                               maxlength="200" value="{{ valores.nombre }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="contacto">Contacto <span class="text-muted fw-normal">(correo o celular)</span></label>
+                        <input type="text" class="form-control" id="contacto" name="contacto" required autocomplete="email"
+                               maxlength="254" value="{{ valores.contacto }}" placeholder="nombre@correo.com o 3001234567">
+                    </div>
+                    {% if tipo == 'docente' %}
+                    <div class="mb-3">
+                        <label class="form-label" for="fk_facultad">Facultad</label>
+                        <select class="form-select" id="fk_facultad" name="fk_facultad" required>
+                            <option value="">— elige tu facultad —</option>
+                            {% for f in facultades %}
+                            <option value="{{ f.id_facultad }}" {{ 'selected' if f.id_facultad == valores.fk_facultad }}>{{ f.id_facultad }} · {{ f.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if not facultades %}<div class="form-text text-danger">No se pudo cargar la lista de facultades. Recarga la página.</div>{% endif %}
+                    </div>
+                    {% else %}
+                    <div class="mb-3">
+                        <label class="form-label" for="procedencia">¿De dónde vienes?</label>
+                        <input type="text" class="form-control" id="procedencia" name="procedencia" required
+                               maxlength="150" value="{{ valores.procedencia }}" placeholder="Institución, empresa, colegio o ciudad">
+                    </div>
+                    {% endif %}
+                    {% endif %}
+                    </fieldset>
+
+                    {% if errores %}
+                    <div class="border border-danger rounded-3 p-2 mb-3">
+                        <ul class="mb-0 small text-danger">
+                            {% for e in errores %}<li>{{ e.campo }}: {{ e.mensaje }}</li>{% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+
+                    {% if enlace.requiere_ubicacion %}
+                    {# Estado de la ubicación. NO lleva la clase 'alert': main.js borra los '.alert' a los 5 s. #}
+                    <div data-ubicacion-estado aria-live="polite" class="small rounded-3 p-2 mb-3 border text-muted bg-light">
+                        Solicitando tu ubicación…
+                    </div>
+                    <noscript>
+                        <div class="border border-danger rounded-3 p-2 mb-3 small text-danger">
+                            Activa JavaScript: sin él no se puede obtener la ubicación, que es obligatoria en una sesión presencial.
+                        </div>
+                    </noscript>
+                    {% endif %}
+
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-primary" type="submit" {% if enlace.requiere_ubicacion %}data-ubicacion-enviar disabled{% endif %}>
+                            <i class="fas fa-check me-1"></i>Registrar mi asistencia
+                        </button>
+                        {% if enlace.requiere_ubicacion %}
+                        <button class="btn btn-outline-primary" type="button" data-ubicacion-reintentar hidden>
+                            <i class="fas fa-location-crosshairs me-1"></i>Intentar de nuevo
+                        </button>
+                        {% endif %}
+                        <a class="btn btn-outline-secondary" href="{{ url_for('registro.solicitar', token=token) }}">Cambiar de opción</a>
+                    </div>
+                    {% if enlace.requiere_ubicacion %}
+                    <p class="form-text mt-2 mb-0">
+                        <i class="fas fa-map-marker-alt me-1"></i>Comprobamos que estés en el lugar de la cátedra y guardamos la ubicación desde la que te registras.
+                    </p>
+                    {% endif %}
+                </form>
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% if tipo and abierto and enlace.requiere_ubicacion %}<script src="{{ url_for('static', filename='geolocalizacion.js') }}"></script>{% endif %}
+{% endblock %}

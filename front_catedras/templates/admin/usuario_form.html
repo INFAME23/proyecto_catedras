@@ -1,4 +1,5 @@
 {% extends 'admin/base_admin.html' %}
+{% import 'partials/filas_detalle.html' as fd %}
 {% block titulo %}{{ 'Nuevo usuario' if modo == 'nueva' else 'Editar usuario' }} · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
@@ -10,38 +11,45 @@
 </nav>
 <h1 class="h3 fw-bold mb-3"><i class="fas fa-user-lock text-primary-custom me-2"></i>{{ 'Nuevo usuario' if modo == 'nueva' else 'Editar usuario ' ~ usr.usuario }}</h1>
 
-{% if modo == 'nueva' %}
-{# Regla 2 (guía IA): con 14.811 personas no cabe un <select> con todas. Paso 1: buscar
-   (GET, la API filtra con ?q=). Paso 2: elegir de los resultados y llenar el formulario. #}
-<div class="card shadow-sm mb-3">
-    <div class="card-body">
-        <h2 class="h6 fw-bold">Paso 1 · Buscar a la persona</h2>
-        <form class="d-flex gap-2" method="get" action="{{ url_for('admin.usuarios_nuevo') }}">
-            <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="Nombre, apellido o código ASIS" autocomplete="off">
-            <button class="btn btn-outline-primary" type="submit"><i class="fas fa-search"></i></button>
-        </form>
-        {% if q and not candidatos %}<p class="text-muted small mt-2 mb-0">Nadie coincide con «{{ q }}».</p>{% endif %}
-    </div>
-</div>
-{% endif %}
-
 <div class="card shadow-sm">
     <div class="card-body">
-        {% if modo == 'nueva' %}<h2 class="h6 fw-bold">Paso 2 · Datos de la cuenta</h2>{% endif %}
         <form method="post"
               action="{{ url_for('admin.usuarios_nuevo') if modo == 'nueva' else url_for('admin.usuarios_editar', id_usuario=usr.id_usuario) }}">
 
             {% if modo == 'nueva' %}
-            <div class="mb-3">
-                <label class="form-label" for="fk_asistente">Persona ({{ candidatos|length }} resultado{{ '' if candidatos|length == 1 else 's' }})</label>
-                <select class="form-select" id="fk_asistente" name="fk_asistente" required {{ 'disabled' if not candidatos }}>
-                    {% if not candidatos %}<option value="">— primero busca a la persona —</option>{% endif %}
-                    {% for a in candidatos %}
-                    <option value="{{ a.id_asistente }}" {{ 'selected' if usr and usr.fk_asistente == a.id_asistente }}>{{ a.id_asistente }} · {{ a.nombres }} {{ a.apellidos }}{% if a.id_asis %} · {{ a.id_asis }}{% endif %}</option>
-                    {% endfor %}
-                </select>
-                <div class="form-text">Cada persona puede tener una sola cuenta.</div>
+            {# Maestro-detalle (Guía IA, Regla 1): el usuario SE CREA, no se busca. Persona + cuenta + roles
+               viajan en el MISMO POST y la API los guarda en UNA transacción (sp_guardar_usuario). #}
+            <h2 class="h6 fw-bold mb-1">1 · La persona</h2>
+            <p class="form-text mt-0 mb-3">Se crea junto con la cuenta. Debe tener al menos un correo.</p>
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <label class="form-label" for="nombres">Nombres</label>
+                    <input type="text" class="form-control" id="nombres" name="nombres" maxlength="100" required
+                           value="{{ usr.nombres if usr else '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="apellidos">Apellidos</label>
+                    <input type="text" class="form-control" id="apellidos" name="apellidos" maxlength="100" required
+                           value="{{ usr.apellidos if usr else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="correo_institucional">Correo institucional</label>
+                    <input type="email" class="form-control" id="correo_institucional" name="correo_institucional" maxlength="254"
+                           value="{{ usr.correo_institucional if usr and usr.correo_institucional else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="correo_personal">Correo personal</label>
+                    <input type="email" class="form-control" id="correo_personal" name="correo_personal" maxlength="254"
+                           value="{{ usr.correo_personal if usr and usr.correo_personal else '' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="celular">Celular <span class="text-muted small">(opcional)</span></label>
+                    <input type="text" class="form-control" id="celular" name="celular" maxlength="20"
+                           value="{{ usr.celular if usr and usr.celular else '' }}">
+                </div>
             </div>
+
+            <h2 class="h6 fw-bold mb-3">2 · La cuenta</h2>
             {% else %}
             <div class="mb-3">
                 <label class="form-label">Persona</label>
@@ -71,11 +79,37 @@
                 </div>
             </div>
 
-            <div class="form-check mb-3">
+            <div class="form-check mb-2">
                 <input class="form-check-input" type="checkbox" id="activo" name="activo"
                        {{ 'checked' if (usr is none or usr.activo) }}>
                 <label class="form-check-label" for="activo">Activo (puede iniciar sesión)</label>
             </div>
+            {% if modo == 'nueva' %}
+            <div class="form-check mb-4">
+                <input class="form-check-input" type="checkbox" id="debe_cambiar_clave" name="debe_cambiar_clave"
+                       {{ 'checked' if (usr is none or usr.debe_cambiar_clave) }}>
+                <label class="form-check-label" for="debe_cambiar_clave">Debe cambiar la clave en su primer ingreso</label>
+            </div>
+
+            {# ---- Detalle: roles, en filas (Guía IA, Regla 4). Sin checkboxes dentro de la fila. ---- #}
+            <h2 class="h6 fw-bold mb-2">3 · Roles</h2>
+            {% call(f) fd.bloque('roles', 'Roles de la cuenta', 'fa-user-tag', filas_roles, 'Agregar rol',
+                                 ayuda='Se guardan JUNTO con la persona y la cuenta: si alguno falla (login o correo repetido, rol repetido...), no se crea nada. Cada rol puede ir una sola vez. Debe haber al menos uno.') %}
+            <div class="row g-2">
+                <div class="col-md-7">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Rol</span>
+                        <select class="form-select form-select-sm" name="rol_fk_rol" required>
+                            <option value="">-- Selecciona --</option>
+                            {% for r in roles_catalogo %}<option value="{{ r.id_rol }}" {% if f and f.fk_rol == r.id_rol %}selected{% endif %}>{{ r.id_rol }} · {{ r.nombre }}</option>{% endfor %}
+                        </select></label>
+                </div>
+                <div class="col-md-5">
+                    <label class="w-100"><span class="form-label small d-block mb-1">Desde <span class="text-muted">(vacío = hoy)</span></span>
+                        <input type="date" class="form-control form-control-sm" name="rol_fecha_ini" value="{{ f.fecha_ini if f else '' }}"></label>
+                </div>
+            </div>
+            {% endcall %}
+            {% endif %}
 
             {% if errores %}
             <div class="alert alert-danger py-2">
@@ -86,7 +120,7 @@
             {% endif %}
 
             <div class="d-flex gap-2">
-                <button class="btn btn-primary" type="submit" {{ 'disabled' if modo == 'nueva' and not candidatos }}><i class="fas fa-save me-1"></i>Guardar</button>
+                <button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i>Guardar</button>
                 <a class="btn btn-outline-secondary" href="{{ url_for('admin.usuarios_listar') }}">Cancelar</a>
             </div>
         </form>

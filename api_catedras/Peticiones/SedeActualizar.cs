@@ -28,7 +28,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 /// <summary>Body del PATCH /api/Sede/{id_sede}. Todo opcional.</summary>
-public class SedeActualizar
+public class SedeActualizar : IValidatableObject
 {
     /// <summary>Nuevo nombre. Si llega: no vacío, hasta 80 caracteres.</summary>
     [StringLength(80, MinimumLength = 1,
@@ -50,6 +50,31 @@ public class SedeActualizar
     [JsonPropertyName("activo")]
     public bool? Activo { get; set; }
 
+    // ----------------------------------------------------------------------
+    //  v7.2 (RF-S11): ubicación de la sede. Los tres campos son OPCIONALES:
+    //  una sede virtual no los lleva, y una sede física sin ellos no podrá
+    //  generar QR (migración 062) hasta que se completen.
+    // ----------------------------------------------------------------------
+
+    /// <summary>Latitud en grados, entre -90 y 90. Va junto a la longitud.</summary>
+    [Range(-90.0, 90.0, ErrorMessage = "El campo 'latitud' debe estar entre -90 y 90.")]
+    [JsonPropertyName("latitud")]
+    public decimal? Latitud { get; set; }
+
+    /// <summary>Longitud en grados, entre -180 y 180. Va junto a la latitud.</summary>
+    [Range(-180.0, 180.0, ErrorMessage = "El campo 'longitud' debe estar entre -180 y 180.")]
+    [JsonPropertyName("longitud")]
+    public decimal? Longitud { get; set; }
+
+    /// <summary>Radio propio de la sede en metros (10 a 5000). Sin él se usa el parámetro global.</summary>
+    [Range(10, 5000, ErrorMessage = "El campo 'radio_metros' debe estar entre 10 y 5000.")]
+    [JsonPropertyName("radio_metros")]
+    public int? RadioMetros { get; set; }
+
+    /// <summary>Regla de dos campos: latitud y longitud juntas o ninguna (-> 422).</summary>
+    public IEnumerable<ValidationResult> Validate(ValidationContext contexto) =>
+        ValidacionGeo.LatitudYLongitudJuntas(Latitud, Longitud);
+
     /// <summary>
     /// Ayuda para el servicio: arma el diccionario columna -> valor SOLO con
     /// los campos que llegaron (no null). Lista blanca de columnas: nunca
@@ -64,6 +89,11 @@ public class SedeActualizar
         if (Direccion is not null) datos["direccion"] = Direccion;
         if (EsVirtual is not null) datos["es_virtual"] = EsVirtual;
         if (Activo is not null) datos["activo"] = Activo;
+
+        // v7.2: solo viajan los campos de ubicación que llegaron (latitud y longitud, validadas, vienen juntas).
+        if (Latitud is not null) datos["latitud"] = Latitud;
+        if (Longitud is not null) datos["longitud"] = Longitud;
+        if (RadioMetros is not null) datos["radio_metros"] = RadioMetros;
 
         return datos;
     }

@@ -13,12 +13,23 @@
 //  (sp_validar_clave_y_registrar_geo): este script es la comodidad, no la
 //  garantía.
 //
+//  v7.2 · RF-S10 (cambia lo anterior): la ubicación ya solo se pide en sesiones PRESENCIALES
+//  (canal QR); en una sesión virtual la página ni carga este script. Además de pedirla, ahora:
+//   · comprueba que esté DENTRO del radio de la sede (AVISO TEMPRANO): apenas el navegador la
+//     entrega consulta <form data-url-ubicacion> y, si la persona está fuera, lo dice ANTES de que
+//     escriba nada («Parece que no estás en el lugar de la cátedra») y deja todo bloqueado;
+//   · mantiene bloqueados los campos (<fieldset data-ubicacion-campos>) hasta que la ubicación sirva.
+//  El aviso es una comodidad: la verificación DEFINITIVA la hace la base de datos al registrar.
+//  Si el aviso no se puede consultar (sin red), no se bloquea: ya vendrá la definitiva.
+//
 //  Marcado que espera la página:
 //    <form data-requiere-ubicacion> con
 //      · <input name="latitud"> y <input name="longitud"> (ocultos),
 //      · [data-ubicacion-estado]   el texto de estado (aria-live),
 //      · [data-ubicacion-reintentar] el botón de reintento,
-//      · [data-ubicacion-enviar]   el botón de enviar.
+//      · [data-ubicacion-enviar]   el botón de enviar,
+//      · (v7.2) data-url-ubicacion en el <form>: la ruta del aviso temprano, y
+//        <fieldset data-ubicacion-campos disabled> con los campos que se habilitan al estar en el lugar.
 //
 //  Ojo: los navegadores solo entregan la ubicación en un contexto seguro
 //  (https:// o http://localhost). Abrir el front por la IP de la red
@@ -36,6 +47,12 @@
     var estado = formulario.querySelector('[data-ubicacion-estado]');
     var reintentar = formulario.querySelector('[data-ubicacion-reintentar]');
     var enviar = formulario.querySelector('[data-ubicacion-enviar]');
+    var campos = formulario.querySelector('[data-ubicacion-campos]');   // v7.2: campos bloqueados hasta estar en el lugar
+    var urlAviso = formulario.getAttribute('data-url-ubicacion');       // v7.2: aviso temprano (puede no estar)
+
+    function habilitarCampos(si) {
+        if (campos) campos.disabled = !si;
+    }
 
     function mostrar(tipo, texto) {
         // tipo: 'espera' | 'ok' | 'error'
@@ -51,20 +68,56 @@
         campoLat.value = '';
         campoLng.value = '';
         enviar.disabled = true;
+        habilitarCampos(false);
         reintentar.hidden = false;
         mostrar('error', motivo);
+    }
+
+    function listo(precision) {
+        enviar.disabled = false;
+        habilitarCampos(true);
+        reintentar.hidden = true;
+        mostrar('ok', 'Ubicación obtenida (precisión aproximada de ' + precision + ' m). Ya puedes registrar tu asistencia.');
     }
 
     function alObtener(posicion) {
         var lat = posicion.coords.latitude;
         var lng = posicion.coords.longitude;
+        var precision = Math.round(posicion.coords.accuracy);
         // numeric(9,6) en la BD: seis decimales (~0,1 m), de sobra para un GPS.
         campoLat.value = lat.toFixed(6);
         campoLng.value = lng.toFixed(6);
-        enviar.disabled = false;
-        reintentar.hidden = true;
-        var precision = Math.round(posicion.coords.accuracy);
-        mostrar('ok', 'Ubicación obtenida (precisión aproximada de ' + precision + ' m). Ya puedes registrar tu asistencia.');
+
+        // Sin aviso temprano configurado: comportamiento de la v7.1.
+        if (!urlAviso || !window.fetch) {
+            listo(precision);
+            return;
+        }
+
+        // v7.2 · AVISO TEMPRANO: ¿está dentro del radio de la sede? Aún no puede escribir nada.
+        mostrar('espera', 'Comprobando que estés en el lugar de la cátedra…');
+        fetch(urlAviso + '?latitud=' + encodeURIComponent(campoLat.value) + '&longitud=' + encodeURIComponent(campoLng.value),
+              { headers: { 'Accept': 'application/json' } })
+            .then(function (respuesta) {
+                return respuesta.json().then(function (datos) { return { http: respuesta.status, datos: datos }; });
+            })
+            .then(function (r) {
+                var d = r.datos || {};
+                if (d.estado === 'OK') {
+                    listo(precision);
+                } else {
+                    // Fuera del radio, enlace cerrado, sede sin coordenadas...: el mensaje ya viene en español.
+                    var texto = d.mensaje || 'No se pudo comprobar tu ubicación.';
+                    if (d.estado === 'FUERA_DE_RADIO' && d.distancia_metros) {
+                        texto += ' (Estás a unos ' + Math.round(d.distancia_metros) + ' m de la sede.) Si crees que es un error, activa el GPS y pulsa «Intentar de nuevo».';
+                    }
+                    bloquear(texto);
+                }
+            })
+            .catch(function () {
+                // Sin red o sin respuesta: no se bloquea. La base de datos vuelve a comprobarlo al registrar.
+                listo(precision);
+            });
     }
 
     function alFallar(error) {
@@ -78,6 +131,7 @@
 
     function pedir() {
         enviar.disabled = true;
+        habilitarCampos(false);
         reintentar.hidden = true;
 
         if (!('geolocation' in navigator)) {

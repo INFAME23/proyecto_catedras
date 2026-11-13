@@ -103,6 +103,43 @@ public class RepositorioUsuarioPostgres : IRepositorioUsuario
         return (creado.IdUsuario, creado.CreadoEn);
     }
 
+    public async Task<(long IdUsuario, long FkAsistente, DateTime CreadoEn)> GuardarConRolesAsync(
+        Asistente persona, Usuario usuario, IReadOnlyList<(string FkRol, DateOnly? FechaIni)> roles)
+    {
+        // Guía IA, Regla 1: UN 'CALL' guarda persona + cuenta + roles en la misma transacción
+        // (067_sp_guardar_usuario.sql). El hash ya viene calculado en usuario.ClaveHash.
+        const string sql = @"
+            CALL catedras.sp_guardar_usuario(
+                @Nombres, @Apellidos, @CorreoInstitucional, @CorreoPersonal, @Celular,
+                @NombreUsuario, @ClaveHash, @Activo, @DebeCambiarClave,
+                CAST(@Roles AS jsonb), NULL);";
+
+        // El formato que lee el SP (e ->> 'fk_rol', ...) es un detalle del MOTOR: el JSON se arma aquí.
+        string rolesJson = System.Text.Json.JsonSerializer.Serialize(roles.Select(r => new
+        {
+            fk_rol = r.FkRol,
+            fecha_ini = r.FechaIni,   // DateOnly -> "2026-01-20"; null -> el SP usa hoy
+        }));
+
+        await using var conexion = new NpgsqlConnection(_cadenaConexion);
+        string? json = await conexion.QuerySingleAsync<string?>(sql, new
+        {
+            persona.Nombres,
+            persona.Apellidos,
+            persona.CorreoInstitucional,
+            persona.CorreoPersonal,
+            persona.Celular,
+            usuario.NombreUsuario,
+            usuario.ClaveHash,
+            usuario.Activo,
+            usuario.DebeCambiarClave,
+            Roles = rolesJson,
+        });
+
+        var creado = LectorJsonSp.Fila<Usuario>(json)!;
+        return (creado.IdUsuario, creado.FkAsistente, creado.CreadoEn);
+    }
+
     public async Task<int> ActualizarAsync(long idUsuario, Dictionary<string, object?> datos)
     {
         await using var conexion = new NpgsqlConnection(_cadenaConexion);

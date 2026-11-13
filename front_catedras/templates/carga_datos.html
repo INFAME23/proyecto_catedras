@@ -17,8 +17,13 @@
     <div class="card-body">
         <h2 class="h5 fw-bold">Resultado · lote <a href="{{ url_for('admin.lotes_detalle', id_lote_carga=resultado.id_lote_carga) }}">{{ resultado.id_lote_carga }}</a>
             <span class="badge {{ 'badge-success' if resultado.cerrado else 'badge-danger' }}">{{ 'Cerrado' if resultado.cerrado else 'Abierto' }}</span></h2>
-        <p class="small text-muted mb-3">{{ resultado.nombre_archivo }} · {{ resultado.total_archivo }} filas con datos en el archivo</p>
+        <p class="small text-muted mb-3">{{ resultado.nombre_archivo }} · {{ resultado.total_archivo }} filas con datos en el archivo
+            {% if resultado.modo_estudiantes %}· <span class="badge badge-primary">Archivo de estudiantes · periodo {{ resultado.periodo }}</span>{% endif %}</p>
         {% with lote = resultado %}{% include 'partials/resumen_lote.html' %}{% endwith %}
+        {% if resultado.modo_estudiantes %}
+        <p class="small mb-3"><strong>{{ resultado.creadas }}</strong> estudiantes nuevos · <strong>{{ resultado.actualizadas }}</strong> que ya existían y se actualizaron
+            (volver a subir el mismo archivo no duplica a nadie).</p>
+        {% endif %}
         <h3 class="h6 fw-bold mt-2">Filas rechazadas</h3>
         {% with novedades = resultado.novedades %}{% include 'partials/tabla_novedades.html' %}{% endwith %}
     </div>
@@ -32,12 +37,33 @@
                 <label class="form-label" for="archivo">Archivo (.xlsx o .csv)</label>
                 <input class="form-control" type="file" id="archivo" name="archivo" accept=".xlsx,.csv" required>
             </div>
+            <div class="mb-3">
+                <label class="form-label" for="periodo">Periodo académico <span class="text-muted fw-normal">(solo para el archivo de estudiantes)</span></label>
+                <select class="form-select" id="periodo" name="periodo">
+                    <option value="">— elige un periodo —</option>
+                    {% for p in periodos %}
+                    <option value="{{ p.id_periodo }}" {{ 'selected' if p.id_periodo == periodo }}>{{ p.id_periodo }} · {{ p.fecha_ini }} a {{ p.fecha_fin }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">El archivo de estudiantes no trae el periodo: los programas de esas personas quedan matriculados en el que elijas aquí. Los demás archivos ignoran este campo.</div>
+                {% if not periodos %}<div class="form-text text-danger">No se pudieron leer los periodos académicos: sin ellos no se puede cargar el archivo de estudiantes.</div>{% endif %}
+            </div>
             <button id="boton-carga" class="btn btn-primary" type="submit"><i class="fas fa-upload me-1"></i>Cargar</button>
             <span id="aviso-carga" class="text-muted small ms-2 d-none"><i class="fas fa-spinner fa-spin me-1"></i>Cargando fila por fila... con archivos grandes puede tardar varios minutos.</span>
         </form>
 
         <hr>
-        <h2 class="h6 fw-bold">Formato del archivo</h2>
+        <h2 class="h6 fw-bold">Archivo de estudiantes <span class="badge badge-primary">v7.2</span></h2>
+        <p class="small mb-1">Si la primera fila es exactamente <code>CC</code> · <code>Carnet_estudiante</code> · <code>Programa</code> (y nada más), el archivo se carga como <strong>archivo de estudiantes</strong>:</p>
+        <ul class="small">
+            <li><code>CC</code> es la cédula, <code>Carnet_estudiante</code> el código del estudiante y <code>Programa</code> el código de su programa (<code>INDS</code>, <code>ADMO</code>…).</li>
+            <li>El periodo sale del <strong>desplegable de arriba</strong> y la vinculación <code>ESTUDIANTE</code> empieza hoy.</li>
+            <li><strong>Es repetible:</strong> si el carnet ya existe se actualiza; si traía otra CC, la anterior queda como no vigente; si estaba en otro programa <em>del mismo periodo</em>, ese pasa a <em>retirado</em>.</li>
+            <li>No trae nombres ni correo: las personas nuevas quedan como «Estudiante &lt;carnet&gt;» hasta que se complete su ficha.</li>
+        </ul>
+        <p class="small"><a href="{{ url_for('static', filename='ejemplos/estudiantes_ejemplo.csv') }}">Descargar un archivo de estudiantes de ejemplo</a> (3 filas, la tercera con un programa que no existe).</p>
+
+        <h2 class="h6 fw-bold">Formato del archivo de personas</h2>
         <p class="small mb-1">La primera fila debe tener los nombres de las columnas (no importan mayúsculas ni tildes). Columnas reconocidas:</p>
         <p class="small"><code>id_asis</code> · <code>nombres</code> · <code>apellidos</code> · <code>nombre_completo</code> · <code>correo_institucional</code> · <code>correo_personal</code> · <code>celular</code> · <code>es_externo</code> (si/no) · <code>tipo_documento</code> (por defecto CC) · <code>documento</code> · <code>tipo_vinculacion</code> · <code>programa</code> (código, nombre o alias) · <code>periodo</code></p>
         <p class="small mb-0">El archivo se interpreta aquí; quien decide si una fila es válida es la API. <a href="{{ url_for('static', filename='ejemplos/asistentes_ejemplo.csv') }}">Descargar un archivo de ejemplo</a> (3 filas, la tercera inválida a propósito).</p>

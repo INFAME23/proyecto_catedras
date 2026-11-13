@@ -332,17 +332,17 @@ $tokC = (Llamar GET "/api/EnlaceRegistro/$($enlC.Json.id_enlace)").Json.token
 Verificar "Un enlace emitido por el administrador (v5) sigue funcionando igual" ((Llamar POST "/api/ClaveAcceso/solicitar" @{ identificador = "30000124724"; token = $tokC }).Codigo -eq 200)
 
 # Todas las modalidades tienen su QR: el CANAL sale de la modalidad (RN-13 del script provisto): presencial -> QR,
-# virtual y telepresencial -> ENLACE, hibrida -> QR. (Antes todos salian como QR y la BD rechazaba los virtuales.)
+# virtual y telepresencial -> QR (catalogo de este proyecto: modalidad.canal_difusion = QR; ver la migracion 073: no piden ubicacion).
 function SesionModal($modalidad, $sede) {
     @{ inicio = (IsoQr $ahoraQr.AddMinutes(-50)); fin = (IsoQr $ahoraQr.AddMinutes(10)); fk_modalidad = $modalidad; fk_sede = $sede; fk_periodo = "2026-2"; lugar = "Sala $modalidad" }
 }
 $catMod = Llamar POST "/api/Catedra" @{
     id_evento_asis = ("{0:D9}" -f (Get-Random -Minimum 900000000 -Maximum 999999999)); nombre = "Catedra de prueba de modalidades"; fk_tipo_evento = $tipoQr; activo = $true
-    sesiones = @((SesionModal "PRESENCIAL" "SAN_BENITO"), (SesionModal "VIRTUAL" "VIRTUAL"), (SesionModal "TELEPRESENCIAL" "VIRTUAL"), (SesionModal "HIBRIDA" "BELLO"))
+    sesiones = @((SesionModal "PRESENCIAL" "SAN_BENITO"), (SesionModal "VIRTUAL" "VIRTUAL"), (SesionModal "TELEPRESENCIAL" "VIRTUAL"))
 }
 Verificar "Se crea una catedra con una sesion de cada modalidad" ($catMod.Codigo -eq 200) $catMod
 $sesMod = @((Llamar GET "/api/Sesion?fkCatedra=$($catMod.Json.id_catedra)").Json.datos)
-foreach ($par in @(@("PRESENCIAL", "QR"), @("VIRTUAL", "ENLACE"), @("TELEPRESENCIAL", "ENLACE"), @("HIBRIDA", "QR"))) {
+foreach ($par in @(@("PRESENCIAL", "QR"), @("VIRTUAL", "QR"), @("TELEPRESENCIAL", "QR"))) {
     $sm = $sesMod | Where-Object { $_.fk_modalidad -eq $par[0] } | Select-Object -First 1
     $qm = Llamar POST "/api/QrSesion" @{ fk_sesion = $sm.id_sesion }
     Verificar "Sesion $($par[0]): el QR se genera (200) con canal $($par[1])" ($qm.Codigo -eq 200 -and $qm.Json.canal -eq $par[1] -and $qm.Json.token) $qm
@@ -352,7 +352,7 @@ $qV = Llamar GET "/api/QrSesion?fkSesion=$($smV.id_sesion)"
 $solV = Llamar POST "/api/ClaveAcceso/solicitar" @{ identificador = "30000124724"; token = $qV.Json.token }
 $regV = Llamar POST "/api/ClaveAcceso/validar" @{ id_clave = $solV.Json.id_clave; clave = $solV.Json.clave; latitud = $lat; longitud = $lng }
 Verificar "Sesion virtual: se registra la asistencia con el QR (200), sin inscripcion" ($solV.Codigo -eq 200 -and $regV.Codigo -eq 200) $regV
-Verificar "...y el origen del registro es ENLACE (el canal de la sesion virtual)" ((Llamar GET "/api/RegistroAsistencia/$($regV.Json.id_registro)").Json.origen -eq "ENLACE")
+Verificar "...y el origen del registro es QR (el canal de la sesion virtual)" ((Llamar GET "/api/RegistroAsistencia/$($regV.Json.id_registro)").Json.origen -eq "QR")
 
 # --------------------------------------------------------------------------
 Titulo "10. D55: solo el administrador inicia sesion; cambio obligatorio de clave a quien se marque"

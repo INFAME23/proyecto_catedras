@@ -84,7 +84,7 @@ public class SolicitudPonenteCrear
     [JsonPropertyName("fin")]
     public DateTimeOffset? Fin { get; set; }
 
-    /// <summary>Modalidad de la cátedra (PRESENCIAL, VIRTUAL, TELEPRESENCIAL, HIBRIDA...: las del catálogo). Obligatoria.</summary>
+    /// <summary>Modalidad de la cátedra (PRESENCIAL, VIRTUAL, TELEPRESENCIAL...: las del catálogo). Obligatoria.</summary>
     [Required(ErrorMessage = "El campo 'fk_modalidad' es obligatorio.")]
     [StringLength(15, MinimumLength = 1, ErrorMessage = "El campo 'fk_modalidad' no puede pasar de 15 caracteres.")]
     [JsonPropertyName("fk_modalidad")]

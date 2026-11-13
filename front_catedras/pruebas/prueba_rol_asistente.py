@@ -1,0 +1,142 @@
+# Prueba, sin BD ni API: el rol ASISTENTE inicia sesión y gestiona SOLO cátedras (listar, ver, agregar, editar,
+# borrar). Todo lo demás de /admin sigue siendo del ADMIN; estudiantes y ponentes siguen sin poder entrar.
+# La API se sustituye por datos falsos.
+# Uso, desde front_catedras:   python pruebas/prueba_rol_asistente.py
+import os
+import sys
+
+os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+sys.path.insert(0, '.')
+import werkzeug
+werkzeug.__version__ = '3'
+
+import app as A
+import routes.admin as AD
+import routes.admin_restricciones as AR
+import routes.auth as AU
+from servicios.api_catedras import ErrorApi
+
+CAT = {'id_catedra': 2, 'id_evento_asis': '000000002', 'nombre': 'Catedra Dos', 'nombre_asis': 'Catedra Dos', 'activo': True,
+       'fk_tipo_evento': 'CAAB', 'fk_dependencia': None, 'creado_en': '2026-01-01T00:00:00Z'}
+SES = {'id_sesion': 1, 'fk_catedra': 2, 'numero_reunion': 1, 'estado': 'PROGRAMADA', 'titulo': None, 'lugar': 'Aula 1',
+       'fk_modalidad': 'PRESENCIAL', 'fk_sede': 'SAN_BENITO', 'fk_periodo': '2026-2', 'fk_encuesta': None,
+       'inicio': '2030-01-01T10:00:00Z', 'fin': '2030-01-01T12:00:00Z'}
+llamadas = []
+roles_login = {'roles': ['ASISTENTE']}
+
+
+def listar(recurso, limite=None, **f):
+    return [CAT] if recurso == 'Catedra' else ([SES] if recurso == 'Sesion' else [])
+
+
+def obtener(recurso, i):
+    if recurso == 'Catedra':
+        return CAT
+    raise ErrorApi('No existe.', codigo=404)
+
+
+def crear(recurso, datos):
+    llamadas.append(('crear', recurso))
+    if recurso == 'Usuario/login':
+        return {'estado': 'autenticado', 'roles': roles_login['roles'],
+                'usuario': {'id_usuario': 9, 'usuario': 'asis', 'fk_asistente': 40, 'debe_cambiar_clave': False}}
+    if recurso == 'Catedra':
+        return {'id_catedra': 77, 'nombre_asis': datos['nombre'][:30]}
+    raise AssertionError(recurso)
+
+
+AD.listar, AD.obtener, AD.crear = listar, obtener, crear
+AD.reemplazar = lambda recurso, i, d: llamadas.append(('reemplazar', recurso, i))
+AD.eliminar = lambda recurso, i: llamadas.append(('eliminar', recurso, i))
+AD.consultar = lambda ruta, **p: {'disponible': True, 'total': 0, 'conflictos': [], 'datos': []}
+AD._opciones = lambda recurso: []
+AD._catalogos_sesion = lambda: {'modalidades': [], 'sedes': [], 'periodos': [], 'encuestas': [], 'estados': []}
+AR.consultar = lambda ruta, **p: {'permitido': True, 'hay_restricciones': False, 'mensaje': None, 'ventanas': []}
+AR.listar = lambda *a, **k: []
+AU.crear = crear
+
+app = A.app
+app.config['TESTING'] = True
+ok = fall = 0
+
+
+def v(caso, cond):
+    global ok, fall
+    print(('  OK    ' if cond else '  FALLA ') + caso)
+    ok += bool(cond)
+    fall += (not cond)
+
+
+def cliente(roles=None):
+    c = app.test_client()
+    if roles is not None:
+        with c.session_transaction() as s:
+            s['usuario'] = {'id_usuario': 9, 'usuario': 'asis', 'fk_asistente': 40}
+            s['roles'] = roles
+    return c
+
+
+ASISTENTE, ADMIN = ['ASISTENTE'], ['ADMIN']
+
+# ---------------------------------------------------------------- 1. inicio de sesión
+r = cliente().post('/login', data={'usuario': 'asis', 'clave': 'Clave-Asistente-1'})
+v('Un ASISTENTE inicia sesión y va a la lista de cátedras', r.status_code == 302 and r.headers['Location'].endswith('/admin/catedras'))
+roles_login['roles'] = ['ADMIN']
+r = cliente().post('/login', data={'usuario': 'admin', 'clave': 'x'})
+v('Un ADMIN sigue yendo a su panel', r.status_code == 302 and r.headers['Location'].endswith('/admin/'))
+for roles in (['ESTUDIANTE'], ['PONENTE', 'ESTUDIANTE'], []):
+    roles_login['roles'] = roles
+    v(f'Con los roles {roles or "ninguno"} el front tampoco deja entrar (401)', cliente().post('/login', data={'usuario': 'x', 'clave': 'x'}).status_code == 401)
+
+# ---------------------------------------------------------------- 2. lo que SÍ puede hacer: cátedras
+r = cliente(ASISTENTE).get('/admin/catedras')
+t = r.get_data(as_text=True)
+v('Lista las cátedras (200)', r.status_code == 200 and 'Catedra Dos' in t)
+v('...sin el enlace al panel de Administración en la miga de pan', 'href="/admin/"' not in t)
+v('La barra de navegación le ofrece «Gestionar cátedras» y no «Administración»',
+  'Gestionar cátedras' in t and 'fa-cogs' not in t)
+r = cliente(ASISTENTE).get('/admin/catedras/nueva')
+t = r.get_data(as_text=True)
+v('Abre el formulario de cátedra nueva (200)', r.status_code == 200 and 'name="nombre"' in t)
+r = cliente(ASISTENTE).get('/admin/catedras/2')
+t = r.get_data(as_text=True)
+v('Ve el detalle de una cátedra (200), con su botón Editar y Eliminar',
+  r.status_code == 200 and '/admin/catedras/2/editar' in t and '/admin/catedras/2/eliminar' in t)
+v('...pero sin ningún enlace a las pantallas de sesiones (no son suyas)',
+  '/admin/sesiones' not in t and 'Nueva sesión' not in t)
+r = cliente(ASISTENTE).get('/admin/catedras/2/editar')
+v('Abre el formulario de editar (200), sin enlaces a /admin/sesiones', r.status_code == 200 and '/admin/sesiones' not in r.get_data(as_text=True))
+r = cliente(ASISTENTE).post('/admin/catedras/nueva', data={'id_evento_asis': '000000077', 'nombre': 'Nueva Catedra', 'fk_tipo_evento': 'CAAB', 'activo': 'on'})
+v('AGREGA una cátedra (redirige al detalle) y la API recibe el POST',
+  r.status_code == 302 and '/admin/catedras/77' in r.headers['Location'] and ('crear', 'Catedra') in llamadas)
+r = cliente(ASISTENTE).post('/admin/catedras/2/editar', data={'id_evento_asis': '000000002', 'nombre': 'Catedra Dos v2', 'fk_tipo_evento': 'CAAB', 'activo': 'on'})
+v('EDITA una cátedra (redirige) y la API recibe el reemplazo', r.status_code == 302 and ('reemplazar', 'Catedra', 2) in llamadas)
+r = cliente(ASISTENTE).post('/admin/catedras/2/eliminar')
+v('BORRA una cátedra (redirige a la lista) y la API recibe el borrado', r.status_code == 302 and ('eliminar', 'Catedra', 2) in llamadas)
+r = cliente(ASISTENTE).get('/admin/catedras/disponibilidad', query_string={'inicio': '2030-01-01T10:00:00Z', 'fin': '2030-01-01T11:00:00Z', 'sede': 'SAN_BENITO'})
+v('Usa la consulta de disponibilidad del formulario (200)', r.status_code == 200)
+
+# ---------------------------------------------------------------- 3. lo que NO puede hacer: todo lo demás
+for ruta in ('/admin/', '/admin/usuarios', '/admin/usuarios/nuevo', '/admin/roles-usuario', '/admin/sedes', '/admin/sesiones/nueva',
+             '/admin/sesiones/1', '/admin/asistentes', '/admin/encuestas', '/admin/restricciones-programacion', '/admin/exportar'):
+    v(f'GET {ruta} -> 403', cliente(ASISTENTE).get(ruta).status_code == 403)
+antes = len(llamadas)
+r = cliente(ASISTENTE).post('/admin/usuarios/nuevo', data={'nombres': 'X'})
+v('POST /admin/usuarios/nuevo -> 403 y NO llega a la API', r.status_code == 403 and len(llamadas) == antes)
+r = cliente(ASISTENTE).post('/admin/usuarios/5/eliminar')
+v('POST /admin/usuarios/5/eliminar -> 403 y NO llega a la API', r.status_code == 403 and len(llamadas) == antes)
+r = cliente(ASISTENTE).post('/admin/sesiones/1/eliminar')
+v('POST /admin/sesiones/1/eliminar -> 403', r.status_code == 403)
+v('Las zonas de ponente y de estudiante ya no existen (404, D55): el asistente tampoco entra',
+  cliente(ASISTENTE).get('/ponente/').status_code in (403, 404) and cliente(ASISTENTE).get('/estudiante/').status_code in (403, 404))
+v('Sin sesión, /admin/catedras manda a /login', cliente().get('/admin/catedras').status_code == 302)
+v('Un ESTUDIANTE con sesión no entra ni a las cátedras de /admin (403)', cliente(['ESTUDIANTE']).get('/admin/catedras').status_code == 403)
+
+# ---------------------------------------------------------------- 4. el ADMIN conserva todo
+t = cliente(ADMIN).get('/admin/catedras/2').get_data(as_text=True)
+v('El ADMIN sigue viendo en el detalle los enlaces de sesiones y «Nueva sesión»', '/admin/sesiones/1' in t and 'Nueva sesión' in t)
+v('El ADMIN sigue viendo la miga «Administración»', 'href="/admin/"' in cliente(ADMIN).get('/admin/catedras').get_data(as_text=True))
+v('El ADMIN sigue entrando a /admin/usuarios', cliente(ADMIN).get('/admin/usuarios').status_code == 200)
+
+print(f'\n{ok} pasadas, {fall} fallidas')
+sys.exit(1 if fall else 0)

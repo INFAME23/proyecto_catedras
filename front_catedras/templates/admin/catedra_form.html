@@ -4,7 +4,7 @@
 {% block contenido %}
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
-        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        {% if tiene_rol('ADMIN') %}<li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>{% endif %}
         <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_listar') }}">Cátedra</a></li>
         <li class="breadcrumb-item active">{{ 'Nueva' if modo == 'nueva' else 'Editar' }}</li>
     </ol>
@@ -72,8 +72,8 @@
             <hr class="my-4">
             {% set existentes %}{% if sesiones_existentes %}
                 Ya tiene {{ sesiones_existentes|length }} sesion{{ '' if sesiones_existentes|length == 1 else 'es' }}:
-                {% for s in sesiones_existentes %}<a href="{{ url_for('admin.sesiones_detalle', id_sesion=s.id_sesion) }}">reunión {{ s.numero_reunion }}</a> ({{ s.inicio|fecha_hora('%Y-%m-%d') }}){{ ', ' if not loop.last }}{% endfor %}.
-                Se editan o borran en su propia pantalla; aquí solo se agregan nuevas.
+                {% for s in sesiones_existentes %}{% if tiene_rol('ADMIN') %}<a href="{{ url_for('admin.sesiones_detalle', id_sesion=s.id_sesion) }}">reunión {{ s.numero_reunion }}</a>{% else %}reunión {{ s.numero_reunion }}{% endif %} ({{ s.inicio|fecha_hora('%Y-%m-%d') }}){{ ', ' if not loop.last }}{% endfor %}.
+                {% if tiene_rol('ADMIN') %}Se editan o borran en su propia pantalla; aquí solo se agregan nuevas.{% else %}Aquí solo se agregan nuevas.{% endif %}
             {% endif %}{% endset %}
             {# v7.1 · D52 · ¿qué hay ocupado ese día? (lo pinta static/disponibilidad.js) #}
             <div class="card mb-3 border-info">

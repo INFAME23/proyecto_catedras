@@ -27,7 +27,7 @@
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
-                    <tr><th>Código</th><th>Nombre</th><th>Dirección</th><th>Virtual</th><th>Activo</th><th class="text-end">Acciones</th></tr>
+                    <tr><th>Código</th><th>Nombre</th><th>Dirección</th><th>Ubicación</th><th>Radio</th><th>Virtual</th><th>Activo</th><th class="text-end">Acciones</th></tr>
                 </thead>
                 <tbody>
                     {% for s in sedes %}
@@ -35,6 +35,15 @@
                         <td class="fw-semibold">{{ s.id_sede }}</td>
                         <td>{{ s.nombre }}</td>
                         <td>{{ s.direccion or '—' }}</td>
+                        {# v7.2: una sede FÍSICA sin coordenadas no puede generar QR para sus sesiones presenciales #}
+                        <td>
+                            {% if s.latitud is not none and s.longitud is not none %}
+                            <a href="https://www.google.com/maps?q={{ s.latitud }},{{ s.longitud }}" target="_blank" rel="noopener" class="small text-decoration-none">
+                                <i class="fas fa-map-marker-alt me-1"></i>{{ s.latitud }}, {{ s.longitud }}</a>
+                            {% elif s.es_virtual %}<span class="text-muted">—</span>
+                            {% else %}<span class="badge badge-danger" title="Sin coordenadas no se puede generar el QR de sus sesiones presenciales ni validar el lugar.">Sin coordenadas</span>{% endif %}
+                        </td>
+                        <td>{% if s.latitud is not none %}{{ s.radio_efectivo_metros }} m{% if s.radio_metros is none %} <span class="text-muted small">(general)</span>{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</td>
                         <td><span class="badge {{ 'badge-primary' if s.es_virtual else 'badge-secondary' }}">{{ 'Sí' if s.es_virtual else 'No' }}</span></td>
                         <td><span class="badge {{ 'badge-success' if s.activo else 'badge-danger' }}">{{ 'Sí' if s.activo else 'No' }}</span></td>
                         <td class="text-end">

@@ -1,41 +1,48 @@
 # ==========================================================================
-#  routes/registro.py  ·  Front Cátedras · Versión 5
+#  routes/registro.py  ·  Front Cátedras · Versión 5 (rehecho en la v7.2 · RF-S9/RF-S10)
 # --------------------------------------------------------------------------
 #  Autorregistro de asistencia: pantalla PÚBLICA (sin login, fuera de /admin).
 #
-#  Flujo de 2 pasos (RF149/RF150 de version5/2_spec.md):
-#    1) GET/POST /registro/<token>          -> la persona escribe su
-#       identificador; el front llama POST /api/ClaveAcceso/solicitar y
-#       recibe una clave de 6 dígitos de un solo uso.
-#    2) POST /registro/<token>/validar      -> la persona escribe esa clave;
-#       el front llama POST /api/ClaveAcceso/validar y queda registrada.
+#  v7.2 · D60: ya NO hay clave de 6 dígitos por correo. Quien escanea el QR ve
+#  el título de la cátedra y TRES opciones:
 #
-#  RNF12: la clave viaja en texto plano UNA sola vez, en la respuesta de
-#  'solicitar'. En producción llegaría por correo; aquí se MUESTRA en pantalla
-#  para simular el envío. El front nunca la guarda: ni en sesión ni en disco.
+#    · Estudiante -> escribe su código de estudiante (carnet).
+#    · Docente    -> cédula, nombre, contacto (correo o celular) y facultad.
+#    · Externo    -> cédula, nombre, contacto y de dónde viene.
 #
-#  v7.1 · RF-S1: 'validar' exige además la ubicación del navegador
-#  (campos ocultos 'latitud' y 'longitud', que llena static/geolocalizacion.js).
-#  Sin ella no se registra la asistencia; ver el comentario de ese archivo.
+#  Rutas:
+#    GET  /registro                       pegar el enlace (o el token) del QR
+#    GET  /registro/<token>               las 3 opciones (con ?tipo=... el formulario)
+#    POST /registro/<token>/<tipo>        registrar (tipo = estudiante | docente | externo)
+#    GET  /registro/<token>/ubicacion     JSON del AVISO TEMPRANO: ¿estás dentro del radio de la sede?
 #
-#  Las 5 razones por las que 'validar' puede fallar (clave incorrecta, usada,
-#  expirada, sin vinculación vigente) llegan como un 500 de la
-#  API (ADR D25); el texto de la razón viene en 'detalle' y se muestra tal cual.
+#  UBICACIÓN POR CANAL (D61): solo si el enlace es de canal QR (sesión presencial)
+#  se pide y se valida; en sesiones virtuales (canal ENLACE) no se pide ni se
+#  envía a la API. El canal NO se toma del formulario: se vuelve a leer de la API
+#  en cada envío (el navegador no es de fiar). Se verifica en DOS momentos:
+#    1. Aviso temprano: apenas el navegador entrega la ubicación, static/geolocalizacion.js
+#       consulta /registro/<token>/ubicacion y avisa ANTES de que la persona escriba nada.
+#    2. Verificación definitiva: dentro del procedimiento almacenado que registra
+#       (la BD no confía en la API ni la API en el front).
+#
+#  Los rechazos de negocio (fuera del radio, ya registrado, enlace cerrado...) llegan
+#  de la API como un 409 con un 'estado' (código) y un 'mensaje' listo para mostrar.
+#
+#  La IP que se guarda es la de request.remote_addr. Detrás de un proxy (Render) es la
+#  del PROXY salvo que se configure PROXY_CONFIABLES (app.py, ProxyFix).
 # ==========================================================================
 
 import ipaddress
 import math
 import re
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, session, url_for
 
-from servicios import correo
-from servicios.api_catedras import ErrorApi, crear, obtener
+from servicios.api_catedras import ErrorApi, consultar, crear, listar, obtener
 
 registro_bp = Blueprint('registro', __name__)
 
-# Vigencia de la clave (el parámetro CLAVE_VIGENCIA_MINUTOS de la BD vale 10); solo se usa para el texto del correo.
-CLAVE_VIGENCIA_MINUTOS = 10
+TIPOS = ('estudiante', 'docente', 'externo')
 
 # Un token es un UUID: 8-4-4-4-12 caracteres hexadecimales.
 _UUID = re.compile(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')
@@ -50,34 +57,62 @@ def _ip_cliente():
         return None
 
 
-def _ubicacion_del_formulario():
-    """(latitud, longitud) del formulario como números, o None si faltan,
-    no son números finitos o están fuera de rango. La API y la BD las
-    vuelven a validar; aquí solo se evita viajar con basura."""
+def _a_numero(texto):
+    """Texto -> número finito, o None. Acepta coma decimal."""
     try:
-        latitud = float(request.form.get('latitud', ''))
-        longitud = float(request.form.get('longitud', ''))
+        valor = float(str(texto).replace(',', '.'))
     except ValueError:
         return None
-    if not (math.isfinite(latitud) and math.isfinite(longitud)):
+    return valor if math.isfinite(valor) else None
+
+
+def _ubicacion(latitud, longitud):
+    """(latitud, longitud) como números, o None si faltan, no son números finitos o están
+    fuera de rango. La API y la BD las vuelven a validar; aquí solo se evita viajar con basura."""
+    lat, lon = _a_numero(latitud), _a_numero(longitud)
+    if lat is None or lon is None:
         return None
-    if not (-90 <= latitud <= 90 and -180 <= longitud <= 180):
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None
-    return latitud, longitud
+    return lat, lon
 
 
 def _motivo(ex):
-    """Texto para mostrar de un error de la API: la razón de negocio (detalle)
-    si existe; si no, el mensaje general."""
+    """Texto para mostrar de un error de la API: el mensaje listo para la persona; si la API no respondió,
+    un aviso genérico."""
     if ex.codigo is None:          # no hubo respuesta: la API está caída o inalcanzable
         return 'No se pudo contactar el servicio de registro. Intenta de nuevo en un momento.'
-    return (ex.detalle or ex.mensaje or 'No se pudo completar la operación.').strip()
+    return (ex.mensaje or ex.detalle or 'No se pudo completar la operación.').strip()
 
 
 def _token_o_404(token):
     if not _UUID.fullmatch(token):
         abort(404)
     return token.lower()
+
+
+def _enlace(token):
+    """Datos del enlace (título, canal, ventana...) o None si el token no existe.
+    Cualquier otro fallo de la API sube como ErrorApi."""
+    try:
+        return consultar(f'AsistenciaPublica/enlace/{token}')
+    except ErrorApi as ex:
+        if ex.codigo == 404:
+            return None
+        raise
+
+
+def _facultades():
+    """Facultades para el <select> del docente (Regla 2). Si la API no responde, [] y el formulario avisa."""
+    try:
+        return listar('Facultad', limite=1000)
+    except ErrorApi:
+        return []
+
+
+def _enlace_invalido(mensaje, texto=''):
+    flash(mensaje, 'error')
+    return render_template('registro_inicio.html', texto=texto), 404
 
 
 @registro_bp.route('/registro', methods=['GET', 'POST'])
@@ -94,89 +129,78 @@ def inicio():
     return redirect(url_for('registro.solicitar', token=encontrado.group(0).lower()))
 
 
-@registro_bp.route('/registro/<token>', methods=['GET', 'POST'])
+def _pantalla(token, enlace, tipo=None, valores=None, errores=None, estado=None):
+    """La página del enlace: las 3 opciones (tipo=None) o el formulario de UN tipo."""
+    return render_template('registro_opciones.html', token=token, enlace=enlace, tipo=tipo,
+                           valores=valores or {}, errores=errores or [], estado=estado,
+                           facultades=_facultades() if tipo == 'docente' else [],
+                           abierto=enlace.get('estado_ventana') == 'abierto')
+
+
+# El nombre del endpoint ('registro.solicitar') se conserva: lo usan el QR (servicios/qr_sesiones.py) y
+# las pantallas del administrador para armar el enlace público.
+@registro_bp.route('/registro/<token>', methods=['GET'])
 def solicitar(token):
-    """Paso 1: la persona dice quién es y la API le genera una clave."""
+    """Las 3 opciones tras escanear el QR; con ?tipo=estudiante|docente|externo, el formulario."""
     token = _token_o_404(token)
-
-    if request.method == 'GET':
-        return render_template('registro_solicitar.html', token=token,
-                               identificador='')
-
-    identificador = request.form.get('identificador', '').strip()
     try:
-        respuesta = crear('ClaveAcceso/solicitar', {
-            'identificador': identificador,
-            'token': token,
-            'ip': _ip_cliente(),
-        })
+        enlace = _enlace(token)
     except ErrorApi as ex:
-        # Identificador desconocido, enlace revocado o fuera de ventana (500),
-        # o campo vacío (422).
-        flash(_motivo(ex), 'error')
-        return render_template('registro_solicitar.html', token=token,
-                               identificador=identificador, errores=ex.errores)
+        return _enlace_invalido(_motivo(ex))
+    if enlace is None:
+        return _enlace_invalido('Este enlace de registro no existe. Escanea de nuevo el código QR de la sesión.')
 
-    # v7.1 · D53: la clave existe para que NADIE registre a otro: tiene que llegar al correo de la persona.
-    # Con el correo configurado se ENVÍA y no se muestra en pantalla. Sin correo configurado (desarrollo)
-    # se muestra, como simulación del envío (RNF12: se ve UNA vez).
-    clave_visible = respuesta['clave']
-    if correo.configurado():
-        try:
-            correo.enviar_clave_asistencia(respuesta['enviado_a'], respuesta['clave'], CLAVE_VIGENCIA_MINUTOS)
-            clave_visible = None
-        except (correo.ErrorEnvio, correo.CorreoNoConfigurado) as ex:
-            flash(f'{ex} Intenta de nuevo en un momento.', 'error')
-            return render_template('registro_solicitar.html', token=token, identificador=identificador)
-
-    return render_template('registro_validar.html', token=token,
-                           id_clave=respuesta['id_clave'],
-                           clave=clave_visible,
-                           enviado_a=respuesta['enviado_a'],
-                           enviada_por_correo=clave_visible is None,
-                           registrado=False)
+    tipo = request.args.get('tipo')
+    return _pantalla(token, enlace, tipo if tipo in TIPOS else None)
 
 
-@registro_bp.route('/registro/<token>/validar', methods=['POST'])
-def validar(token):
-    """Paso 2: la persona escribe la clave recibida y queda registrada."""
+def _campos_del_formulario(tipo):
+    """Lo que escribió la persona, ya sin espacios sobrantes (para volver a pintarlo si algo falla)."""
+    nombres = {'estudiante': ('carnet',),
+               'docente': ('cedula', 'nombre', 'contacto', 'fk_facultad'),
+               'externo': ('cedula', 'nombre', 'contacto', 'procedencia')}[tipo]
+    return {c: request.form.get(c, '').strip() for c in nombres}
+
+
+@registro_bp.route('/registro/<token>/<tipo>', methods=['POST'])
+def registrar(token, tipo):
+    """Registra la asistencia de un estudiante, un docente o un externo."""
     token = _token_o_404(token)
+    if tipo not in TIPOS:
+        abort(404)
 
     try:
-        id_clave = int(request.form.get('id_clave', ''))
-    except ValueError:
-        abort(400)
-    clave = request.form.get('clave', '').strip()
-
-    # v7.1 · RF-S1: la ubicación es obligatoria. static/geolocalizacion.js ya
-    # bloquea el botón sin ella; esto es la segunda barrera (el navegador no es
-    # de fiar). Se corta ANTES de llamar a la API para no gastar un intento
-    # de la clave.
-    ubicacion = _ubicacion_del_formulario()
-    if ubicacion is None:
-        flash('Falta tu ubicación: es obligatoria para registrar la asistencia. '
-              'Permite el acceso a la ubicación en el navegador y vuelve a intentarlo.', 'error')
-        return render_template('registro_validar.html', token=token, id_clave=id_clave,
-                               clave=None, enviado_a=None, registrado=False)
-
-    try:
-        respuesta = crear('ClaveAcceso/validar', {
-            'id_clave': id_clave,
-            'clave': clave,
-            'ip': _ip_cliente(),
-            'user_agent': (request.headers.get('User-Agent') or '')[:300] or None,
-            'latitud': ubicacion[0],
-            'longitud': ubicacion[1],
-        })
+        enlace = _enlace(token)
     except ErrorApi as ex:
-        # Cualquiera de las 5 razones de rechazo. La clave original NO se
-        # vuelve a mostrar: la persona ya la tiene.
-        flash(_motivo(ex), 'error')
-        return render_template('registro_validar.html', token=token, id_clave=id_clave,
-                               clave=None, enviado_a=None, registrado=False,
-                               errores=ex.errores)
+        return _enlace_invalido(_motivo(ex))
+    if enlace is None:
+        return _enlace_invalido('Este enlace de registro no existe. Escanea de nuevo el código QR de la sesión.')
 
-    # v7.1 · D55: sin cuentas de estudiante, la encuesta de la sesión se responde justo ahora, con este registro
+    valores = _campos_del_formulario(tipo)
+    datos = {'token': token, 'ip': _ip_cliente(),
+             'user_agent': (request.headers.get('User-Agent') or '')[:300] or None, **valores}
+
+    # D61: la ubicación solo se pide (y solo se manda) si el enlace es de canal QR. El canal sale de la API,
+    # no del formulario. Sin ubicación válida NO se llama a la API (segunda barrera después del JS).
+    if enlace.get('requiere_ubicacion'):
+        ubicacion = _ubicacion(request.form.get('latitud', ''), request.form.get('longitud', ''))
+        if ubicacion is None:
+            flash('Falta tu ubicación: es obligatoria en una sesión presencial. '
+                  'Permite el acceso a la ubicación en el navegador y vuelve a intentarlo.', 'error')
+            return _pantalla(token, enlace, tipo, valores)
+        datos['latitud'], datos['longitud'] = ubicacion
+
+    try:
+        respuesta = crear(f'AsistenciaPublica/{tipo}', datos)
+    except ErrorApi as ex:
+        if ex.estado == 'YA_REGISTRADO':
+            # No es un error de la persona: ya estaba registrada. Mensaje amistoso, sin 500 ni alarma.
+            return render_template('registro_listo.html', token=token, enlace=enlace, ya_registrado=True,
+                                   id_sesion_encuesta=None)
+        flash(_motivo(ex), 'error')
+        return _pantalla(token, enlace, tipo, valores, errores=ex.errores, estado=ex.estado)
+
+    # v7.1 · D55: sin cuentas, la encuesta de la sesión se responde justo ahora, con este registro
     # (queda en la cookie firmada; ver routes/encuestas.py). Si algo de esto falla, la asistencia ya quedó registrada.
     id_sesion_encuesta = None
     try:
@@ -188,5 +212,27 @@ def validar(token):
     except (ErrorApi, KeyError, TypeError):
         pass
 
-    return render_template('registro_validar.html', token=token, id_clave=id_clave,
-                           clave=None, enviado_a=None, registrado=True, id_sesion_encuesta=id_sesion_encuesta)
+    return render_template('registro_listo.html', token=token, enlace=enlace, ya_registrado=False,
+                           id_sesion_encuesta=id_sesion_encuesta)
+
+
+@registro_bp.route('/registro/<token>/ubicacion', methods=['GET'])
+def ubicacion(token):
+    """AVISO TEMPRANO (JSON): apenas el navegador entrega la ubicación, static/geolocalizacion.js
+    pregunta aquí si está dentro del radio de la sede. No guarda nada. Responde siempre JSON
+    {estado, mensaje, dentro, distancia_metros, radio_metros}; 'estado' es el código de la API."""
+    token = _token_o_404(token)
+    ubic = _ubicacion(request.args.get('latitud', ''), request.args.get('longitud', ''))
+    if ubic is None:
+        return jsonify(estado='DATOS_INVALIDOS', mensaje='La ubicación recibida no es válida.', dentro=None), 400
+
+    try:
+        r = consultar('AsistenciaPublica/ubicacion', token=token, latitud=ubic[0], longitud=ubic[1])
+    except ErrorApi as ex:
+        # 404 enlace inexistente; 409 revocado / fuera de ventana / sede sin coordenadas; sin código = API caída.
+        estado = ex.estado or 'ERROR'
+        return jsonify(estado=estado, mensaje=_motivo(ex), dentro=None), (ex.codigo or 502)
+
+    return jsonify(estado=r.get('estado'), mensaje=r.get('mensaje'), dentro=r.get('dentro'),
+                   distancia_metros=r.get('distancia_metros'), radio_metros=r.get('radio_metros'),
+                   requiere_ubicacion=r.get('requiere_ubicacion'))

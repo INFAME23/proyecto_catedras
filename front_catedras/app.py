@@ -17,6 +17,15 @@ from servicios import fechas               # v4: filtros de fecha y hora
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# v7.2 · P15: detrás de un proxy (Render) 'request.remote_addr' es la IP del PROXY, no la de la persona que
+# registra su asistencia. Con PROXY_CONFIABLES = N (número de proxies de confianza delante de la app; en Render, 1)
+# Flask lee la IP real del encabezado X-Forwarded-For. Con 0 (por defecto) NO se confía en ese encabezado: sin proxy
+# cualquiera podría escribirlo y falsear la IP guardada.
+if app.config['PROXY_CONFIABLES'] > 0:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    n = app.config['PROXY_CONFIABLES']
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n, x_host=n)
+
 CORS(app)
 
 # Ayudas de sesión para las plantillas (v5: leen la sesión real de Flask).

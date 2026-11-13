@@ -22,6 +22,10 @@ public interface IServicioUsuario
     /// que decidió la BD. Nunca devuelve el hash.</summary>
     Task<(long IdUsuario, DateTime CreadoEn)> CrearAsync(UsuarioCrear peticion);
 
+    /// <summary>Guía IA, Regla 1. Crea persona + usuario + roles en una sola transacción. Sin roles, roles
+    /// repetidos o sin ningún correo -> ArgumentException (400). La clave se hashea aquí.</summary>
+    Task<(long IdUsuario, long FkAsistente, DateTime CreadoEn)> CrearConRolesAsync(UsuarioConRolesCrear peticion);
+
     Task<int> ReemplazarAsync(long idUsuario, UsuarioReemplazo peticion);
     Task<int> ActualizarAsync(long idUsuario, UsuarioActualizar peticion);
     Task<int> EliminarAsync(long idUsuario);

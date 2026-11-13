@@ -103,10 +103,8 @@ def crear(recurso, d):
                                          'inicio': s['inicio'], 'fin': s['fin'], 'fk_modalidad': s['fk_modalidad'], 'fk_sede': s['fk_sede'],
                                          'fk_periodo': s['fk_periodo'], 'lugar': s.get('lugar')}
         return {'id_catedra': id_c, 'nombre_asis': d['nombre'][:30]}
-    if recurso == 'ClaveAcceso/solicitar':
-        return {'id_clave': 77, 'clave': '482915', 'enviado_a': 'ana@ejemplo.com'}
-    if recurso == 'ClaveAcceso/validar':
-        return {'id_registro': 900, 'estado': 'registrado'}
+    if recurso.startswith('AsistenciaPublica/'):     # v7.2 · D60: el registro público (sin clave por correo)
+        return {'estado': 'OK', 'mensaje': 'Asistencia registrada.', 'id_registro': 900, 'distancia_metros': 0.0, 'radio_metros': 200}
     raise AssertionError(recurso)
 
 
@@ -126,6 +124,12 @@ def consultar(ruta, **p):
         return {'disponible': True, 'total': 0, 'conflictos': []}
     if ruta == 'Disponibilidad/agenda':
         return {'total': len(db['agenda']), 'datos': db['agenda']}
+    if ruta.startswith('AsistenciaPublica/enlace/'):   # v7.2: la página pública del QR
+        return {'id_enlace': 1, 'id_sesion': 1, 'titulo_sesion': None, 'numero_reunion': 1, 'id_catedra': '000000002',
+                'titulo_catedra': 'Catedra Dos', 'inicio': iso(ahora - dt.timedelta(hours=1)), 'fin': iso(ahora + dt.timedelta(hours=1)),
+                'modalidad': 'PRESENCIAL', 'canal': 'QR', 'requiere_ubicacion': True,
+                'ventana_desde': iso(ahora - dt.timedelta(minutes=5)), 'ventana_hasta': iso(ahora + dt.timedelta(minutes=30)),
+                'estado_ventana': 'abierto'}
     raise AssertionError(ruta)
 
 
@@ -136,6 +140,8 @@ for m in (AD, SE, CA, EN, RG):
     m.obtener = obtener
 AD.crear = crear
 AD.consultar = consultar
+RG.crear = crear          # v7.2: el registro público llama a AsistenciaPublica/...
+RG.consultar = consultar
 # v7.1 · D57/D58: las consultas de periodos y horarios de programación no deben salir a una API real
 # (si un stack corre en :8142 con ventanas activas, el horario «libre» de esta prueba dejaría de serlo). Sin ventanas = todo permitido.
 import routes.admin_restricciones as AR
@@ -189,8 +195,8 @@ db['login_ok'] = False
 v('Con credenciales malas: 401', cliente().post('/login', data={'usuario': 'admin', 'clave': 'mala'}).status_code == 401)
 db['login_ok'] = True
 t = cliente().get('/login').get_data(as_text=True)
-v('La pantalla de login dice que es solo para el administrador y que estudiantes y ponentes no necesitan cuenta',
-  'Acceso solo para el administrador' in t and 'No necesitas cuenta' in t and 'correo institucional' not in t and 'código de estudiante' not in t)
+v('La pantalla de login dice que es solo para el personal (administrador y asistente) y que estudiantes y ponentes no necesitan cuenta',
+  'Acceso solo para el personal' in t and 'No necesitas cuenta' in t and 'correo institucional' not in t and 'código de estudiante' not in t)
 for ruta in ('/estudiante/', '/ponente/', '/ponente/catedras/', '/ponente/catedras/nueva', '/estudiante/catedras/2/inscribirse'):
     v(f'{ruta} ya no existe (404)', cliente(ADMIN).get(ruta).status_code == 404)
 v('Un usuario con sesión pero sin ADMIN no entra a /admin (403)', cliente(['ESTUDIANTE']).get('/admin/').status_code == 403)
@@ -382,22 +388,21 @@ js = open('static/main.js', encoding='utf-8-sig').read()
 v("main.js solo quita solos los flash de ÉXITO: ni los avisos ni los errores", "querySelectorAll('.alert.alert-success.alert-dismissible')" in js and "querySelectorAll('.alert')" not in js)
 
 # ------------------------------------------------------------------ 6. asistencia pública por QR + encuesta
-app.config['SMTP_HOST'] = ''
-app.config['CORREO_MODO_CONSOLA'] = False
-enviados.clear()
-t = cliente().post(f'/registro/{TOK}', data={'identificador': '300'}).get_data(as_text=True)
-v('Sin correo configurado (desarrollo): la clave se MUESTRA como simulación y no se manda nada', '482915' in t and 'Simulación del correo' in t and not enviados)
-app.config['SMTP_HOST'] = 'smtp.ejemplo.com'
-t = cliente().post(f'/registro/{TOK}', data={'identificador': '300'}).get_data(as_text=True)
-v('Con correo configurado: la clave se ENVÍA al correo de la persona y NO aparece en pantalla',
-  enviados == [('ana@ejemplo.com', '482915', 10)] and '482915' not in t and 'Te enviamos la clave a' in t)
-app.config['SMTP_HOST'] = ''
+# v7.2 · D60: ya no hay clave de 6 dígitos por correo. El QR abre tres opciones; el estudiante se registra con su carnet.
 t = cliente().get(f'/registro/{TOK}').get_data(as_text=True)
-v('El formulario del QR es público y empieza vacío (no hay cuenta que lo precargue)', 'name="identificador"' in t and 'value="9"' not in t)
+v('El QR abre la página pública con la cátedra y TRES opciones (estudiante, docente, externo), sin pedir clave ni correo',
+  'Catedra Dos' in t and 'Estudiante' in t and 'Docente' in t and 'Externo' in t and 'name="identificador"' not in t and 'Enviarme la clave' not in t)
+t = cliente().get(f'/registro/{TOK}?tipo=estudiante').get_data(as_text=True)
+v('La opción de estudiante pide solo el carnet y es pública (empieza vacía, no hay cuenta que la precargue)',
+  'name="carnet"' in t and 'value="9"' not in t)
 c2 = cliente()
-t = c2.post(f'/registro/{TOK}/validar', data={'id_clave': '77', 'clave': '482915', 'latitud': '6.24', 'longitud': '-75.58'}).get_data(as_text=True)
-v('Validar con clave y ubicación: «¡Asistencia registrada!» y se ofrece la encuesta de la sesión (tiene encuesta)',
+llam = len(db['llamadas'])
+t = c2.post(f'/registro/{TOK}/estudiante', data={'carnet': '30000124726', 'latitud': '6.24', 'longitud': '-75.58'}).get_data(as_text=True)
+v('Registrar con carnet y ubicación: «¡Asistencia registrada!» y se ofrece la encuesta de la sesión (tiene encuesta)',
   '¡Asistencia registrada!' in t and 'Responder la encuesta' in t and '/sesiones/1/encuesta' in t)
+v('...se llamó a AsistenciaPublica/estudiante con el token, el carnet y la ubicación (sin ninguna clave)',
+  any(r == 'AsistenciaPublica/estudiante' and d.get('token') == TOK and d.get('carnet') == '30000124726' and d.get('latitud') == 6.24
+      and 'id_clave' not in d and 'clave' not in d for r, d in db['llamadas'][llam:]))
 with c2.session_transaction() as s:
     v('...el registro queda en la cookie firmada para poder responder la encuesta justo ahora', s.get('registro_reciente') == {'registro': 900, 'sesion': 1})
 r = c2.get('/sesiones/1/encuesta')

@@ -97,6 +97,48 @@ public class ServicioUsuario : IServicioUsuario
         return creado;
     }
 
+    // Guía IA, Regla 1: la cuenta se CREA (persona + usuario + roles), no se busca. Aquí se validan los cruces
+    // que las anotaciones no ven; todo lo demás (login/correo repetidos, rol inexistente) lo rechaza el motor (500).
+    public async Task<(long IdUsuario, long FkAsistente, DateTime CreadoEn)> CrearConRolesAsync(UsuarioConRolesCrear peticion)
+    {
+        string? correoInst = string.IsNullOrWhiteSpace(peticion.CorreoInstitucional) ? null : peticion.CorreoInstitucional.Trim();
+        string? correoPers = string.IsNullOrWhiteSpace(peticion.CorreoPersonal) ? null : peticion.CorreoPersonal.Trim();
+
+        if (correoInst is null && correoPers is null)
+            throw new ArgumentException("La persona debe tener al menos un correo (institucional o personal).");
+
+        var roles = (peticion.Roles ?? [])
+            .Select(r => (FkRol: r.FkRol!.Trim().ToUpperInvariant(), r.FechaIni))
+            .ToList();
+
+        if (roles.Count == 0)
+            throw new ArgumentException("El usuario debe tener al menos un rol.");
+
+        var repetido = roles.GroupBy(r => r.FkRol).FirstOrDefault(g => g.Count() > 1);
+        if (repetido is not null)
+            throw new ArgumentException($"El rol '{repetido.Key}' está repetido.");
+
+        var persona = new Asistente
+        {
+            Nombres = peticion.Nombres!.Trim(),
+            Apellidos = peticion.Apellidos!.Trim(),
+            CorreoInstitucional = correoInst,
+            CorreoPersonal = correoPers,
+            Celular = string.IsNullOrWhiteSpace(peticion.Celular) ? null : peticion.Celular.Trim(),
+        };
+
+        var usuario = new Usuario
+        {
+            FkAsistente = 0,                          // lo fija el SP: es la persona que acaba de crear
+            NombreUsuario = peticion.Usuario!,
+            ClaveHash = Hashear(peticion.Clave!),     // la clave en claro termina aquí
+            Activo = peticion.Activo ?? true,
+            DebeCambiarClave = peticion.DebeCambiarClave ?? false,
+        };
+
+        return await _repositorio.GuardarConRolesAsync(persona, usuario, roles);
+    }
+
     public async Task<int> ReemplazarAsync(long idUsuario, UsuarioReemplazo peticion)
     {
         // Un PUT reemplaza TODO, así que también fija una clave nueva.
@@ -147,10 +189,10 @@ public class ServicioUsuario : IServicioUsuario
         return filas;
     }
 
-    // v7.1 · D55: SOLO EL ADMINISTRADOR INICIA SESIÓN. Estudiantes y ponentes ya no tienen cuenta que entre: la
-    // asistencia es pública (por el QR) y todo lo demás lo gestiona el administrador. Se exige el rol ADMIN
-    // VIGENTE; quien tenga usuario y clave correctos pero no sea administrador recibe el mismo rechazo (D27), y no
-    // se le anota acceso.
+    // v7.1 · D55: SOLO EL PERSONAL INICIA SESIÓN. Estudiantes y ponentes no tienen cuenta que entre: la asistencia
+    // es pública (por el QR) y todo lo demás lo gestiona el personal. Se exige el rol ADMIN o ASISTENTE VIGENTE
+    // (el asistente solo gestiona cátedras: eso lo limita el front); quien tenga usuario y clave correctos pero
+    // ninguno de los dos recibe el mismo rechazo (D27), y no se le anota acceso.
     public async Task<(Usuario Usuario, List<string> Roles)?> LoginAsync(UsuarioLogin peticion)
     {
         string login = peticion.Usuario!.Trim();
@@ -165,7 +207,7 @@ public class ServicioUsuario : IServicioUsuario
             return null;
 
         var roles = await _repositorioRoles.ObtenerVigentesAsync(usuario.IdUsuario);
-        if (!roles.Contains("ADMIN"))
+        if (!roles.Contains("ADMIN") && !roles.Contains("ASISTENTE"))
             return null;
 
         await _repositorio.ActualizarUltimoAccesoAsync(usuario.IdUsuario);
