@@ -250,7 +250,7 @@ def sedes_listar():
 
 
 def _ubicacion_de_sede(es_virtual):
-    """v7.2 · RF-S11: latitud, longitud y radio del formulario de sede -> (datos, errores).
+    """RF-S11: latitud, longitud y radio del formulario de sede -> (datos, errores).
     Solo viajan los que se escribieron (la API exige latitud y longitud JUNTAS y revisa los rangos).
     Una sede virtual no tiene ubicación: no se manda nada (la API borra la que tuviera).
     Se acepta coma decimal. El radio es un entero de metros."""
@@ -275,7 +275,7 @@ def _sede_para_el_formulario(datos):
 
 
 def _ubicacion_de_sede(es_virtual):
-    """v7.2 · RF-S11: latitud, longitud y radio del formulario de sede -> (datos, errores).
+    """RF-S11: latitud, longitud y radio del formulario de sede -> (datos, errores).
     Solo viajan los que se escribieron (la API exige latitud y longitud JUNTAS y revisa los rangos).
     Una sede virtual no tiene ubicación: no se manda nada (la API borra la que tuviera).
     Se acepta coma decimal. El radio es un entero de metros."""
@@ -348,7 +348,7 @@ def sedes_editar(id_sede):
         'es_virtual': request.form.get('es_virtual') == 'on',
         'activo': request.form.get('activo') == 'on',
     }
-    # v7.2: la ubicación solo se manda si se escribió (en blanco = no cambia); una sede virtual la pierde.
+    # RF-S11: latitud, longitud y radio del formulario de sede -> (datos, errores).
     ubicacion, errores_ubicacion = _ubicacion_de_sede(datos['es_virtual'])
     if errores_ubicacion:
         datos['id_sede'] = id_sede
