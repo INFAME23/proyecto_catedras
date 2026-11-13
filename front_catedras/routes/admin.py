@@ -1554,17 +1554,16 @@ def catedras_listar():
         catedras = [c for c in catedras
                     if buscado in c['nombre'].lower() or buscado in c['id_evento_asis']]
 
-    total = len(catedras)
+total = len(catedras)
     total_paginas = max(1, -(-total // CATEDRAS_POR_PAGINA))
     pagina = min(pagina, total_paginas)
     corte = (pagina - 1) * CATEDRAS_POR_PAGINA
+    
     # El ADMIN ve la bandeja de ponentes en su panel; el ASISTENTE (que no tiene panel) la ve aquí arriba.
     bandeja = None if tiene_rol(ROL_ADMIN) else {'pendientes': contar_pendientes()}
-    # El ADMIN ve la bandeja de ponentes en su panel; el ASISTENTE (que no tiene panel) la ve aquí arriba.
-    bandeja = None if tiene_rol(ROL_ADMIN) else {'pendientes': contar_pendientes()}
+    
     return render_template('admin/catedra_lista.html', catedras=catedras[corte:corte + CATEDRAS_POR_PAGINA],
                            q=texto, pagina=pagina, total_paginas=total_paginas, total=total,
-                           ver_inactivas=_ver_inactivas() is not None, bandeja=bandeja)
                            ver_inactivas=_ver_inactivas() is not None, bandeja=bandeja)
 
 
