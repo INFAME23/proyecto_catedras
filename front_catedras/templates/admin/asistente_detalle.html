@@ -1,10 +1,10 @@
 {% extends 'admin/base_admin.html' %}
-{% block titulo %}Asistente {{ asistente.id_asistente }} · Administración{% endblock %}
+{% block titulo %}Persona {{ asistente.id_asistente }} · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
         <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
-        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_listar') }}">Asistente</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_listar') }}">Persona</a></li>
         <li class="breadcrumb-item active">{{ asistente.id_asistente }}</li>
     </ol>
 </nav>
@@ -23,7 +23,7 @@
     <div class="d-flex gap-2">
         <a class="btn btn-outline-primary" href="{{ url_for('admin.asistentes_editar', id_asistente=asistente.id_asistente) }}"><i class="fas fa-edit me-1"></i>Editar</a>
         <form method="post" action="{{ url_for('admin.asistentes_eliminar', id_asistente=asistente.id_asistente) }}"
-              onsubmit="return confirm('¿Eliminar al asistente {{ asistente.id_asistente }}? Se borrarán también sus documentos, vinculaciones, programas y consentimientos (ON DELETE CASCADE). Si tiene registros de asistencia, la BD no lo permitirá.');">
+              onsubmit="return confirm('¿Eliminar a la persona {{ asistente.id_asistente }}? Se borrarán también sus documentos, vinculaciones, programas y consentimientos (ON DELETE CASCADE). Si tiene registros de asistencia, la BD no lo permitirá.');">
             <button class="btn btn-outline-danger" type="submit"><i class="fas fa-trash me-1"></i>Eliminar</button>
         </form>
     </div>

@@ -95,6 +95,7 @@ sede solo en sesiones presenciales, carga idempotente de estudiantes y exportaci
 [version7_2/v7_2_subversion.md](version7_2/v7_2_subversion.md). Agrega las migraciones `060`–`066` (columnas nuevas en `sede`,
 `registro_asistencia` y `asistente`, y funciones y procedimientos; sin tablas nuevas) y **tres controladores de la API**
 (`AsistenciaPublica`, `CargaEstudiante` y `Exportacion`, esta última de solo lectura): los archivos de controlador pasan de 42 a 45.
+Apartado adicional (2026-11-13) **D73 · RF-S15 · P21**: el rol ASISTENTE ve, genera y regenera el QR de una sesión (solo permisos del front; sin migración ni cambios en API/BD).
 
 ## 3. Salvedad: la FK circular con `usuario`
 

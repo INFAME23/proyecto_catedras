@@ -7,7 +7,7 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-para-pruebas'
     # ApiCatedras (C#/ASP.NET Core) publica el puerto 8142 al host
     # (docker-compose.yml, servicio 'api': "8142:8042").
-    API_BASE_URL = os.environ.get('API_BASE_URL') or 'https://apicatedras.runasp.net/'
+    API_BASE_URL = os.environ.get('API_BASE_URL') or 'https://apicatedraskipis.runasp.net/api'
     DEBUG = True
     # v7.1 · D53: dirección PÚBLICA del front que va dentro del QR de asistencia
     # (p. ej. https://catedras.usbmed.edu.co). Vacía = la dirección con que se abre la

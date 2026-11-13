@@ -11,7 +11,7 @@
 #    · Externo    -> cédula, nombre, contacto y de dónde viene.
 #
 #  Rutas:
-#    GET  /registro                       pegar el enlace (o el token) del QR
+#    (ya NO hay pantalla en /registro para pegar el enlace: solo se entra con el QR o el enlace de la sesión)
 #    GET  /registro/<token>               las 3 opciones (con ?tipo=... el formulario)
 #    POST /registro/<token>/<tipo>        registrar (tipo = estudiante | docente | externo)
 #    GET  /registro/<token>/ubicacion     JSON del AVISO TEMPRANO: ¿estás dentro del radio de la sede?
@@ -110,23 +110,10 @@ def _facultades():
         return []
 
 
-def _enlace_invalido(mensaje, texto=''):
+def _enlace_invalido(mensaje):
+    """Enlace o QR que no sirve: la página 404 con el motivo (ya no hay pantalla para pegar enlaces)."""
     flash(mensaje, 'error')
-    return render_template('registro_inicio.html', texto=texto), 404
-
-
-@registro_bp.route('/registro', methods=['GET', 'POST'])
-def inicio():
-    """Pide pegar el enlace (o solo el token) que el organizador compartió."""
-    if request.method == 'GET':
-        return render_template('registro_inicio.html', texto='')
-
-    texto = request.form.get('enlace', '').strip()
-    encontrado = _UUID.search(texto)
-    if not encontrado:
-        flash('No encontramos un código válido en lo que pegaste. Copia el enlace completo del QR o del correo.', 'error')
-        return render_template('registro_inicio.html', texto=texto)
-    return redirect(url_for('registro.solicitar', token=encontrado.group(0).lower()))
+    return render_template('errors/404.html'), 404
 
 
 def _pantalla(token, enlace, tipo=None, valores=None, errores=None, estado=None):

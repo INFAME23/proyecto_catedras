@@ -34,10 +34,10 @@
                     <span class="badge badge-secondary mb-2" id="estado-ventana">Cerrado a las {{ hasta.strftime('%H:%M') }}</span>
                     {% endif %}
                     <div class="mx-auto my-2" id="qr-dibujo" style="max-width: 340px;">{{ svg|safe }}</div>
-                    {% if qr.canal == 'ENLACE' %}
+                    {% if qr.canal == 'ENLACE' or sesion.fk_modalidad in ('VIRTUAL', 'TELEPRESENCIAL') %}
                     <p class="small mb-2" id="aviso-virtual"><i class="fas fa-video me-1"></i><strong>Sesión virtual:</strong> pega este enlace en el chat de la reunión (o proyecta el QR en pantalla compartida).</p>
                     {% endif %}
-                    <p class="small text-muted mb-2">Escanear el QR lleva a pedir la clave por correo y a registrar la asistencia con la ubicación del celular. Solo sirve a quien está <strong>inscrito</strong> en la cátedra.</p>
+                    <p class="small text-muted mb-2">Escanear el QR lleva a registrar la asistencia; en una sesión presencial se verifica la ubicación del celular, en una virtual no se pide. Solo sirve a quien está <strong>inscrito</strong> en la cátedra.</p>
                     <div class="input-group input-group-sm mb-3">
                         <input type="text" class="form-control" id="url-registro" value="{{ url }}" readonly aria-label="Enlace del QR">
                         <button class="btn btn-outline-secondary" type="button" id="copiar-url"><i class="fas fa-copy me-1"></i>Copiar</button>

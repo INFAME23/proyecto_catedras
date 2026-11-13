@@ -280,7 +280,8 @@ v('...y es PÚBLICA (no pide iniciar sesión)', cliente().get(f'/registro/{TOK}'
 v('Un token que no es un UUID da 404', cliente().get('/registro/no-es-un-token').status_code == 404)
 r = cliente().get('/registro/00000000-0000-0000-0000-000000000000')
 v('Un enlace que no existe da 404 con un mensaje claro (no un error del servidor)', r.status_code == 404 and 'no existe' in texto(r))
-v('«Pegar el enlace» explica los pasos nuevos (elige tipo, formulario, ubicación)', 'estudiante' in texto(cliente().get('/registro')) and 'clave de un solo uso' not in texto(cliente().get('/registro')))
+v('Ya no hay pantalla para pegar el enlace: GET y POST /registro dan 404 (solo se entra con el QR o el enlace de la sesión)',
+  cliente().get('/registro').status_code == 404 and cliente().post('/registro', data={'enlace': 'x'}).status_code in (404, 405))
 
 for estado, frase in (('pendiente', 'Todavía no se puede'), ('cerrado', 'ya cerró'), ('revocado', 'ya no es válido')):
     db['enlace']['estado_ventana'] = estado

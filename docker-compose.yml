@@ -175,6 +175,14 @@ services:
       - ./db/postgres/migraciones/068_rol_asistente_sin_coordinador_consulta.sql:/docker-entrypoint-initdb.d/z068_rol_asistente_sin_coordinador_consulta.sql:ro
       # 069: se quitan los roles ESTUDIANTE y PONENTE (el catálogo queda con ADMIN y ASISTENTE).
       - ./db/postgres/migraciones/069_quitar_roles_estudiante_ponente.sql:/docker-entrypoint-initdb.d/z069_quitar_roles_estudiante_ponente.sql:ro
+      # 070: se reemplazan los programas inventados por los programas reales de la USB en el Valle de Aburrá.
+      - ./db/postgres/migraciones/070_programas_reales_usb_medellin.sql:/docker-entrypoint-initdb.d/z070_programas_reales_usb_medellin.sql:ro
+      # 071: la lista de personas trae el rol de la cuenta y la vinculación vigente (reemplaza la etiqueta «Externo»).
+      - ./db/postgres/migraciones/071_lista_personas_con_rol.sql:/docker-entrypoint-initdb.d/z071_lista_personas_con_rol.sql:ro
+      # 072: se borra la modalidad HIBRIDA (no se usa).
+      - ./db/postgres/migraciones/072_quitar_modalidad_hibrida.sql:/docker-entrypoint-initdb.d/z072_quitar_modalidad_hibrida.sql:ro
+      # 073: la ubicación la decide la modalidad (modalidad.requiere_ubicacion): una sesión virtual genera su QR sin coordenadas.
+      - ./db/postgres/migraciones/073_ubicacion_por_modalidad.sql:/docker-entrypoint-initdb.d/z073_ubicacion_por_modalidad.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.

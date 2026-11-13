@@ -21,8 +21,10 @@ decisiones `D60`…`D72` y las migraciones `060`–`066`. Documento completo, co
   caer dentro del **radio de la sede** (`sede.latitud/longitud` + `radio_metros`, o el parámetro `RADIO_VALIDACION_METROS` = 200 m);
   fuera del radio la asistencia **se rechaza** y no queda registro. En sesiones virtuales no se pide y `latitud`/`longitud` quedan
   `NULL`. Se avisa **antes** de que la persona escriba nada (aviso temprano) y se vuelve a verificar dentro del procedimiento
-  almacenado. Las sesiones `HIBRIDA` quedaron fuera (la modalidad está desactivada; si existieran, se comportan como presenciales).
+  almacenado. La modalidad `HIBRIDA` se eliminó (migración 072).
 - **El QR no se genera si la sede no tiene coordenadas (D72)**, con un mensaje que nombra la sede a completar en `/admin/sedes`.
+- **El ASISTENTE maneja el QR de las sesiones (D73 · RF-S15).** Desde el detalle de la cátedra ve el QR, lo genera si falta y lo regenera
+  (con confirmación: el anterior deja de servir). No ve la lista de quienes se registraron; esa y el resto de `/admin` siguen siendo del ADMIN.
 - **Carga de estudiantes** (`/carga_datos`): archivo `CC, Carnet_estudiante, Programa` + periodo en un `<select>`; es **idempotente**
   por carnet (D68): volver a subirlo actualiza, no duplica.
 - **Exportación de fin de periodo** (`/admin/exportar`, solo ADMIN): por cátedra, un CSV de estudiantes, otro de docentes y otro de

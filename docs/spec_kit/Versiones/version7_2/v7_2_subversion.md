@@ -349,3 +349,47 @@ Todo lo anterior se construyó **por partes con OK entre ellas**: migraciones `0
 - Confirmar con quien responda por el tratamiento de datos (Ley 1581) el uso de las cédulas y contactos de docentes y externos.
 - Mitigaciones de la sección 9 (límite de intentos por IP, alerta por muchas firmas desde una IP, `coords.accuracy`): propuestas, **no implementadas**.
 - Las pantallas de administración nuevas (carga con periodo, sedes con ubicación, `/admin/exportar`) se verificaron con HTML renderizado y por HTTP, pero **no en un navegador con sesión de administrador**.
+
+## 13. Apartado adicional — El ASISTENTE ve, genera y regenera el QR de una sesión (D73 · RF-S15 · P21)
+
+> **Estado: APROBADO e IMPLEMENTADO el 2026-11-13. No hay migración y no se toca la API ni la BD.**
+> Prueba: `front_catedras/pruebas/prueba_asistente_qr_v72.py` (39 pasadas, cubre P21.1 a P21.10).
+> **Lo que salió distinto del borrador:** el detalle de la cátedra mostraba toda la columna «Acciones» (incluido el botón de QR) solo al ADMIN,
+> así que el asistente nunca veía el botón; ahora ve la columna con **solo** el botón de QR (`templates/admin/catedra_detalle.html`). Además la
+> miga de pan de la pantalla del QR no le ofrece al asistente los enlaces al panel y al detalle de la sesión (le darían 403), y si la API falla al
+> cargar la sesión, vuelve a la lista de cátedras en vez de a la de sesiones.
+> Es un cambio de permisos del front: continúa después de `D72`, `RF-S14` y `P20`.
+
+**RF-S15 — El ASISTENTE puede abrir la pantalla del QR de una sesión (`/admin/sesiones/<id>/qr`), generar el QR si falta y regenerarlo si hubo un error**, con los mismos botones que el ADMIN.
+Hoy el asistente llega al detalle de la cátedra, pulsa el botón de QR de una sesión y recibe **403**, porque `admin.sesiones_qr` no está en `ENDPOINTS_DEL_ASISTENTE`.
+
+**D73 — Qué cambia y qué no.**
+1. **Permiso.** `admin.sesiones_qr` se agrega a `ENDPOINTS_DEL_ASISTENTE` (`routes/admin.py`). Sirve para el GET (ver) y el POST («Generar el QR» y «Regenerar QR», este con la confirmación del navegador que ya existe: «el anterior dejará de servir»).
+2. **Qué ve el asistente:** título de la cátedra y de la sesión, el QR, el enlace con «Copiar», «Proyectar en pantalla completa», la insignia de estado de la ventana y las horas en que sirve. **No ve** la tarjeta «Asistencia de esta sesión» (son datos de personas).
+3. **El servidor decide, no la plantilla.** La ruta calcula `puede_ver_asistencia = tiene_rol(ROL_ADMIN)` y, si es falso, **ni siquiera consulta** `QrSesion/asistencia` (no viajan datos de personas a la plantilla). La plantilla solo pinta la tarjeta y el JavaScript de refresco cuando la bandera es verdadera, así el asistente no hace llamadas que terminarían en 403.
+4. **`admin.sesiones_asistencia_json` sigue siendo solo del ADMIN** (no entra en `ENDPOINTS_DEL_ASISTENTE`).
+5. **Rastro.** `sesiones_qr` ya envía `usuario_actual()['id_usuario']` a `POST /api/QrSesion` (`fk_usuario`), y `sp_emitir_qr_sesion` lo guarda en `enlace_registro.fk_usuario_crea`. Cuando lo hace un ASISTENTE queda **su** usuario como creador; no se necesita ningún cambio para eso, y una prueba lo comprobará.
+6. **Todo lo demás queda igual:** la regla de la ventana (D55, migración 051; la impone la BD), que la página pública no publique el token, el 403 del asistente en el resto de `/admin` (usuarios, sedes, parámetros…) y todo lo que ya hace el ADMIN.
+
+**Riesgo aceptado por el equipo — regenerar invalida el QR anterior.** Si el asistente regenera después de que el QR ya se compartió o se proyectó, quienes lo tengan no podrán registrarse con él. Es el comportamiento que ya existe para el ADMIN; la confirmación del navegador lo advierte. No se agrega ninguna restricción extra.
+
+**Pruebas (P21).**
+
+| # | Caso | Resultado esperado |
+|---|---|---|
+| P21.1 | ASISTENTE abre el QR desde el detalle de la cátedra | 200; ve QR, enlace, estado y horas |
+| P21.2 | ASISTENTE en esa pantalla | **no** ve la tarjeta de asistencia; `GET /admin/sesiones/<id>/asistencia` → 403 |
+| P21.3 | ASISTENTE genera el QR de una sesión que no lo tenía | se crea |
+| P21.4 | ASISTENTE regenera el QR | el anterior deja de servir y el nuevo sí |
+| P21.5 | QR creado por un ASISTENTE | `fk_usuario` enviado = el del asistente (queda como `fk_usuario_crea`) |
+| P21.6 | ASISTENTE en el resto de `/admin` (p. ej. `/admin/usuarios`) | 403 |
+| P21.7 | ADMIN | conserva todo: QR, regenerar y asistencia en vivo |
+| P21.8 | Sin sesión | 302 al login |
+| P21.9 | Sesión inexistente | 404 |
+| P21.10 | Página pública de la sesión | sigue sin mostrar el token |
+
+**Archivos que se tocarían:** `front_catedras/routes/admin.py` (la lista y `sesiones_qr`), `templates/admin/sesion_qr.html` (tarjeta y script bajo la bandera), una prueba nueva en `front_catedras/pruebas/`, y al final `README.md` y `0_mapa_versiones.md` con una línea cada uno. La constitución no se modifica.
+
+| # | Pendiente | Mi recomendación |
+|---|---|---|
+| **P21** | ¿Aprobáis D73 tal como está (el asistente regenera sin pedir nada más que la confirmación existente)? | Sí |

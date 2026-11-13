@@ -1,15 +1,15 @@
 {% extends 'admin/base_admin.html' %}
 {% import 'partials/filas_detalle.html' as fd %}
-{% block titulo %}{{ 'Nuevo asistente' if modo == 'nueva' else 'Editar asistente' }} · Administración{% endblock %}
+{% block titulo %}{{ 'Nueva persona' if modo == 'nueva' else 'Editar persona' }} · Administración{% endblock %}
 {% block contenido %}
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
         <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
-        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_listar') }}">Asistente</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_listar') }}">Persona</a></li>
         <li class="breadcrumb-item active">{{ 'Nuevo' if modo == 'nueva' else 'Editar' }}</li>
     </ol>
 </nav>
-<h1 class="h3 fw-bold mb-3"><i class="fas fa-user text-primary-custom me-2"></i>{{ 'Nuevo asistente' if modo == 'nueva' else 'Editar asistente ' ~ asistente.id_asistente }}</h1>
+<h1 class="h3 fw-bold mb-3"><i class="fas fa-user text-primary-custom me-2"></i>{{ 'Nueva persona' if modo == 'nueva' else 'Editar persona ' ~ asistente.id_asistente }}</h1>
 
 <div class="card shadow-sm">
     <div class="card-body">
@@ -72,7 +72,7 @@
             {% if modo == 'nueva' %}
             <hr class="my-4">
             <h2 class="h6 fw-bold mb-1">Vinculación y programa iniciales <span class="text-muted small fw-normal">(opcionales)</span></h2>
-            <p class="form-text mt-0 mb-3">Se guardan junto con el asistente (y con los documentos y el consentimiento de abajo): si alguno falla (matrícula duplicada...), no se crea nada. Después se administran en la ficha.</p>
+            <p class="form-text mt-0 mb-3">Se guardan junto con la persona (y con los documentos y el consentimiento de abajo): si alguno falla (matrícula duplicada...), no se crea nada. Después se administran en la ficha.</p>
             <div class="row g-3">
                 <div class="col-md-3">
                     <label class="form-label" for="vinc_tipo">Vinculación</label>
@@ -111,7 +111,7 @@
                 Se editan o retiran en la <a href="{{ url_for('admin.asistentes_detalle', id_asistente=asistente.id_asistente) }}">ficha</a>.
             {% endif %}{% endset %}
             {% call(f) fd.bloque('documentos', 'Documentos de identidad', 'fa-address-card', filas_documentos, 'Agregar documento',
-                                 ayuda=('Se guardan JUNTO con el asistente: si uno falla, no se crea nada.'
+                                 ayuda=('Se guardan JUNTO con la persona: si uno falla, no se crea nada.'
                                         if modo == 'nueva' else
                                         'Cada documento nuevo se guarda por su cuenta: si uno falla, vuelve aquí con el motivo.')
                                        ~ ' Solo UNO puede estar vigente por persona (para cambiarlo, primero retira el anterior en la ficha).',

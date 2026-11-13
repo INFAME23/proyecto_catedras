@@ -7,7 +7,7 @@
         <li class="breadcrumb-item active">Carga de datos</li>
     </ol>
 </nav>
-<h1 class="h3 fw-bold mb-1"><i class="fas fa-file-upload text-primary-custom me-2"></i>Carga de asistentes</h1>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-file-upload text-primary-custom me-2"></i>Carga masiva de personas</h1>
 <p class="text-muted">Sube el archivo de personas. Cada fila se guarda por separado: una fila con errores no impide que se guarden las demás, y queda registrada con el motivo del rechazo.</p>
 
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
@@ -56,7 +56,7 @@
         <h2 class="h6 fw-bold">Archivo de estudiantes <span class="badge badge-primary">v7.2</span></h2>
         <p class="small mb-1">Si la primera fila es exactamente <code>CC</code> · <code>Carnet_estudiante</code> · <code>Programa</code> (y nada más), el archivo se carga como <strong>archivo de estudiantes</strong>:</p>
         <ul class="small">
-            <li><code>CC</code> es la cédula, <code>Carnet_estudiante</code> el código del estudiante y <code>Programa</code> el código de su programa (<code>INDS</code>, <code>ADMO</code>…).</li>
+            <li><code>CC</code> es la cédula, <code>Carnet_estudiante</code> el código del estudiante y <code>Programa</code> el código de su programa (<code>M0286</code>, <code>ADMO</code>…).</li>
             <li>El periodo sale del <strong>desplegable de arriba</strong> y la vinculación <code>ESTUDIANTE</code> empieza hoy.</li>
             <li><strong>Es repetible:</strong> si el carnet ya existe se actualiza; si traía otra CC, la anterior queda como no vigente; si estaba en otro programa <em>del mismo periodo</em>, ese pasa a <em>retirado</em>.</li>
             <li>No trae nombres ni correo: las personas nuevas quedan como «Estudiante &lt;carnet&gt;» hasta que se complete su ficha.</li>

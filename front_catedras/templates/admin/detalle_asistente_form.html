@@ -22,12 +22,12 @@
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
         <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
-        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_listar') }}">Asistente</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_listar') }}">Persona</a></li>
         <li class="breadcrumb-item"><a href="{{ url_for('admin.asistentes_detalle', id_asistente=id_asistente) }}">{{ id_asistente }}</a></li>
         <li class="breadcrumb-item active">{{ titulos[tipo] }}</li>
     </ol>
 </nav>
-<h1 class="h3 fw-bold mb-3">{{ titulos[tipo] }} <span class="text-muted h6">· asistente {{ id_asistente }}</span></h1>
+<h1 class="h3 fw-bold mb-3">{{ titulos[tipo] }} <span class="text-muted h6">· persona {{ id_asistente }}</span></h1>
 
 <div class="card shadow-sm">
     <div class="card-body">
@@ -66,7 +66,7 @@
             <div class="mb-3">
                 <label class="form-label" for="fecha_ini">Desde</label>
                 <input type="date" class="form-control" id="fecha_ini" name="fecha_ini" value="{{ dato.fecha_ini if dato and dato.fecha_ini else '' }}">
-                <div class="form-text">Vacío = hoy. La vinculación nace abierta; se cierra desde la ficha del asistente.</div>
+                <div class="form-text">Vacío = hoy. La vinculación nace abierta; se cierra desde la ficha de la persona.</div>
             </div>
 
             {% elif tipo == 'programa' %}

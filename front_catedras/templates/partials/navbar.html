@@ -39,6 +39,11 @@
                         <i class="fas fa-book-open"></i> Gestionar cátedras
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('admin.solicitudes_ponente') }}" href="{{ url_for('admin.solicitudes_ponente_listar') }}">
+                        <i class="fas fa-inbox"></i> Bandeja de ponentes
+                    </a>
+                </li>
                 {% endif %}
             </ul>
             {# auth_helpers.py (v5): lee la sesión de Flask que llena routes/auth.py. #}

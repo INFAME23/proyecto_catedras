@@ -9,9 +9,16 @@
 {% block contenido %}
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
+        {# D73: el asistente no puede abrir el panel ni el detalle de la sesión (403), así que no se le ofrecen esos enlaces #}
+        {% if puede_ver_asistencia %}
         <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        {% endif %}
         <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_detalle', id_catedra=catedra.id_catedra) }}">{{ catedra.id_evento_asis }}</a></li>
+        {% if puede_ver_asistencia %}
         <li class="breadcrumb-item"><a href="{{ url_for('admin.sesiones_detalle', id_sesion=sesion.id_sesion) }}">Reunión {{ sesion.numero_reunion }}</a></li>
+        {% else %}
+        <li class="breadcrumb-item">Reunión {{ sesion.numero_reunion }}</li>
+        {% endif %}
         <li class="breadcrumb-item active">QR de asistencia</li>
     </ol>
 </nav>
@@ -36,10 +43,10 @@
                     <span class="badge badge-secondary mb-2" id="estado-ventana">Cerrado a las {{ hasta.strftime('%H:%M') }}</span>
                     {% endif %}
                     <div class="mx-auto my-2" id="qr-dibujo" style="max-width: 340px;">{{ svg|safe }}</div>
-                    {% if qr.canal == 'ENLACE' %}
+                    {% if qr.canal == 'ENLACE' or sesion.fk_modalidad in ('VIRTUAL', 'TELEPRESENCIAL') %}
                     <p class="small mb-2" id="aviso-virtual"><i class="fas fa-video me-1"></i><strong>Sesión virtual:</strong> pega este enlace en el chat de la reunión (o proyecta el QR en pantalla compartida).</p>
                     {% endif %}
-                    <p class="small text-muted mb-2">Escanear el QR lleva a pedir la clave por correo y a registrar la asistencia con la ubicación del celular. No hace falta tener cuenta.</p>
+                    <p class="small text-muted mb-2">Escanear el QR lleva a registrar la asistencia; en una sesión presencial se verifica la ubicación del celular, en una virtual no se pide. No hace falta tener cuenta.</p>
                     <div class="input-group input-group-sm mb-3">
                         <input type="text" class="form-control" id="url-registro" value="{{ url }}" readonly aria-label="Enlace del QR">
                         <button class="btn btn-outline-secondary" type="button" id="copiar-url"><i class="fas fa-copy me-1"></i>Copiar</button>
@@ -68,6 +75,8 @@
         {% endif %}
     </div>
 
+    {# D73: la tarjeta de asistencia (datos de personas) solo la pinta el servidor para el ADMIN #}
+    {% if puede_ver_asistencia %}
     <div class="col-lg-7">
         <div class="card shadow-sm">
             <div class="card-header fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -99,14 +108,13 @@
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 (function () {
-    var urlAsistencia = {{ url_for('admin.sesiones_asistencia_json', id_sesion=sesion.id_sesion)|tojson }};
-
     var copiar = document.getElementById('copiar-url');
     if (copiar) {
         copiar.addEventListener('click', function () {
@@ -125,6 +133,9 @@
             if (qr.requestFullscreen) { qr.requestFullscreen(); }
         });
     }
+
+{% if puede_ver_asistencia %}
+    var urlAsistencia = {{ url_for('admin.sesiones_asistencia_json', id_sesion=sesion.id_sesion)|tojson }};
 
     function celda(texto, clase) {
         var td = document.createElement('td');
@@ -168,6 +179,7 @@
 
     document.getElementById('actualizar').addEventListener('click', actualizar);
     setInterval(actualizar, 15000);
+{% endif %}
 }());
 </script>
 {% endblock %}

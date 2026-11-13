@@ -54,7 +54,7 @@
             <div class="mb-3">
                 <label class="form-label">Persona</label>
                 <div>
-                    <a href="{{ url_for('admin.asistentes_detalle', id_asistente=usr.fk_asistente) }}">Asistente {{ usr.fk_asistente }}</a>
+                    <a href="{{ url_for('admin.asistentes_detalle', id_asistente=usr.fk_asistente) }}">Persona {{ usr.fk_asistente }}</a>
                     <span class="text-muted small">(la persona dueña de la cuenta no se cambia)</span>
                 </div>
                 <input type="hidden" name="fk_asistente_actual" value="{{ usr.fk_asistente }}">

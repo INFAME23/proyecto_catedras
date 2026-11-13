@@ -61,18 +61,6 @@
 
     {# ---------- 3 y 4. Atajos ---------- #}
     <div class="col-lg-5">
-        <div class="card shadow-sm mb-3">
-            <div class="card-header fw-bold"><i class="fas fa-clipboard-check me-2"></i>Registrar mi asistencia</div>
-            <div class="card-body">
-                <p class="small text-muted">Pega el enlace del QR o del correo de la sesión. No necesitas cerrar sesión.</p>
-                {# /registro es público: con o sin cuenta el flujo es el mismo (y pide la ubicación, RF-S1). #}
-                <form method="post" action="{{ url_for('registro.inicio') }}" class="d-flex gap-2">
-                    <input class="form-control" type="text" name="enlace" required autocomplete="off"
-                           placeholder="Enlace o código de la sesión" aria-label="Enlace o código de la sesión">
-                    <button class="btn btn-primary" type="submit"><i class="fas fa-arrow-right"></i></button>
-                </form>
-            </div>
-        </div>
         <div class="card shadow-sm">
             <div class="card-header fw-bold"><i class="fas fa-key me-2"></i>Mi cuenta</div>
             <div class="card-body">

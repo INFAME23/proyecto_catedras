@@ -43,11 +43,16 @@ from routes import admin_exportar   # v7.2 · RF-S13: exportación de asistencia
 admin_bp = Blueprint('admin', __name__)
 
 
-# El ASISTENTE gestiona SOLO cátedras (listar, ver, agregar, editar, borrar), más las dos consultas
-# de disponibilidad que usa el formulario de cátedra. Todo lo demás de '/admin' es del ADMIN.
+# El ASISTENTE gestiona SOLO cátedras (listar, ver, agregar, editar, borrar), las dos consultas de
+# disponibilidad que usa el formulario de cátedra y la bandeja de ponentes. Todo lo demás de '/admin' es del ADMIN.
 ENDPOINTS_DEL_ASISTENTE = frozenset({
     'admin.catedras_listar', 'admin.catedras_nueva', 'admin.catedras_detalle', 'admin.catedras_editar',
     'admin.catedras_eliminar', 'admin.catedras_disponibilidad', 'admin.catedras_agenda',
+    # La bandeja de ponentes (aprobar o rechazar «Soy ponente»), igual que la del ADMIN.
+    'admin.solicitudes_ponente_listar', 'admin.solicitudes_ponente_detalle', 'admin.solicitudes_ponente_resolver',
+    # v7.2 · D73 (RF-S15): ver, generar y regenerar el QR de una sesión. La lista de quienes se registraron
+    # ('admin.sesiones_asistencia_json') NO está aquí: son datos de personas y siguen siendo solo del ADMIN.
+    'admin.sesiones_qr',
 })
 
 
@@ -1508,9 +1513,11 @@ def catedras_listar():
     total_paginas = max(1, -(-total // CATEDRAS_POR_PAGINA))
     pagina = min(pagina, total_paginas)
     corte = (pagina - 1) * CATEDRAS_POR_PAGINA
+    # El ADMIN ve la bandeja de ponentes en su panel; el ASISTENTE (que no tiene panel) la ve aquí arriba.
+    bandeja = None if tiene_rol(ROL_ADMIN) else {'pendientes': contar_pendientes()}
     return render_template('admin/catedra_lista.html', catedras=catedras[corte:corte + CATEDRAS_POR_PAGINA],
                            q=texto, pagina=pagina, total_paginas=total_paginas, total=total,
-                           ver_inactivas=_ver_inactivas() is not None)
+                           ver_inactivas=_ver_inactivas() is not None, bandeja=bandeja)
 
 
 @admin_bp.route('/catedras/nueva', methods=['GET', 'POST'])
@@ -1755,7 +1762,7 @@ def asistentes_nuevo():
         _avisar(ex)
         return _render_asistente_form('nueva', datos, ex.errores, filas_documentos)
 
-    flash(f"Asistente creado con id {respuesta['id_asistente']}.", 'exito')
+    flash(f"Persona creada con id {respuesta['id_asistente']}.", 'exito')
     return redirect(url_for('admin.asistentes_detalle', id_asistente=respuesta['id_asistente']))
 
 
@@ -1800,7 +1807,7 @@ def asistentes_editar(id_asistente):
         datos['id_asistente'] = id_asistente
         return _render_asistente_form('editar', datos, ex.errores, filas, id_asistente)
 
-    flash(f"Asistente {id_asistente} actualizado.", 'exito')
+    flash(f"Persona {id_asistente} actualizada.", 'exito')
     datos['id_asistente'] = id_asistente
 
     # Detalles nuevos: el asistente ya existe -> cada uno aparte.
@@ -1829,7 +1836,7 @@ def asistentes_eliminar(id_asistente):
         # Retrofit criterio 3 (Fase 4): el borrado es LÓGICO (activo = false).
         # Ya no hay CASCADE de sus detalles ni 500 por RESTRICT: el asistente
         # queda inactivo, con toda su historia, y sale de la lista.
-        flash(f"Asistente {id_asistente} desactivado (borrado lógico: sus documentos, "
+        flash(f"Persona {id_asistente} desactivada (borrado lógico: sus documentos, "
               f"vinculaciones, programas, consentimientos y registros se conservan).", 'exito')
     except ErrorApi as ex:
         # 404 si no existe o ya estaba inactivo.
@@ -3524,6 +3531,9 @@ def _resumen_asistencia(id_sesion):
 
 @admin_bp.route('/sesiones/<int:id_sesion>/qr', methods=['GET', 'POST'])
 def sesiones_qr(id_sesion):
+    # v7.2 · D73: quien decide qué se muestra es el servidor. La lista de asistentes (datos de personas)
+    # es solo del ADMIN; para el ASISTENTE ni siquiera se consulta a la API.
+    puede_ver_asistencia = tiene_rol(ROL_ADMIN)
     try:
         sesion = obtener('Sesion', id_sesion)
         catedra = obtener('Catedra', sesion['fk_catedra'])
@@ -3531,7 +3541,7 @@ def sesiones_qr(id_sesion):
         if ex.codigo == 404:
             abort(404)
         _avisar(ex)
-        return redirect(url_for('admin.sesiones_listar'))
+        return redirect(url_for('admin.sesiones_listar' if puede_ver_asistencia else 'admin.catedras_listar'))
 
     if request.method == 'POST':
         regenerar = request.form.get('regenerar') == '1'
@@ -3550,10 +3560,11 @@ def sesiones_qr(id_sesion):
     except ErrorApi as ex:
         error = ex
     filas, total = [], 0
-    try:
-        filas, total = _resumen_asistencia(id_sesion)
-    except ErrorApi as ex:
-        error = error or ex
+    if puede_ver_asistencia:
+        try:
+            filas, total = _resumen_asistencia(id_sesion)
+        except ErrorApi as ex:
+            error = error or ex
 
     url = svg = None
     if qr:
@@ -3561,6 +3572,7 @@ def sesiones_qr(id_sesion):
         svg = svg_qr(url)
     return render_template('admin/sesion_qr.html', sesion=sesion, catedra=catedra, qr=qr, estado=estado_de_ventana(qr),
                            url=url, svg=svg, filas=filas, total=total, error=error,
+                           puede_ver_asistencia=puede_ver_asistencia,
                            desde=a_local(qr['ventana_desde']) if qr else None,
                            hasta=a_local(qr['ventana_hasta']) if qr else None)
 

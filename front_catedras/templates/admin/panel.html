@@ -59,7 +59,7 @@
                 <div class="card-body">
                     <i class="fas fa-video fa-2x text-primary-custom mb-2"></i>
                     <h6 class="fw-bold mb-1">Modalidad</h6>
-                    <p class="text-muted small mb-0">Presencial, virtual, telepresencial, híbrida.</p>
+                    <p class="text-muted small mb-0">Presencial, virtual y telepresencial.</p>
                 </div>
             </a>
         </div>
@@ -184,15 +184,15 @@
 </details>
 
 <details class="admin-grupo">
-    <summary><i class="fas fa-users text-primary-custom"></i><span>Personas y carga de asistentes</span><span class="badge badge-secondary">9</span></summary>
+    <summary><i class="fas fa-users text-primary-custom"></i><span>Personas y carga masiva</span><span class="badge badge-secondary">9</span></summary>
     <div class="admin-grupo-cuerpo">
     <div class="row g-3">
         <div class="col-md-3">
             <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.asistentes_listar') }}">
                 <div class="card-body">
                     <i class="fas fa-users fa-2x text-primary-custom mb-2"></i>
-                    <h6 class="fw-bold mb-1">Asistente</h6>
-                    <p class="text-muted small mb-0">Personas (buscador en la API: 14.811 de ejemplo).</p>
+                    <h6 class="fw-bold mb-1">Persona</h6>
+                    <p class="text-muted small mb-0">Personas registradas (con buscador).</p>
                 </div>
             </a>
         </div>
@@ -200,7 +200,7 @@
             <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.documentos_listar') }}">
                 <div class="card-body">
                     <i class="fas fa-address-card fa-2x text-primary-custom mb-2"></i>
-                    <h6 class="fw-bold mb-1">Documento de asistente</h6>
+                    <h6 class="fw-bold mb-1">Documento de persona</h6>
                     <p class="text-muted small mb-0">Documentos de identidad (uno vigente por persona).</p>
                 </div>
             </a>
@@ -209,7 +209,7 @@
             <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.vinculaciones_listar') }}">
                 <div class="card-body">
                     <i class="fas fa-id-badge fa-2x text-primary-custom mb-2"></i>
-                    <h6 class="fw-bold mb-1">Vinculación de asistente</h6>
+                    <h6 class="fw-bold mb-1">Vinculación de persona</h6>
                     <p class="text-muted small mb-0">Historial de vinculaciones (abrir y cerrar).</p>
                 </div>
             </a>
@@ -218,7 +218,7 @@
             <a class="card text-center shadow-custom shadow-custom-hover text-decoration-none h-100" href="{{ url_for('admin.programas_asistente_listar') }}">
                 <div class="card-body">
                     <i class="fas fa-user-graduate fa-2x text-primary-custom mb-2"></i>
-                    <h6 class="fw-bold mb-1">Programa de asistente</h6>
+                    <h6 class="fw-bold mb-1">Programa de persona</h6>
                     <p class="text-muted small mb-0">Matrículas por periodo (cambiar estado).</p>
                 </div>
             </a>

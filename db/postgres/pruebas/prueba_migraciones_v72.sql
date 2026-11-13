@@ -199,7 +199,7 @@ DO $$
 BEGIN
     PERFORM pg_temp.ok('061', 'DOCENTE ya no exige programa', (SELECT NOT exige_programa FROM tipo_vinculacion WHERE id_tipo_vinculacion = 'DOCENTE'));
     PERFORM pg_temp.ok('061', 'ESTUDIANTE sigue exigiendo programa', (SELECT exige_programa FROM tipo_vinculacion WHERE id_tipo_vinculacion = 'ESTUDIANTE'));
-    PERFORM pg_temp.ok('062', 'modalidad HIBRIDA desactivada', (SELECT NOT activo FROM modalidad WHERE id_modalidad = 'HIBRIDA'));
+    PERFORM pg_temp.ok('062', 'modalidad HIBRIDA fuera de uso (desactivada o ya borrada por la 072)', (SELECT count(*) = 0 OR bool_and(NOT activo) FROM modalidad WHERE id_modalidad = 'HIBRIDA'));
     PERFORM pg_temp.ok('062', 'PRESENCIAL sigue activa', (SELECT activo FROM modalidad WHERE id_modalidad = 'PRESENCIAL'));
 END $$;
 

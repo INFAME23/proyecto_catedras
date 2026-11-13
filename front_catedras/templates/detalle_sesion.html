@@ -61,7 +61,6 @@
         <i class="fas fa-qrcode me-1"></i><strong>Cómo registrar tu asistencia:</strong> escanea el <strong>código QR que muestra el ponente al final de la sesión</strong>
         {% if ventana_qr and ventana_qr.desde and ventana_qr.hasta %}(sirve de {{ ventana_qr.desde.strftime('%H:%M') }} a {{ ventana_qr.hasta.strftime('%H:%M') }}, hora de Colombia){% else %}(sirve solo en los últimos minutos de la sesión){% endif %}.
         No necesitas cuenta: te pediremos tu documento o correo, tu ubicación y una clave que te llega al correo.
-        ¿Tienes el enlace en vez del QR? <a href="{{ url_for('registro.inicio') }}">Pégalo aquí</a>.
     </div>
 </div>
 
