@@ -28,16 +28,19 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
 from auth_helpers import ROL_ADMIN, ROL_ASISTENTE, exigir_rol, tiene_rol, usuario_actual
+from auth_helpers import ROL_ADMIN, ROL_ASISTENTE, exigir_rol, tiene_rol, usuario_actual
 from servicios.api_catedras import (ErrorApi, actualizar_parcial, crear, eliminar, listar,
                                     obtener, reemplazar)
 from servicios.fechas import ZONA_COLOMBIA, a_local, desde_input, fecha_hora
 from servicios.api_catedras import consultar
+from servicios.qr_sesiones import (asegurar_qr_de_catedra, avisar_qr_pendientes, emitir_qr, estado_de_ventana, qr_de_sesion,
 from servicios.qr_sesiones import (asegurar_qr_de_catedra, avisar_qr_pendientes, emitir_qr, estado_de_ventana, qr_de_sesion,
                                    svg_qr, url_de_registro)
 from routes.sesiones import (ROLES_PONENCIA, asignar_ponente, buscar_candidatos, ponentes_de,
                              quitar_ponente)
 from routes.admin_solicitudes import contar_pendientes, registrar_rutas   # v7.1 · D56: bandeja de ponentes
 from routes import admin_restricciones   # v7.1 · D57: periodos y horarios en que se pueden programar cátedras
+from routes import admin_exportar   # v7.2 · RF-S13: exportación de asistencia por cátedra
 from routes import admin_exportar   # v7.2 · RF-S13: exportación de asistencia por cátedra
 
 admin_bp = Blueprint('admin', __name__)
@@ -63,6 +66,10 @@ def _solo_administradores():
     El ADMIN entra a todo; el ASISTENTE, solo a las rutas de cátedras (ENDPOINTS_DEL_ASISTENTE)."""
     if request.endpoint in ENDPOINTS_DEL_ASISTENTE and tiene_rol(ROL_ASISTENTE):
         return None
+    (redirección a /login o 403), Flask NO llega a ejecutar la ruta.
+    El ADMIN entra a todo; el ASISTENTE, solo a las rutas de cátedras (ENDPOINTS_DEL_ASISTENTE)."""
+    if request.endpoint in ENDPOINTS_DEL_ASISTENTE and tiene_rol(ROL_ASISTENTE):
+        return None
     return exigir_rol(ROL_ADMIN)
 
 
@@ -77,6 +84,9 @@ def panel():
 registrar_rutas(admin_bp)
 # v7.1 · D57: periodos y horarios de programación (routes/admin_restricciones.py), también colgados de este blueprint.
 admin_restricciones.registrar_rutas(admin_bp)
+
+# v7.2 · RF-S13/RF-S14: exportación de fin de periodo (routes/admin_exportar.py), colgada de este mismo blueprint (solo ADMIN).
+admin_exportar.registrar_rutas(admin_bp)
 
 # v7.2 · RF-S13/RF-S14: exportación de fin de periodo (routes/admin_exportar.py), colgada de este mismo blueprint (solo ADMIN).
 admin_exportar.registrar_rutas(admin_bp)
@@ -264,6 +274,31 @@ def _sede_para_el_formulario(datos):
     return {**datos, **{c: request.form.get(c, '') for c in ('latitud', 'longitud', 'radio_metros')}}
 
 
+def _ubicacion_de_sede(es_virtual):
+    """v7.2 · RF-S11: latitud, longitud y radio del formulario de sede -> (datos, errores).
+    Solo viajan los que se escribieron (la API exige latitud y longitud JUNTAS y revisa los rangos).
+    Una sede virtual no tiene ubicación: no se manda nada (la API borra la que tuviera).
+    Se acepta coma decimal. El radio es un entero de metros."""
+    datos, errores = {}, []
+    if es_virtual:
+        return datos, errores
+    for campo, convertir in (('latitud', float), ('longitud', float), ('radio_metros', int)):
+        texto = request.form.get(campo, '').strip().replace(',', '.')
+        if not texto:
+            continue
+        try:
+            datos[campo] = convertir(texto)
+        except ValueError:
+            errores.append({'campo': campo, 'mensaje': 'No es un número válido.'})
+    return datos, errores
+
+
+def _sede_para_el_formulario(datos):
+    """Los datos de una sede para volver a pintar el formulario con lo que la persona escribió
+    (los campos de ubicación se devuelven tal cual, aunque no fueran un número)."""
+    return {**datos, **{c: request.form.get(c, '') for c in ('latitud', 'longitud', 'radio_metros')}}
+
+
 @admin_bp.route('/sedes/nueva', methods=['GET', 'POST'])
 def sedes_nueva():
     if request.method == 'GET':
@@ -281,10 +316,16 @@ def sedes_nueva():
         return render_template('admin/sede_form.html', modo='nueva', sede=_sede_para_el_formulario(datos),
                                errores=errores_ubicacion)
     datos.update(ubicacion)
+    ubicacion, errores_ubicacion = _ubicacion_de_sede(datos['es_virtual'])
+    if errores_ubicacion:
+        return render_template('admin/sede_form.html', modo='nueva', sede=_sede_para_el_formulario(datos),
+                               errores=errores_ubicacion)
+    datos.update(ubicacion)
     try:
         crear('Sede', datos)
     except ErrorApi as ex:
         flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
+        return render_template('admin/sede_form.html', modo='nueva', sede=_sede_para_el_formulario(datos), errores=ex.errores)
         return render_template('admin/sede_form.html', modo='nueva', sede=_sede_para_el_formulario(datos), errores=ex.errores)
 
     flash(f"Sede '{datos['id_sede']}' creada.", 'exito')
@@ -314,11 +355,19 @@ def sedes_editar(id_sede):
         return render_template('admin/sede_form.html', modo='editar', sede=_sede_para_el_formulario(datos),
                                errores=errores_ubicacion)
     datos.update(ubicacion)
+    # v7.2: la ubicación solo se manda si se escribió (en blanco = no cambia); una sede virtual la pierde.
+    ubicacion, errores_ubicacion = _ubicacion_de_sede(datos['es_virtual'])
+    if errores_ubicacion:
+        datos['id_sede'] = id_sede
+        return render_template('admin/sede_form.html', modo='editar', sede=_sede_para_el_formulario(datos),
+                               errores=errores_ubicacion)
+    datos.update(ubicacion)
     try:
         reemplazar('Sede', id_sede, datos)
     except ErrorApi as ex:
         flash(f"{ex.mensaje} {ex.detalle or ''}".strip(), 'error')
         datos['id_sede'] = id_sede
+        return render_template('admin/sede_form.html', modo='editar', sede=_sede_para_el_formulario(datos), errores=ex.errores)
         return render_template('admin/sede_form.html', modo='editar', sede=_sede_para_el_formulario(datos), errores=ex.errores)
 
     flash(f"Sede '{id_sede}' actualizada.", 'exito')
@@ -1515,8 +1564,11 @@ def catedras_listar():
     corte = (pagina - 1) * CATEDRAS_POR_PAGINA
     # El ADMIN ve la bandeja de ponentes en su panel; el ASISTENTE (que no tiene panel) la ve aquí arriba.
     bandeja = None if tiene_rol(ROL_ADMIN) else {'pendientes': contar_pendientes()}
+    # El ADMIN ve la bandeja de ponentes en su panel; el ASISTENTE (que no tiene panel) la ve aquí arriba.
+    bandeja = None if tiene_rol(ROL_ADMIN) else {'pendientes': contar_pendientes()}
     return render_template('admin/catedra_lista.html', catedras=catedras[corte:corte + CATEDRAS_POR_PAGINA],
                            q=texto, pagina=pagina, total_paginas=total_paginas, total=total,
+                           ver_inactivas=_ver_inactivas() is not None, bandeja=bandeja)
                            ver_inactivas=_ver_inactivas() is not None, bandeja=bandeja)
 
 
@@ -1553,6 +1605,10 @@ def catedras_nueva():
           f"(nombre ASIS: '{respuesta['nombre_asis']}').", 'exito')
     if filas:
         # v7.1 · D53: cada sesión nace con su QR de cierre (se ve en «QR de asistencia» de la sesión).
+        motivos_qr = []
+        qr_hechos, qr_total = asegurar_qr_de_catedra(respuesta['id_catedra'], usuario_actual().get('id_usuario'), motivos_qr)
+        # v7.2 · D72: si una sesión presencial está en una sede sin coordenadas, el aviso dice qué sede completar.
+        avisar_qr_pendientes(flash, qr_hechos, qr_total, motivos_qr)
         motivos_qr = []
         qr_hechos, qr_total = asegurar_qr_de_catedra(respuesta['id_catedra'], usuario_actual().get('id_usuario'), motivos_qr)
         # v7.2 · D72: si una sesión presencial está en una sede sin coordenadas, el aviso dice qué sede completar.
@@ -1763,6 +1819,7 @@ def asistentes_nuevo():
         return _render_asistente_form('nueva', datos, ex.errores, filas_documentos)
 
     flash(f"Persona creada con id {respuesta['id_asistente']}.", 'exito')
+    flash(f"Persona creada con id {respuesta['id_asistente']}.", 'exito')
     return redirect(url_for('admin.asistentes_detalle', id_asistente=respuesta['id_asistente']))
 
 
@@ -1808,6 +1865,7 @@ def asistentes_editar(id_asistente):
         return _render_asistente_form('editar', datos, ex.errores, filas, id_asistente)
 
     flash(f"Persona {id_asistente} actualizada.", 'exito')
+    flash(f"Persona {id_asistente} actualizada.", 'exito')
     datos['id_asistente'] = id_asistente
 
     # Detalles nuevos: el asistente ya existe -> cada uno aparte.
@@ -1836,6 +1894,7 @@ def asistentes_eliminar(id_asistente):
         # Retrofit criterio 3 (Fase 4): el borrado es LÓGICO (activo = false).
         # Ya no hay CASCADE de sus detalles ni 500 por RESTRICT: el asistente
         # queda inactivo, con toda su historia, y sale de la lista.
+        flash(f"Persona {id_asistente} desactivada (borrado lógico: sus documentos, "
         flash(f"Persona {id_asistente} desactivada (borrado lógico: sus documentos, "
               f"vinculaciones, programas, consentimientos y registros se conservan).", 'exito')
     except ErrorApi as ex:
@@ -2456,6 +2515,14 @@ def _render_usuario_nuevo(usr, errores, filas_roles):
     return render_template('admin/usuario_form.html', modo='nueva', usr=usr, errores=errores,
                            roles_catalogo=_opciones('Rol'),
                            filas_roles=filas_roles if filas_roles else [{'fk_rol': ''}])
+CAMPOS_ROL_FILA = ('fk_rol', 'fecha_ini')
+
+
+def _render_usuario_nuevo(usr, errores, filas_roles):
+    """El formulario de usuario nuevo (maestro-detalle): persona + cuenta + roles."""
+    return render_template('admin/usuario_form.html', modo='nueva', usr=usr, errores=errores,
+                           roles_catalogo=_opciones('Rol'),
+                           filas_roles=filas_roles if filas_roles else [{'fk_rol': ''}])
 
 
 @admin_bp.route('/usuarios/nuevo', methods=['GET', 'POST'])
@@ -2463,11 +2530,22 @@ def usuarios_nuevo():
     """Guía IA, Regla 1 (maestro-detalle): el usuario SE CREA, no se busca. Un solo POST lleva la
     persona, la cuenta y las filas de roles; la API los guarda en UNA transacción (sp_guardar_usuario):
     si algo falla (login o correo repetido, rol repetido...), no se crea nada."""
+    """Guía IA, Regla 1 (maestro-detalle): el usuario SE CREA, no se busca. Un solo POST lleva la
+    persona, la cuenta y las filas de roles; la API los guarda en UNA transacción (sp_guardar_usuario):
+    si algo falla (login o correo repetido, rol repetido...), no se crea nada."""
     if request.method == 'GET':
         return _render_usuario_nuevo(None, [], [])
 
     filas_roles = _filas('rol', CAMPOS_ROL_FILA, clave='fk_rol')
+        return _render_usuario_nuevo(None, [], [])
+
+    filas_roles = _filas('rol', CAMPOS_ROL_FILA, clave='fk_rol')
     datos = {
+        'nombres': request.form.get('nombres', '').strip(),
+        'apellidos': request.form.get('apellidos', '').strip(),
+        'correo_institucional': _texto_o_none('correo_institucional'),
+        'correo_personal': _texto_o_none('correo_personal'),
+        'celular': _texto_o_none('celular'),
         'nombres': request.form.get('nombres', '').strip(),
         'apellidos': request.form.get('apellidos', '').strip(),
         'correo_institucional': _texto_o_none('correo_institucional'),
@@ -2479,14 +2557,21 @@ def usuarios_nuevo():
         'debe_cambiar_clave': request.form.get('debe_cambiar_clave') == 'on',
         'roles': [{k: v for k, v in (('fk_rol', f['fk_rol']), ('fecha_ini', f['fecha_ini'])) if v}
                   for f in filas_roles],
+        'debe_cambiar_clave': request.form.get('debe_cambiar_clave') == 'on',
+        'roles': [{k: v for k, v in (('fk_rol', f['fk_rol']), ('fecha_ini', f['fecha_ini'])) if v}
+                  for f in filas_roles],
     }
     try:
+        crear('Usuario/con-roles', datos)
         crear('Usuario/con-roles', datos)
     except ErrorApi as ex:
         _avisar(ex)
         datos.pop('clave')                 # la clave nunca se devuelve al formulario
         return _render_usuario_nuevo(datos, ex.errores, filas_roles)
+        return _render_usuario_nuevo(datos, ex.errores, filas_roles)
 
+    flash(f"Usuario '{datos['usuario']}' creado con {len(datos['roles'])} "
+          f"rol{'' if len(datos['roles']) == 1 else 'es'}.", 'exito')
     flash(f"Usuario '{datos['usuario']}' creado con {len(datos['roles'])} "
           f"rol{'' if len(datos['roles']) == 1 else 'es'}.", 'exito')
     return redirect(url_for('admin.usuarios_listar'))
@@ -2512,6 +2597,7 @@ def usuarios_editar(id_usuario):
             _avisar(ex)
             return redirect(url_for('admin.usuarios_listar'))
         return render_template('admin/usuario_form.html', modo='editar', usr=usr, errores=[])
+        return render_template('admin/usuario_form.html', modo='editar', usr=usr, errores=[])
 
     # La persona dueña de la cuenta NO se cambia desde aquí (se muestra fija).
     datos = {
@@ -2527,6 +2613,7 @@ def usuarios_editar(id_usuario):
         datos.pop('clave', None)
         datos['id_usuario'] = id_usuario
         datos['fk_asistente'] = _entero_o_none(request.form.get('fk_asistente_actual'))
+        return render_template('admin/usuario_form.html', modo='editar', usr=datos, errores=ex.errores)
         return render_template('admin/usuario_form.html', modo='editar', usr=datos, errores=ex.errores)
 
     flash(f"Usuario '{datos['usuario']}' actualizado.", 'exito')
