@@ -7,7 +7,7 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-para-pruebas'
     # ApiCatedras (C#/ASP.NET Core) publica el puerto 8142 al host
     # (docker-compose.yml, servicio 'api': "8142:8042").
-    API_BASE_URL = os.environ.get('API_BASE_URL') or 'https://apicatedras.runasp.net/'
+    API_BASE_URL = os.environ.get('API_BASE_URL') or 'https://apicatedraskipis.runasp.net/'
     DEBUG = True
     # v7.1 · D53: dirección PÚBLICA del front que va dentro del QR de asistencia
     # (p. ej. https://catedras.usbmed.edu.co). Vacía = la dirección con que se abre la
@@ -15,6 +15,12 @@ class Config:
     # ubicación del navegador solo funciona en https (o localhost).
     URL_PUBLICA = (os.environ.get('URL_PUBLICA') or '').strip()
     TEMPLATES_AUTO_RELOAD = True
+
+    # v7.2 · P15: cuántos proxies de confianza hay delante del front (0 = ninguno; en Render, 1). Ver app.py (ProxyFix).
+    try:
+        PROXY_CONFIABLES = int(os.environ.get('PROXY_CONFIABLES') or 0)
+    except ValueError:
+        PROXY_CONFIABLES = 0
 
     # v7.1 · RF-S6: correo real (servicios/correo.py). Todo por entorno; ninguna
     # credencial en el código. Sin SMTP_HOST el correo queda apagado y la

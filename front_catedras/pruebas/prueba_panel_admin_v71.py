@@ -48,8 +48,8 @@ v('Los títulos ya NO llevan la versión (sin «v2»...«v7» en ningún título
   not re.search(r'<span class="badge badge-primary">v\d</span>', t)
   and not re.search(r'<summary>.*?\bv[1-7]\b.*?</summary>', t, re.S | re.I))
 tarjetas = len(re.findall(r'<a class="card text-center', t))
-v('Quedan las 39 secciones del panel (con «Periodos y horarios», v7.1 D57) (sin «Calendario del ponente», «Nuevo ponente» ni «Inscripción a cátedra», que ya no existen)',
-  tarjetas == 39 and 'Nuevo ponente' not in t and 'Inscripción a cátedra' not in t and 'Calendario del ponente' not in t)
+v('Quedan las 40 secciones del panel (con «Periodos y horarios», v7.1 D57, y «Exportar asistencia», v7.2 RF-S13) (sin «Calendario del ponente», «Nuevo ponente» ni «Inscripción a cátedra», que ya no existen)',
+  tarjetas == 40 and 'Exportar asistencia' in t and 'Nuevo ponente' not in t and 'Inscripción a cátedra' not in t and 'Calendario del ponente' not in t)
 v('Las tarjetas están DENTRO de un <details> (se esconden al cerrar)',
   len(re.findall(r'<a class="card text-center', re.sub(r'<details.*?</details>', '', t, flags=re.S))) == 0)
 

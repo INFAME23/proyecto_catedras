@@ -122,6 +122,41 @@ public class UsuarioController : ControllerBase
     }
 
     // ----------------------------------------------------------------------
+    //  Guía IA, Regla 1 · POST /api/Usuario/con-roles
+    //          -> 200 { estado, mensaje, id_usuario, fk_asistente, creado_en } | 400 | 422 | 500
+    //  MAESTRO-DETALLE: crea la persona, su cuenta y sus roles en UNA transacción.
+    //  Login o correo repetidos, o rol inexistente -> 500 y no se crea nada.
+    // ----------------------------------------------------------------------
+    [HttpPost("con-roles")]
+    public async Task<IActionResult> CrearConRoles([FromBody] UsuarioConRolesCrear peticion)
+    {
+        try
+        {
+            var (idUsuario, fkAsistente, creadoEn) = await _servicio.CrearConRolesAsync(peticion);
+            return Ok(new
+            {
+                estado = "creado",
+                mensaje = $"Usuario '{peticion.Usuario}' creado con {peticion.Roles!.Count} rol(es).",
+                id_usuario = idUsuario,
+                fk_asistente = fkAsistente,
+                creado_en = creadoEn,
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return Problema(400, "peticion_invalida", "Petición inválida.", ex.Message);
+        }
+        catch (NpgsqlException ex)
+        {
+            return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return Problema(500, "error_interno", "Error al crear el usuario.", ex.Message);
+        }
+    }
+
+    // ----------------------------------------------------------------------
     //  RF135 · PUT /api/Usuario/{idUsuario:long}   -> 200 { filasAfectadas } | 400 | 404 | 422
     // ----------------------------------------------------------------------
     [HttpPut("{idUsuario:long}")]

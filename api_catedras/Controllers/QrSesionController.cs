@@ -43,6 +43,12 @@ public class QrSesionController : ControllerBase
         {
             return Problema(404, "no_encontrado", "Sesión no encontrada.", ex.Message);
         }
+        catch (PostgresException ex) when (ex.SqlState == "P0001")
+        {
+            // v7.2 D72: regla de negocio de la base de datos. Una sesión presencial cuya sede no tiene
+            // coordenadas (o es virtual) no puede generar QR; el mensaje dice qué sede completar.
+            return Problema(409, "conflicto", ex.MessageText, null);
+        }
         catch (NpgsqlException ex)
         {
             return Problema(500, "error_motor", "La base de datos rechazó la operación.", ex.Message);

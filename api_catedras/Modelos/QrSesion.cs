@@ -23,7 +23,7 @@ public class QrSesion
     [JsonPropertyName("token")]
     public Guid Token { get; set; }
 
-    /// <summary>QR (presencial, híbrida) o ENLACE (virtual, telepresencial), según la modalidad de la sesión (RN-13).</summary>
+    /// <summary>QR (presencial) o ENLACE (virtual, telepresencial), según la modalidad de la sesión (RN-13).</summary>
     [JsonPropertyName("canal")]
     public string? Canal { get; set; }
 

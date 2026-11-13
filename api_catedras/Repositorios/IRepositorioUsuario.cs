@@ -46,6 +46,12 @@ public interface IRepositorioUsuario
     /// 'enlace_registro' y otras tablas pasan a NULL (SET NULL).</summary>
     Task<int> EliminarAsync(long idUsuario);
 
+    /// <summary>Guía IA, Regla 1 (maestro-detalle). Crea la PERSONA, su CUENTA y sus ROLES en una sola
+    /// transacción (sp_guardar_usuario). 'usuario.ClaveHash' ya viene hasheada. Login o correo repetidos,
+    /// rol inexistente o repetido -> NpgsqlException y no se crea nada.</summary>
+    Task<(long IdUsuario, long FkAsistente, DateTime CreadoEn)> GuardarConRolesAsync(
+        Asistente persona, Usuario usuario, IReadOnlyList<(string FkRol, DateOnly? FechaIni)> roles);
+
     /// <summary>v7.1 · D54. Marca o desmarca la exigencia de cambiar la clave en el próximo ingreso.</summary>
     Task FijarDebeCambiarClaveAsync(long idUsuario, bool valor);
 }

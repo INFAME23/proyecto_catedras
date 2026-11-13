@@ -10,12 +10,19 @@
 --       pgcrypto, unaccent: todas disponibles en Neon).
 --    2) Las tablas y rutinas del script provisto (db/postgres/script_bdcatedras.sql)
 --       SIN sus INSERT de datos (asistentes, catedras, sesiones, registros...).
---    3) Las migraciones 001 a 059 (procedimientos almacenados y subversion
---       v7.1) en orden, ya unidas. Se omite la 048 (siembra un estudiante).
+--    3) Las migraciones 001 a 073 (procedimientos almacenados, subversiones v7.1 y
+--       v7.2, roles, programas reales, modalidades y ubicacion por modalidad) en orden, ya unidas. Se omiten
+--       la 048 (siembra un estudiante) y la 065 (programas de prueba "(mock)": la 070
+--       los reemplaza por los programas reales de la USB en el Valle de Aburra).
 --    4) Catalogos minimos que el sistema necesita para funcionar:
 --       sede, estado_proceso, modalidad, periodo_academico, rol,
 --       tipo_documento, tipo_evento, tipo_pregunta, tipo_vinculacion,
---       parametro.
+--       parametro y facultad. Las migraciones 068 a 072 los dejan asi: roles ADMIN
+--       y ASISTENTE; modalidades PRESENCIAL, VIRTUAL y TELEPRESENCIAL; 39 programas
+--       academicos reales (pregrado y posgrado).
+--       Despues de las migraciones hay un bloque «ajustes de catalogo» con los valores de la
+--       base local (modalidades VIRTUAL y TELEPRESENCIAL con canal QR; tipo de documento LC
+--       inactivo). Esta comentado en el propio bloque como revertirlo.
 --    5) Un administrador (usuario 'admin.catedras') para poder iniciar sesion.
 --       Es el bloque 'ADMINISTRADOR INICIAL' del final; borralo si no lo quieres.
 --
@@ -4581,7 +4588,7 @@ ALTER TABLE ONLY catedras.vinculacion_asistente
 
 -- (el COMMIT se ejecuta al final de este archivo, despues de las migraciones)
 
--- ##########  PARTE 2: migraciones 001-059 (048 omitida)  ##########
+-- ##########  PARTE 2: migraciones 001-073 (048 y 065 omitidas)  ##########
 
 -- ----- migracion 001_sp_guardar_programa_academico.sql -----
 RESET search_path;
@@ -14204,6 +14211,2070 @@ COMMENT ON PROCEDURE catedras.sp_resolver_solicitud_ponente IS
     'v7.1 D56-D59. Aprueba (crea la cátedra nueva con su sesión, enlace de ingreso incluido, y registra al ponente) o rechaza con motivo. P0001 si la solicitud ya se resolvió, falta un dato, el horario/periodo/sede no valen, el enlace no es http(s) o la sesión queda a menos de MINUTOS_ENTRE_SESIONES de otra.';
 
 
+-- ----- migracion 060_sede_coordenadas.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/060_sede_coordenadas.sql
+--  Proyecto Cátedras · SUBVERSIÓN v7.2 · RF-S10 / RF-S11 · D62, D63
+-- --------------------------------------------------------------------------
+--  Hasta la v7.1 la ubicación del navegador se GUARDABA pero no se comparaba
+--  con nada: 'sede' solo tiene 'direccion' (texto). Esta migración deja a la
+--  base de datos en condiciones de responder "¿esta persona está en la sede?":
+--
+--   1) 'sede' gana latitud, longitud y radio_metros (nulable);
+--   2) parámetro RADIO_VALIDACION_METROS (radio global, 200 m);
+--   3) coordenadas de BELLO y SAN_BENITO (confirmadas por el equipo el
+--      2026-11-12; VIRTUAL no lleva);
+--   4) fn_distancia_metros: distancia entre dos puntos (Haversine, sin
+--      PostGIS: la constitución no admite extensiones nuevas);
+--   5) los procedimientos de 'sede' devuelven y reciben las columnas nuevas.
+--
+--  COMPATIBILIDAD HASTA QUE SE ACTUALICE LA API (parte 2 de la entrega):
+--  los parámetros nuevos de sp_crear_sede / sp_actualizar_sede van DESPUÉS de
+--  p_resultado y tienen valor por defecto, así que la API actual (que llama con
+--  los 6 argumentos de siempre) sigue funcionando. Para que un PUT/PATCH viejo
+--  NO borre las coordenadas, sp_actualizar_sede solo las cambia si
+--  p_actualizar_geo = true.
+--
+--  Idempotente (IF NOT EXISTS / CREATE OR REPLACE / ON CONFLICT): se puede
+--  ejecutar varias veces. Si conservas el volumen de PostgreSQL hay que
+--  aplicarla a mano (ver README, "Subversión v7.2").
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+-- --------------------------------------------------------------------------
+--  1) Columnas y restricciones
+--     'numeric(9,6)': seis decimales son ~0,11 m, más que cualquier GPS de
+--     teléfono (mismo tipo que registro_asistencia, migración 045).
+-- --------------------------------------------------------------------------
+ALTER TABLE catedras.sede
+    ADD COLUMN IF NOT EXISTS latitud       numeric(9,6),
+    ADD COLUMN IF NOT EXISTS longitud      numeric(9,6),
+    ADD COLUMN IF NOT EXISTS radio_metros  integer;
+
+ALTER TABLE catedras.sede
+    DROP CONSTRAINT IF EXISTS chk_sede_latitud,
+    DROP CONSTRAINT IF EXISTS chk_sede_longitud,
+    DROP CONSTRAINT IF EXISTS chk_sede_geo_par,
+    DROP CONSTRAINT IF EXISTS chk_sede_radio,
+    DROP CONSTRAINT IF EXISTS chk_sede_virtual_sin_geo;
+
+ALTER TABLE catedras.sede
+    ADD CONSTRAINT chk_sede_latitud   CHECK (latitud  IS NULL OR latitud  BETWEEN  -90 AND  90),
+    ADD CONSTRAINT chk_sede_longitud  CHECK (longitud IS NULL OR longitud BETWEEN -180 AND 180),
+    -- "las dos o ninguna": una coordenada sola no ubica nada (igual que la 045)
+    ADD CONSTRAINT chk_sede_geo_par   CHECK ((latitud IS NULL) = (longitud IS NULL)),
+    -- menos de 10 m es menor que el error normal de un GPS; más de 5 km ya no es "estar en la sede"
+    ADD CONSTRAINT chk_sede_radio     CHECK (radio_metros IS NULL OR radio_metros BETWEEN 10 AND 5000),
+    -- una sede virtual no está en ningún lugar
+    ADD CONSTRAINT chk_sede_virtual_sin_geo CHECK (NOT es_virtual OR latitud IS NULL);
+
+COMMENT ON COLUMN catedras.sede.latitud IS
+    'v7.2 D62. Latitud (grados) del punto de la sede contra el que se compara la ubicación de quien registra asistencia en una sesión presencial. NULL en sedes virtuales. Va junto a longitud.';
+COMMENT ON COLUMN catedras.sede.longitud IS
+    'v7.2 D62. Longitud (grados) del punto de la sede. Va junto a latitud.';
+COMMENT ON COLUMN catedras.sede.radio_metros IS
+    'v7.2 D62. Radio propio de la sede, en metros (10 a 5000). NULL = usar el parámetro RADIO_VALIDACION_METROS.';
+
+-- --------------------------------------------------------------------------
+--  2) Parámetro global del radio
+--     200 m: un GPS de teléfono al aire libre falla 5-20 m, pero dentro de un
+--     edificio puede fallar 50-100 m, y un campus mide cientos de metros.
+-- --------------------------------------------------------------------------
+INSERT INTO catedras.parametro (clave, valor, tipo_dato, descripcion)
+VALUES ('RADIO_VALIDACION_METROS', '200', 'ENTERO',
+        'v7.2. Radio en metros alrededor de la sede dentro del cual se acepta la ubicación de quien registra asistencia en una sesión presencial. Cada sede puede tener el suyo (sede.radio_metros)')
+ON CONFLICT (clave) DO NOTHING;
+
+-- --------------------------------------------------------------------------
+--  3) Coordenadas de las sedes (dato confirmado por el equipo, 2026-11-12).
+--     'WHERE latitud IS NULL': si el administrador ya las corrigió desde la
+--     pantalla de sedes, volver a ejecutar esta migración NO las pisa.
+-- --------------------------------------------------------------------------
+UPDATE catedras.sede SET latitud = 6.333129, longitud = -75.569174
+ WHERE id_sede = 'BELLO' AND latitud IS NULL AND NOT es_virtual;
+
+UPDATE catedras.sede SET latitud = 6.255095, longitud = -75.572969
+ WHERE id_sede = 'SAN_BENITO' AND latitud IS NULL AND NOT es_virtual;
+
+-- --------------------------------------------------------------------------
+--  4) Distancia entre dos puntos, en metros (fórmula de Haversine)
+--       a = sin²(Δlat/2) + cos(lat1)·cos(lat2)·sin²(Δlon/2)
+--       d = 2·R·asin(√a)          con R = 6 371 008,8 m (radio medio terrestre)
+--     'least(1, …)' evita que un error de redondeo deje √a en 1,0000000002 y
+--     'asin' falle. Devuelve NULL si falta algún dato.
+--     Es IMMUTABLE: mismo resultado para los mismos argumentos.
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION catedras.fn_distancia_metros(
+    p_lat1 double precision,
+    p_lon1 double precision,
+    p_lat2 double precision,
+    p_lon2 double precision
+) RETURNS double precision
+    LANGUAGE sql
+    IMMUTABLE
+    AS $$
+    SELECT CASE
+        WHEN p_lat1 IS NULL OR p_lon1 IS NULL OR p_lat2 IS NULL OR p_lon2 IS NULL THEN NULL
+        ELSE 2 * 6371008.8 * asin(least(1.0, sqrt(
+                 power(sin(radians(p_lat2 - p_lat1) / 2), 2)
+               + cos(radians(p_lat1)) * cos(radians(p_lat2))
+                 * power(sin(radians(p_lon2 - p_lon1) / 2), 2))))
+    END;
+$$;
+
+COMMENT ON FUNCTION catedras.fn_distancia_metros IS
+    'v7.2 D63. Distancia en metros entre (lat1,lon1) y (lat2,lon2) por Haversine, sin PostGIS. NULL si falta algún dato.';
+
+-- --------------------------------------------------------------------------
+--  5) Procedimientos de 'sede' con las columnas nuevas
+-- --------------------------------------------------------------------------
+
+-- LISTAR / CONSULTAR: misma firma que la 005; solo cambia el JSON, que ahora
+-- trae las coordenadas, el radio propio y el radio EFECTIVO (el que de verdad
+-- se aplicará: el de la sede o, si no tiene, el parámetro global).
+CREATE OR REPLACE PROCEDURE catedras.sp_listar_sede(
+    IN    p_limite            integer DEFAULT NULL,
+    IN    p_incluir_inactivos boolean DEFAULT false,
+    INOUT p_resultado         json    DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+BEGIN
+    SELECT COALESCE(json_agg(s), '[]'::json)
+      INTO p_resultado
+      FROM (SELECT id_sede, nombre, direccion, es_virtual, activo,
+                   latitud, longitud, radio_metros,
+                   COALESCE(radio_metros,
+                            (SELECT valor::int FROM parametro WHERE clave = 'RADIO_VALIDACION_METROS'),
+                            200) AS radio_efectivo_metros
+              FROM sede
+             WHERE p_incluir_inactivos OR activo
+             ORDER BY id_sede
+             LIMIT p_limite) s;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE catedras.sp_consultar_sede(
+    IN    p_id_sede   character varying(15),
+    INOUT p_resultado json DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+BEGIN
+    SELECT row_to_json(s) INTO p_resultado
+      FROM (SELECT id_sede, nombre, direccion, es_virtual, activo,
+                   latitud, longitud, radio_metros,
+                   COALESCE(radio_metros,
+                            (SELECT valor::int FROM parametro WHERE clave = 'RADIO_VALIDACION_METROS'),
+                            200) AS radio_efectivo_metros
+              FROM sede
+             WHERE id_sede = p_id_sede) s;
+END;
+$$;
+
+-- CREAR: cambia la firma (parámetros nuevos), así que se elimina la anterior;
+-- si no, CREATE OR REPLACE dejaría una SOBRECARGA y 'CALL sp_crear_sede(...)'
+-- quedaría ambiguo (mismo motivo que en la 005).
+DROP PROCEDURE IF EXISTS catedras.sp_crear_sede(varchar, varchar, varchar, boolean, boolean, json);
+
+CREATE OR REPLACE PROCEDURE catedras.sp_crear_sede(
+    IN    p_id_sede      character varying(15),
+    IN    p_nombre       character varying(80),
+    IN    p_direccion    character varying(200) DEFAULT NULL,
+    IN    p_es_virtual   boolean DEFAULT false,
+    IN    p_activo       boolean DEFAULT true,
+    INOUT p_resultado    json    DEFAULT NULL,
+    -- v7.2: van DESPUÉS de p_resultado para no romper las llamadas anteriores
+    IN    p_latitud      numeric DEFAULT NULL,
+    IN    p_longitud     numeric DEFAULT NULL,
+    IN    p_radio_metros integer DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+BEGIN
+    -- Las reglas (rango, "las dos o ninguna", radio 10-5000, virtual sin
+    -- coordenadas) las hacen cumplir los CHECK de la tabla: si no se cumplen,
+    -- la excepción del motor sube tal cual.
+    INSERT INTO sede (id_sede, nombre, direccion, es_virtual, activo, latitud, longitud, radio_metros)
+    VALUES (p_id_sede, p_nombre, p_direccion, p_es_virtual, COALESCE(p_activo, true),
+            p_latitud, p_longitud, p_radio_metros);
+
+    CALL catedras.sp_consultar_sede(p_id_sede, p_resultado);
+END;
+$$;
+
+-- ACTUALIZAR: reemplazo completo de las columnas de siempre. Las coordenadas y
+-- el radio SOLO se cambian si p_actualizar_geo = true (la API nueva lo manda);
+-- una llamada anterior a la v7.2 las deja como están.
+DROP PROCEDURE IF EXISTS catedras.sp_actualizar_sede(varchar, varchar, varchar, boolean, boolean, json);
+
+CREATE OR REPLACE PROCEDURE catedras.sp_actualizar_sede(
+    IN    p_id_sede         character varying(15),
+    IN    p_nombre          character varying(80),
+    IN    p_direccion       character varying(200),
+    IN    p_es_virtual      boolean,
+    IN    p_activo          boolean,
+    INOUT p_resultado       json DEFAULT NULL,
+    IN    p_latitud         numeric DEFAULT NULL,
+    IN    p_longitud        numeric DEFAULT NULL,
+    IN    p_radio_metros    integer DEFAULT NULL,
+    IN    p_actualizar_geo  boolean DEFAULT false
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+BEGIN
+    UPDATE sede
+       SET nombre       = p_nombre,
+           direccion    = p_direccion,
+           es_virtual   = p_es_virtual,
+           activo       = p_activo,
+           latitud      = CASE WHEN COALESCE(p_actualizar_geo, false) THEN p_latitud      ELSE latitud      END,
+           longitud     = CASE WHEN COALESCE(p_actualizar_geo, false) THEN p_longitud     ELSE longitud     END,
+           radio_metros = CASE WHEN COALESCE(p_actualizar_geo, false) THEN p_radio_metros ELSE radio_metros END
+     WHERE id_sede = p_id_sede;
+
+    -- Sin FOUND -> no existía -> p_resultado queda NULL (criterio de siempre).
+    IF FOUND THEN
+        CALL catedras.sp_consultar_sede(p_id_sede, p_resultado);
+    END IF;
+END;
+$$;
+
+COMMENT ON PROCEDURE catedras.sp_crear_sede IS
+    'Retrofit criterio 3 + v7.2: devuelve la fila como quedó guardada; acepta coordenadas y radio (después de p_resultado, con valor por defecto).';
+COMMENT ON PROCEDURE catedras.sp_actualizar_sede IS
+    'Retrofit criterio 3 + v7.2: reemplazo completo; coordenadas y radio solo cambian con p_actualizar_geo = true.';
+
+
+-- ----- migracion 061_registro_publico_columnas.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/061_registro_publico_columnas.sql
+--  Proyecto Cátedras · SUBVERSIÓN v7.2 · RF-S8 / RF-S9 · D65, D66, D67
+-- --------------------------------------------------------------------------
+--  Prepara las tablas para el registro público SIN clave por correo (D60):
+--
+--   1) registro_asistencia: cómo se identificó quien registró
+--      (identificado_por), su facultad (docentes), su procedencia (externos)
+--      y la distancia a la sede (auditoría de la ubicación);
+--   2) chk_registro_clave admite "identificado por carnet o declarado" además
+--      de "con clave" y "MANUAL/IMPORTADO";
+--   3) asistente.contacto_sin_correo: permite una persona sin correo SOLO
+--      cuando lo marca un procedimiento de la v7.2 (estudiantes cargados por
+--      archivo; docentes/externos que dan solo su celular);
+--   4) DOCENTE deja de exigir programa (si no, RN-07 rechazaría a todo docente);
+--   5) listar / consultar / crear de registro_asistencia devuelven las columnas
+--      nuevas (misma firma que la 045).
+--
+--  'origen' NO se toca: sigue diciendo por qué canal entró (QR o ENLACE).
+--
+--  Idempotente (IF NOT EXISTS / DROP CONSTRAINT IF EXISTS / CREATE OR REPLACE).
+--  Si conservas el volumen de PostgreSQL hay que aplicarla a mano.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+-- --------------------------------------------------------------------------
+--  1) registro_asistencia: columnas nuevas
+--     Son HECHOS del día del registro (como fk_programa_snapshot): nunca se
+--     actualizan después. Las filas anteriores quedan con 'CLAVE' (el flujo de
+--     la v5/v7.1) y el resto en NULL.
+-- --------------------------------------------------------------------------
+ALTER TABLE catedras.registro_asistencia
+    ADD COLUMN IF NOT EXISTS identificado_por     varchar(12) NOT NULL DEFAULT 'CLAVE',
+    ADD COLUMN IF NOT EXISTS fk_facultad_snapshot varchar(10),
+    ADD COLUMN IF NOT EXISTS procedencia          varchar(150),
+    ADD COLUMN IF NOT EXISTS distancia_metros     numeric(9,1);
+
+-- La facultad es una referencia al catálogo (Regla 2). Se agrega aparte porque
+-- ADD COLUMN IF NOT EXISTS ... REFERENCES no repite la FK en una segunda corrida.
+ALTER TABLE catedras.registro_asistencia
+    DROP CONSTRAINT IF EXISTS fk_registro_facultad_snap;
+ALTER TABLE catedras.registro_asistencia
+    ADD CONSTRAINT fk_registro_facultad_snap FOREIGN KEY (fk_facultad_snapshot)
+        REFERENCES catedras.facultad (id_facultad) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+ALTER TABLE catedras.registro_asistencia
+    DROP CONSTRAINT IF EXISTS chk_registro_identificado,
+    DROP CONSTRAINT IF EXISTS chk_registro_facultad_docente,
+    DROP CONSTRAINT IF EXISTS chk_registro_procedencia_externo,
+    DROP CONSTRAINT IF EXISTS chk_registro_distancia,
+    DROP CONSTRAINT IF EXISTS chk_registro_clave;
+
+ALTER TABLE catedras.registro_asistencia
+    -- CLAVE = flujo de la v5/v7.1 · CARNET = estudiante por código · DECLARADO = docente/externo por formulario
+    ADD CONSTRAINT chk_registro_identificado CHECK (identificado_por IN ('CLAVE', 'CARNET', 'DECLARADO')),
+    -- la facultad solo la guardan los docentes; la procedencia, los externos
+    ADD CONSTRAINT chk_registro_facultad_docente CHECK (fk_facultad_snapshot IS NULL OR fk_vinculacion_snapshot = 'DOCENTE'),
+    ADD CONSTRAINT chk_registro_procedencia_externo CHECK (procedencia IS NULL OR fk_vinculacion_snapshot = 'EXTERNO'),
+    -- la distancia solo existe si hubo ubicación, y no es negativa
+    ADD CONSTRAINT chk_registro_distancia CHECK (distancia_metros IS NULL OR (latitud IS NOT NULL AND distancia_metros >= 0)),
+    -- Reemplaza al de la v5: sin clave solo se admite si es MANUAL/IMPORTADO o
+    -- si la persona se identificó por carnet / por formulario (v7.2).
+    ADD CONSTRAINT chk_registro_clave CHECK (
+        fk_clave IS NOT NULL
+        OR origen IN ('MANUAL', 'IMPORTADO')
+        OR identificado_por IN ('CARNET', 'DECLARADO'));
+
+COMMENT ON COLUMN catedras.registro_asistencia.identificado_por IS
+    'v7.2 D65. CLAVE = clave de un solo uso por correo (v5/v7.1, y filas anteriores); CARNET = estudiante por código; DECLARADO = docente o externo por formulario. No reemplaza a origen (que dice el canal: QR o ENLACE).';
+COMMENT ON COLUMN catedras.registro_asistencia.fk_facultad_snapshot IS
+    'v7.2 D66. INSTANTÁNEA: la facultad que declaró un DOCENTE el día de la cátedra. NULL para los demás. Nunca se actualiza.';
+COMMENT ON COLUMN catedras.registro_asistencia.procedencia IS
+    'v7.2 D66. INSTANTÁNEA: de dónde dijo venir un EXTERNO (texto libre). NULL para los demás. Nunca se actualiza.';
+COMMENT ON COLUMN catedras.registro_asistencia.distancia_metros IS
+    'v7.2 D66. Distancia en metros entre la ubicación enviada y la sede de la sesión, calculada por la BD (fn_distancia_metros). Solo en registros de canal QR; NULL en el resto.';
+
+-- --------------------------------------------------------------------------
+--  3) asistente.contacto_sin_correo (D67)
+--     chk_asistente_correo exigía correo institucional o personal. El celular
+--     no cuenta, así que un docente o externo que dé solo su celular lo
+--     violaría. La marca la ponen SOLO los procedimientos de la v7.2: la API de
+--     Asistente y la carga antigua no la tocan y siguen exigiendo un correo.
+-- --------------------------------------------------------------------------
+ALTER TABLE catedras.asistente
+    ADD COLUMN IF NOT EXISTS contacto_sin_correo boolean NOT NULL DEFAULT false;
+
+ALTER TABLE catedras.asistente
+    DROP CONSTRAINT IF EXISTS chk_asistente_correo;
+
+ALTER TABLE catedras.asistente
+    ADD CONSTRAINT chk_asistente_correo CHECK (
+        correo_institucional IS NOT NULL
+        OR correo_personal IS NOT NULL
+        OR contacto_sin_correo);
+
+COMMENT ON COLUMN catedras.asistente.contacto_sin_correo IS
+    'v7.2 D67. true = la persona se creó sin correo (estudiante cargado por archivo, o docente/externo que dio solo celular). Solo la ponen los procedimientos de la v7.2; la API de Asistente no la usa.';
+
+-- --------------------------------------------------------------------------
+--  4) DOCENTE no exige programa (D67, decidido el 2026-11-12)
+--     El script provisto lo dejó en true; RN-07 (fn_trg_registro_validar)
+--     rechaza el registro si la vinculación exige programa y no hay uno
+--     activo. Un docente declara su FACULTAD, no un programa. Es el mecanismo
+--     que documenta el propio script: "habilitar una excepción es un UPDATE".
+--     Solo afecta registros NUEVOS (la instantánea de los anteriores no cambia).
+-- --------------------------------------------------------------------------
+UPDATE catedras.tipo_vinculacion
+   SET exige_programa = false
+ WHERE id_tipo_vinculacion = 'DOCENTE' AND exige_programa;
+
+-- --------------------------------------------------------------------------
+--  5) Listar / consultar / crear de registro_asistencia, con las columnas
+--     nuevas (misma firma que la 045: CREATE OR REPLACE sin tocar la API).
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE catedras.sp_listar_registro_asistencia(
+    IN    p_fk_sesion    bigint  DEFAULT NULL,
+    IN    p_fk_asistente bigint  DEFAULT NULL,
+    IN    p_limite       integer DEFAULT NULL,
+    INOUT p_resultado    json    DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+BEGIN
+    SELECT COALESCE(json_agg(r), '[]'::json)
+      INTO p_resultado
+      FROM (SELECT id_registro, fk_sesion, fk_asistente, fk_enlace, fk_clave,
+                   registrado_en, fk_programa_snapshot, fk_vinculacion_snapshot,
+                   origen, host(ip) AS ip, user_agent, latitud, longitud,
+                   identificado_por, fk_facultad_snapshot, procedencia, distancia_metros
+              FROM registro_asistencia
+             WHERE (p_fk_sesion    IS NULL OR fk_sesion    = p_fk_sesion)
+               AND (p_fk_asistente IS NULL OR fk_asistente = p_fk_asistente)
+             ORDER BY id_registro
+             LIMIT p_limite) r;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE catedras.sp_consultar_registro_asistencia(
+    IN    p_id_registro bigint,
+    INOUT p_resultado   json DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+BEGIN
+    SELECT row_to_json(r) INTO p_resultado
+      FROM (SELECT id_registro, fk_sesion, fk_asistente, fk_enlace, fk_clave,
+                   registrado_en, fk_programa_snapshot, fk_vinculacion_snapshot,
+                   origen, host(ip) AS ip, user_agent, latitud, longitud,
+                   identificado_por, fk_facultad_snapshot, procedencia, distancia_metros
+              FROM registro_asistencia
+             WHERE id_registro = p_id_registro) r;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE catedras.sp_crear_registro_asistencia(
+    IN    p_fk_sesion    bigint,
+    IN    p_fk_asistente bigint,
+    IN    p_origen       character varying(15) DEFAULT 'QR',
+    INOUT p_resultado    json DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_id bigint;
+BEGIN
+    INSERT INTO registro_asistencia (fk_sesion, fk_asistente, origen)
+    VALUES (p_fk_sesion, p_fk_asistente, COALESCE(p_origen, 'QR'))
+    RETURNING id_registro INTO v_id;
+
+    CALL catedras.sp_consultar_registro_asistencia(v_id, p_resultado);
+END;
+$$;
+
+-- sp_actualizar_registro_asistencia (037) NO cambia: las columnas nuevas son
+-- parte del HECHO y no se corrigen después.
+
+
+-- ----- migracion 062_qr_exige_sede_con_coordenadas.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/062_qr_exige_sede_con_coordenadas.sql
+--  Proyecto Cátedras · SUBVERSIÓN v7.2 · RF-S12 · D61, D72
+-- --------------------------------------------------------------------------
+--  1) El QR de una sesión de canal QR (presencial) NO se genera si su sede no
+--     tiene coordenadas: falla AL GENERAR el QR, con un mensaje que dice qué
+--     sede completar, y no el día del evento cuando alguien intenta registrarse.
+--     (Es lo único que cambia de sp_emitir_qr_sesion respecto de la 054.)
+--  2) La modalidad HIBRIDA se desactiva (decidido el 2026-11-12, P1/P1b): ya
+--     no se programan sesiones híbridas. Las que existan siguen existiendo y,
+--     como su canal es QR, se comportan como presenciales (D61).
+--
+--  El error es 'P0001' (raise_exception): la API lo devuelve como 409, igual
+--  que las reglas de negocio de las migraciones 055-059.
+--
+--  Idempotente (CREATE OR REPLACE / UPDATE condicionado).
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+CREATE OR REPLACE PROCEDURE catedras.sp_emitir_qr_sesion(
+    IN    p_fk_sesion  bigint,
+    IN    p_fk_usuario bigint  DEFAULT NULL,
+    IN    p_regenerar  boolean DEFAULT false,
+    INOUT p_resultado  json    DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_fin        timestamptz;
+    v_canal      varchar(10);
+    v_id_sede    varchar(15);
+    v_nom_sede   varchar(80);
+    v_sede_virt  boolean;
+    v_sede_lat   numeric;
+    v_id         bigint;
+    v_antes      integer;
+    v_desp       integer;
+    v_base       text;
+    v_token      uuid := gen_random_uuid();
+    v_existia    boolean := false;
+BEGIN
+    SELECT s.fin, m.canal_difusion, sd.id_sede, sd.nombre, sd.es_virtual, sd.latitud
+      INTO v_fin, v_canal, v_id_sede, v_nom_sede, v_sede_virt, v_sede_lat
+      FROM sesion s
+      JOIN modalidad m ON m.id_modalidad = s.fk_modalidad
+      JOIN sede sd     ON sd.id_sede     = s.fk_sede
+     WHERE s.id_sesion = p_fk_sesion;
+    IF v_fin IS NULL THEN
+        p_resultado := NULL;
+        RETURN;
+    END IF;
+
+    -- RN-13 (script provisto): el canal del enlace debe concordar con la modalidad:
+    -- presencial -> QR, virtual y telepresencial -> ENLACE, híbrida (AMBOS) -> QR.
+    v_canal := CASE WHEN v_canal = 'ENLACE' THEN 'ENLACE' ELSE 'QR' END;
+
+    -- v7.2 D72 · una sesión de canal QR se valida contra su sede; sin sede
+    -- física con coordenadas no hay con qué comparar, así que no se emite el QR.
+    IF v_canal = 'QR' THEN
+        IF v_sede_virt THEN
+            RAISE EXCEPTION 'La sesión % se difunde por QR (presencial) pero su sede "%" (%) es virtual: cambia la sede o la modalidad antes de generar el QR',
+                p_fk_sesion, v_nom_sede, v_id_sede
+                USING ERRCODE = 'P0001';
+        END IF;
+        IF v_sede_lat IS NULL THEN
+            RAISE EXCEPTION 'La sede "%" (%) no tiene coordenadas: complétalas en Administración > Sedes antes de generar el QR de la sesión %',
+                v_nom_sede, v_id_sede, p_fk_sesion
+                USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    IF NOT coalesce(p_regenerar, false) THEN
+        SELECT e.id_enlace INTO v_id
+          FROM enlace_registro e
+         WHERE e.fk_sesion = p_fk_sesion AND e.revocado_en IS NULL AND e.qr_cierre
+         ORDER BY e.id_enlace DESC LIMIT 1;
+        v_existia := v_id IS NOT NULL;
+    END IF;
+
+    IF v_id IS NULL THEN
+        v_antes := greatest(coalesce((SELECT valor::int FROM parametro WHERE clave = 'QR_MINUTOS_ANTES_FIN'), 15), 1);
+        v_desp  := greatest(coalesce((SELECT valor::int FROM parametro WHERE clave = 'QR_MINUTOS_DESPUES_FIN'), 0), 0);
+        v_base  := coalesce((SELECT valor FROM parametro WHERE clave = 'URL_BASE'), 'https://catedras.usbmed.edu.co/r/');
+
+        -- RN-14 · un solo enlace vigente por sesión
+        UPDATE enlace_registro SET revocado_en = now()
+         WHERE fk_sesion = p_fk_sesion AND revocado_en IS NULL;
+
+        INSERT INTO enlace_registro (fk_sesion, token, url_publica, ruta_imagen_qr, canal, ventana,
+                                     fk_usuario_crea, requiere_inscripcion, qr_cierre)
+        VALUES (p_fk_sesion, v_token, v_base || v_token::text, 'qr/' || v_token::text || '.png', v_canal,
+                tstzrange(v_fin - make_interval(mins => v_antes), v_fin + make_interval(mins => v_desp), '[)'),
+                p_fk_usuario, false, true)
+        RETURNING id_enlace INTO v_id;
+    END IF;
+
+    SELECT row_to_json(r) INTO p_resultado
+      FROM (SELECT e.id_enlace, e.fk_sesion, e.token, e.canal, lower(e.ventana) AS ventana_desde,
+                   upper(e.ventana) AS ventana_hasta, e.revocado_en,
+                   v_existia AS ya_existia
+              FROM enlace_registro e WHERE e.id_enlace = v_id) r;
+END;
+$$;
+
+COMMENT ON PROCEDURE catedras.sp_emitir_qr_sesion IS
+    'v7.1 D53/D54 + v7.2 D72. QR de cierre: ventana [fin - QR_MINUTOS_ANTES_FIN, fin + QR_MINUTOS_DESPUES_FIN). Si el canal es QR exige una sede física con coordenadas (P0001 si no). NULL = la sesión no existe.';
+
+-- --------------------------------------------------------------------------
+--  Modalidad HIBRIDA fuera de uso (P1b). No se borra: hay FK desde 'sesion'.
+-- --------------------------------------------------------------------------
+UPDATE catedras.modalidad SET activo = false
+ WHERE id_modalidad = 'HIBRIDA' AND activo;
+
+
+-- ----- migracion 063_sp_registro_publico.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/063_sp_registro_publico.sql
+--  Proyecto Cátedras · SUBVERSIÓN v7.2 · RF-S9 / RF-S10 · D60, D61, D63, D64, D65, D66, D67
+-- --------------------------------------------------------------------------
+--  Registro público de asistencia SIN clave por correo (D60). Tras escanear el
+--  QR, la persona elige ser estudiante, docente o externo:
+--
+--    fn_consultar_enlace_publico(token)   datos para pintar la página
+--    fn_verificar_ubicacion(token,lat,lng) aviso temprano: ¿estás en la sede?
+--    sp_registrar_asistencia_estudiante   carnet
+--    sp_registrar_asistencia_docente      cédula, nombre, contacto, facultad
+--    sp_registrar_asistencia_externo      cédula, nombre, contacto, procedencia
+--
+--  Los tres procedimientos validan, EN UNA SOLA TRANSACCIÓN (Guía IA, Regla 1):
+--  enlace (existe, no revocado, dentro de su ventana) -> ubicación (solo si el
+--  canal es QR) -> persona -> vinculación -> duplicado -> INSERT. La BD no
+--  confía en la API ni la API en el front.
+--
+--  ESTADO EN VEZ DE EXCEPCIÓN (D64, mismo criterio que la D41): los casos de
+--  negocio devuelven un texto en p_estado y NO insertan nada. Los errores
+--  inesperados (FK, CHECK) siguen subiendo como excepción (500).
+--
+--    OK · ENLACE_NO_EXISTE · ENLACE_REVOCADO · FUERA_DE_VENTANA · SIN_UBICACION
+--    SEDE_SIN_COORDENADAS · FUERA_DE_RADIO · ESTUDIANTE_NO_EXISTE
+--    SIN_VINCULACION_VIGENTE · PERSONA_INACTIVA · YA_REGISTRADO · DATOS_INVALIDOS
+--
+--  UBICACIÓN POR CANAL (D61): canal QR -> se exige y se compara con la sede;
+--  canal ENLACE -> no se pide, y latitud/longitud/distancia quedan en NULL
+--  aunque el navegador las hubiera enviado.
+--
+--  Quedan 'ip' y 'user_agent' siempre (las columnas ya existían, v5).
+--  El disparador trg_registro_validar (RN-15, snapshots, RN-07) sigue activo
+--  como SEGUNDA barrera.
+--
+--  Idempotente (CREATE OR REPLACE). Si conservas el volumen de PostgreSQL hay
+--  que aplicarla a mano.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+-- --------------------------------------------------------------------------
+--  0) Pieza común: el enlace y la ubicación.
+--     La usan los tres procedimientos y el aviso temprano, para que haya UNA
+--     sola regla. Devuelve el estado y, si es OK, lo que hace falta insertar.
+--     STABLE: solo lee (y mira now()).
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION catedras.fn_validar_enlace_y_ubicacion(
+    IN  p_token     uuid,
+    IN  p_latitud   numeric,
+    IN  p_longitud  numeric,
+    OUT o_estado    text,
+    OUT o_id_enlace bigint,
+    OUT o_id_sesion bigint,
+    OUT o_canal     text,
+    OUT o_latitud   numeric,     -- lo que se guardará (NULL si el canal es ENLACE)
+    OUT o_longitud  numeric,
+    OUT o_distancia numeric,     -- metros, redondeada a 0,1; NULL si el canal es ENLACE
+    OUT o_radio     integer      -- radio que se aplicó; NULL si el canal es ENLACE
+)
+    LANGUAGE plpgsql
+    STABLE
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_ventana   tstzrange;
+    v_revocado  timestamptz;
+    v_sede_virt boolean;
+    v_sede_lat  numeric;
+    v_sede_lon  numeric;
+    v_sede_rad  integer;
+    v_dist      double precision;
+BEGIN
+    SELECT e.id_enlace, e.fk_sesion, e.canal, e.ventana, e.revocado_en
+      INTO o_id_enlace, o_id_sesion, o_canal, v_ventana, v_revocado
+      FROM enlace_registro e
+     WHERE e.token = p_token;
+
+    IF NOT FOUND THEN
+        o_estado := 'ENLACE_NO_EXISTE';  RETURN;
+    END IF;
+    IF v_revocado IS NOT NULL THEN
+        o_estado := 'ENLACE_REVOCADO';   RETURN;
+    END IF;
+    IF NOT (v_ventana @> now()) THEN
+        o_estado := 'FUERA_DE_VENTANA';  RETURN;
+    END IF;
+
+    -- Canal ENLACE (virtual/telepresencial): no se pide ni se valida ubicación.
+    IF o_canal <> 'QR' THEN
+        o_latitud := NULL;  o_longitud := NULL;  o_distancia := NULL;  o_radio := NULL;
+        o_estado := 'OK';   RETURN;
+    END IF;
+
+    -- Canal QR (presencial): la ubicación es obligatoria y debe caer en la sede.
+    IF p_latitud IS NULL OR p_longitud IS NULL THEN
+        o_estado := 'SIN_UBICACION';     RETURN;
+    END IF;
+    IF p_latitud NOT BETWEEN -90 AND 90 OR p_longitud NOT BETWEEN -180 AND 180 THEN
+        o_estado := 'DATOS_INVALIDOS';   RETURN;
+    END IF;
+
+    SELECT sd.es_virtual, sd.latitud, sd.longitud, sd.radio_metros
+      INTO v_sede_virt, v_sede_lat, v_sede_lon, v_sede_rad
+      FROM sesion s JOIN sede sd ON sd.id_sede = s.fk_sede
+     WHERE s.id_sesion = o_id_sesion;
+
+    -- Sin coordenadas de sede NO se acepta la asistencia sin comprobar el lugar.
+    IF v_sede_virt OR v_sede_lat IS NULL OR v_sede_lon IS NULL THEN
+        o_estado := 'SEDE_SIN_COORDENADAS';  RETURN;
+    END IF;
+
+    -- Radio efectivo: el de la sede, o el parámetro global, o 200 por si falta.
+    o_radio := COALESCE(v_sede_rad,
+                        (SELECT valor::int FROM parametro WHERE clave = 'RADIO_VALIDACION_METROS'),
+                        200);
+    v_dist  := catedras.fn_distancia_metros(p_latitud::double precision, p_longitud::double precision,
+                                            v_sede_lat::double precision, v_sede_lon::double precision);
+    o_distancia := round(v_dist::numeric, 1);
+    o_latitud   := p_latitud;
+    o_longitud  := p_longitud;
+
+    IF v_dist > o_radio THEN
+        o_estado := 'FUERA_DE_RADIO';    RETURN;
+    END IF;
+
+    o_estado := 'OK';
+END;
+$$;
+
+COMMENT ON FUNCTION catedras.fn_validar_enlace_y_ubicacion IS
+    'v7.2 D61/D64. Valida enlace (existe, no revocado, en ventana) y, si el canal es QR, la ubicación contra la sede. Devuelve el estado y los datos a guardar.';
+
+-- --------------------------------------------------------------------------
+--  1) Datos del enlace para pintar la página pública (no incluye las
+--     coordenadas de la sede). NULL = el token no existe.
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION catedras.fn_consultar_enlace_publico(p_token uuid)
+    RETURNS json
+    LANGUAGE plpgsql
+    STABLE
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_res json;
+BEGIN
+    SELECT row_to_json(r) INTO v_res
+      FROM (SELECT e.id_enlace,
+                   s.id_sesion,
+                   s.titulo                               AS titulo_sesion,
+                   s.numero_reunion,
+                   c.id_evento_asis                       AS id_catedra,
+                   c.nombre                               AS titulo_catedra,
+                   s.inicio, s.fin,
+                   s.fk_modalidad                         AS modalidad,
+                   e.canal,
+                   (e.canal = 'QR')                       AS requiere_ubicacion,
+                   lower(e.ventana)                       AS ventana_desde,
+                   upper(e.ventana)                       AS ventana_hasta,
+                   CASE WHEN e.revocado_en IS NOT NULL THEN 'revocado'
+                        WHEN now() <  lower(e.ventana)    THEN 'pendiente'
+                        WHEN e.ventana @> now()           THEN 'abierto'
+                        ELSE 'cerrado' END                AS estado_ventana
+              FROM enlace_registro e
+              JOIN sesion  s ON s.id_sesion   = e.fk_sesion
+              JOIN catedra c ON c.id_catedra  = s.fk_catedra
+             WHERE e.token = p_token) r;
+    RETURN v_res;
+END;
+$$;
+
+COMMENT ON FUNCTION catedras.fn_consultar_enlace_publico IS
+    'v7.2 RF-S9. Título de la cátedra y la sesión, canal, si requiere ubicación y estado de la ventana. NULL si el token no existe. No devuelve coordenadas.';
+
+-- --------------------------------------------------------------------------
+--  2) Aviso temprano de ubicación (no guarda nada).
+--     { estado, requiere_ubicacion, dentro, distancia_metros, radio_metros }
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION catedras.fn_verificar_ubicacion(
+    p_token    uuid,
+    p_latitud  numeric,
+    p_longitud numeric
+) RETURNS json
+    LANGUAGE plpgsql
+    STABLE
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v record;
+BEGIN
+    SELECT * INTO v FROM catedras.fn_validar_enlace_y_ubicacion(p_token, p_latitud, p_longitud);
+
+    RETURN json_build_object(
+        'estado',             v.o_estado,
+        'requiere_ubicacion', (v.o_canal = 'QR'),
+        'dentro',             CASE WHEN v.o_canal IS DISTINCT FROM 'QR' THEN NULL
+                                   WHEN v.o_estado = 'OK'              THEN true
+                                   WHEN v.o_estado = 'FUERA_DE_RADIO'  THEN false
+                                   ELSE NULL END,
+        'distancia_metros',   v.o_distancia,
+        'radio_metros',       v.o_radio);
+END;
+$$;
+
+COMMENT ON FUNCTION catedras.fn_verificar_ubicacion IS
+    'v7.2 RF-S10. Aviso temprano: dice si la ubicación cae dentro del radio de la sede de la sesión del token. No guarda nada; el procedimiento de registro la vuelve a verificar.';
+
+-- --------------------------------------------------------------------------
+--  3) ESTUDIANTE: identificado por su carnet (asistente.id_asis)
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE catedras.sp_registrar_asistencia_estudiante(
+    IN    p_token            uuid,
+    IN    p_carnet           text,
+    IN    p_latitud          numeric DEFAULT NULL,
+    IN    p_longitud         numeric DEFAULT NULL,
+    IN    p_ip               inet    DEFAULT NULL,
+    IN    p_user_agent       text    DEFAULT NULL,
+    INOUT p_estado           text    DEFAULT NULL,
+    INOUT p_id_registro      bigint  DEFAULT NULL,
+    INOUT p_distancia_metros numeric DEFAULT NULL,
+    INOUT p_radio_metros     integer DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_carnet    text := btrim(COALESCE(p_carnet, ''));
+    v_asistente bigint;
+    e           record;
+BEGIN
+    p_id_registro := NULL;
+
+    -- 0) forma del dato (mismo patrón que chk_asistente_idasis)
+    IF v_carnet !~ '^[0-9A-Za-z]{5,15}$' THEN
+        p_estado := 'DATOS_INVALIDOS';  RETURN;
+    END IF;
+
+    -- 1) enlace y ubicación (una sola regla: fn_validar_enlace_y_ubicacion)
+    SELECT * INTO e FROM catedras.fn_validar_enlace_y_ubicacion(p_token, p_latitud, p_longitud);
+    p_distancia_metros := e.o_distancia;
+    p_radio_metros     := e.o_radio;
+    IF e.o_estado <> 'OK' THEN
+        p_estado := e.o_estado;  RETURN;
+    END IF;
+
+    -- 2) la persona: debe existir como estudiante cargado y estar activa
+    SELECT a.id_asistente INTO v_asistente
+      FROM asistente a
+     WHERE a.id_asis = v_carnet AND a.activo;
+    IF v_asistente IS NULL THEN
+        p_estado := 'ESTUDIANTE_NO_EXISTE';  RETURN;
+    END IF;
+
+    -- 3) con vinculación ESTUDIANTE vigente (sin fecha de fin)
+    IF NOT EXISTS (SELECT 1 FROM vinculacion_asistente v
+                    WHERE v.fk_asistente = v_asistente
+                      AND v.fk_tipo_vinculacion = 'ESTUDIANTE'
+                      AND v.fecha_fin IS NULL) THEN
+        p_estado := 'SIN_VINCULACION_VIGENTE';  RETURN;
+    END IF;
+
+    -- 4) una persona no se registra dos veces en la misma sesión
+    IF EXISTS (SELECT 1 FROM registro_asistencia r
+                WHERE r.fk_sesion = e.o_id_sesion AND r.fk_asistente = v_asistente) THEN
+        p_estado := 'YA_REGISTRADO';  RETURN;
+    END IF;
+
+    -- 5) el registro. La vinculación se pasa EXPLÍCITA: si la persona tuviera
+    --    varias vigentes, la asistencia queda como lo que eligió ser.
+    --    Dos envíos simultáneos: el segundo choca con uq_registro_sesion_asis y
+    --    se atrapa aquí (nunca un 500).
+    BEGIN
+        INSERT INTO registro_asistencia (fk_sesion, fk_asistente, fk_enlace, fk_clave,
+                                         fk_vinculacion_snapshot, origen, ip, user_agent,
+                                         latitud, longitud, distancia_metros, identificado_por)
+        VALUES (e.o_id_sesion, v_asistente, e.o_id_enlace, NULL,
+                'ESTUDIANTE', e.o_canal, p_ip, left(p_user_agent, 300),
+                e.o_latitud, e.o_longitud, e.o_distancia, 'CARNET')
+        RETURNING id_registro INTO p_id_registro;
+    EXCEPTION WHEN unique_violation THEN
+        p_id_registro := NULL;
+        p_estado := 'YA_REGISTRADO';  RETURN;
+    END;
+
+    p_estado := 'OK';
+END;
+$$;
+
+-- --------------------------------------------------------------------------
+--  Pieza común de DOCENTE y EXTERNO: "contacto" es UN campo. Con '@' es un
+--  correo (correo_personal); si no, un celular. Devuelve NULL en los dos si
+--  el contacto no sirve.
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION catedras.fn_interpretar_contacto(
+    IN  p_contacto text,
+    OUT o_correo   text,
+    OUT o_celular  text,
+    OUT o_valido   boolean
+)
+    LANGUAGE plpgsql
+    IMMUTABLE
+    AS $$
+DECLARE
+    v text := btrim(COALESCE(p_contacto, ''));
+BEGIN
+    o_correo := NULL;  o_celular := NULL;  o_valido := false;
+
+    IF position('@' IN v) > 0 THEN
+        -- mismo formato que la API de Asistente y chk_asistente_cor_pers_fmt
+        IF length(v) <= 254 AND v ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' THEN
+            o_correo := v;  o_valido := true;
+        END IF;
+    ELSE
+        -- celular: hasta 20 caracteres (columna), con al menos 7 dígitos
+        IF length(v) <= 20 AND v ~ '^[0-9+() -]+$'
+           AND length(regexp_replace(v, '[^0-9]', '', 'g')) >= 7 THEN
+            o_celular := v;  o_valido := true;
+        END IF;
+    END IF;
+END;
+$$;
+
+-- --------------------------------------------------------------------------
+--  Pieza común de DOCENTE y EXTERNO: busca a la persona por cédula (CC) y, si
+--  no existe, la crea (es_externo = true: no tiene código ASIS, D67). Si ya
+--  existe NO se pisa nada: solo se rellenan correo y celular vacíos.
+--  Devuelve NULL si la persona existe pero está inactiva.
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION catedras.fn_persona_por_cedula(
+    p_cedula   text,
+    p_nombre   text,
+    p_correo   text,
+    p_celular  text
+) RETURNS bigint
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_id     bigint;
+    v_activo boolean;
+BEGIN
+    SELECT a.id_asistente, a.activo INTO v_id, v_activo
+      FROM documento_asistente d
+      JOIN asistente a ON a.id_asistente = d.fk_asistente
+     WHERE d.fk_tipo_documento = 'CC' AND d.numero = p_cedula;
+
+    IF v_id IS NOT NULL THEN
+        IF NOT v_activo THEN
+            RETURN NULL;
+        END IF;
+        -- Se reutiliza la persona. Solo se completan datos vacíos.
+        UPDATE asistente
+           SET correo_personal = COALESCE(correo_personal, p_correo),
+               celular         = COALESCE(celular, p_celular)
+         WHERE id_asistente = v_id
+           AND ((correo_personal IS NULL AND p_correo IS NOT NULL)
+             OR (celular IS NULL AND p_celular IS NOT NULL));
+        RETURN v_id;
+    END IF;
+
+    -- Persona nueva. 'nombres' es NOT NULL y mide 100: el nombre completo que
+    -- escribió va entero en nombre_completo_asis (200) y 'nombres' lleva su
+    -- principio; 'apellidos' no existe como dato aparte ('-'), D67.
+    INSERT INTO asistente (nombres, apellidos, nombre_completo_asis, correo_personal, celular,
+                           es_externo, contacto_sin_correo)
+    VALUES (left(p_nombre, 100), '-', left(p_nombre, 200), p_correo, p_celular,
+            true, p_correo IS NULL)
+    RETURNING id_asistente INTO v_id;
+
+    INSERT INTO documento_asistente (fk_asistente, fk_tipo_documento, numero, vigente)
+    VALUES (v_id, 'CC', p_cedula, true);
+
+    RETURN v_id;
+END;
+$$;
+
+-- --------------------------------------------------------------------------
+--  4) DOCENTE: cédula + nombre + contacto + facultad
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE catedras.sp_registrar_asistencia_docente(
+    IN    p_token            uuid,
+    IN    p_cedula           text,
+    IN    p_nombre           text,
+    IN    p_contacto         text,
+    IN    p_fk_facultad      text,
+    IN    p_latitud          numeric DEFAULT NULL,
+    IN    p_longitud         numeric DEFAULT NULL,
+    IN    p_ip               inet    DEFAULT NULL,
+    IN    p_user_agent       text    DEFAULT NULL,
+    INOUT p_estado           text    DEFAULT NULL,
+    INOUT p_id_registro      bigint  DEFAULT NULL,
+    INOUT p_distancia_metros numeric DEFAULT NULL,
+    INOUT p_radio_metros     integer DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_cedula    text := btrim(COALESCE(p_cedula, ''));
+    v_nombre    text := btrim(COALESCE(p_nombre, ''));
+    v_facultad  text := btrim(COALESCE(p_fk_facultad, ''));
+    v_asistente bigint;
+    c           record;
+    e           record;
+BEGIN
+    p_id_registro := NULL;
+
+    -- 0) forma de los datos (la facultad debe existir y estar activa: Regla 2)
+    SELECT * INTO c FROM catedras.fn_interpretar_contacto(p_contacto);
+    IF v_cedula !~ '^[0-9A-Za-z-]{4,20}$'
+       OR length(v_nombre) NOT BETWEEN 1 AND 200
+       OR NOT c.o_valido
+       OR NOT EXISTS (SELECT 1 FROM facultad f WHERE f.id_facultad = v_facultad AND f.activo) THEN
+        p_estado := 'DATOS_INVALIDOS';  RETURN;
+    END IF;
+
+    -- 1) enlace y ubicación
+    SELECT * INTO e FROM catedras.fn_validar_enlace_y_ubicacion(p_token, p_latitud, p_longitud);
+    p_distancia_metros := e.o_distancia;
+    p_radio_metros     := e.o_radio;
+    IF e.o_estado <> 'OK' THEN
+        p_estado := e.o_estado;  RETURN;
+    END IF;
+
+    -- 2) la persona: se reutiliza por cédula o se crea
+    v_asistente := catedras.fn_persona_por_cedula(v_cedula, v_nombre, c.o_correo, c.o_celular);
+    IF v_asistente IS NULL THEN
+        p_estado := 'PERSONA_INACTIVA';  RETURN;
+    END IF;
+
+    -- 3) vinculación DOCENTE vigente: si no la tiene, se le crea
+    IF NOT EXISTS (SELECT 1 FROM vinculacion_asistente v
+                    WHERE v.fk_asistente = v_asistente
+                      AND v.fk_tipo_vinculacion = 'DOCENTE' AND v.fecha_fin IS NULL) THEN
+        INSERT INTO vinculacion_asistente (fk_asistente, fk_tipo_vinculacion, fecha_ini)
+        VALUES (v_asistente, 'DOCENTE', CURRENT_DATE)
+        ON CONFLICT (fk_asistente, fk_tipo_vinculacion, fecha_ini) DO UPDATE SET fecha_fin = NULL;
+    END IF;
+
+    -- 4) duplicado
+    IF EXISTS (SELECT 1 FROM registro_asistencia r
+                WHERE r.fk_sesion = e.o_id_sesion AND r.fk_asistente = v_asistente) THEN
+        p_estado := 'YA_REGISTRADO';  RETURN;
+    END IF;
+
+    -- 5) el registro (con la facultad que declaró, como instantánea)
+    BEGIN
+        INSERT INTO registro_asistencia (fk_sesion, fk_asistente, fk_enlace, fk_clave,
+                                         fk_vinculacion_snapshot, fk_facultad_snapshot,
+                                         origen, ip, user_agent,
+                                         latitud, longitud, distancia_metros, identificado_por)
+        VALUES (e.o_id_sesion, v_asistente, e.o_id_enlace, NULL,
+                'DOCENTE', v_facultad,
+                e.o_canal, p_ip, left(p_user_agent, 300),
+                e.o_latitud, e.o_longitud, e.o_distancia, 'DECLARADO')
+        RETURNING id_registro INTO p_id_registro;
+    EXCEPTION WHEN unique_violation THEN
+        p_id_registro := NULL;
+        p_estado := 'YA_REGISTRADO';  RETURN;
+    END;
+
+    p_estado := 'OK';
+END;
+$$;
+
+-- --------------------------------------------------------------------------
+--  5) EXTERNO: cédula + nombre + contacto + de dónde viene
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE catedras.sp_registrar_asistencia_externo(
+    IN    p_token            uuid,
+    IN    p_cedula           text,
+    IN    p_nombre           text,
+    IN    p_contacto         text,
+    IN    p_procedencia      text,
+    IN    p_latitud          numeric DEFAULT NULL,
+    IN    p_longitud         numeric DEFAULT NULL,
+    IN    p_ip               inet    DEFAULT NULL,
+    IN    p_user_agent       text    DEFAULT NULL,
+    INOUT p_estado           text    DEFAULT NULL,
+    INOUT p_id_registro      bigint  DEFAULT NULL,
+    INOUT p_distancia_metros numeric DEFAULT NULL,
+    INOUT p_radio_metros     integer DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_cedula      text := btrim(COALESCE(p_cedula, ''));
+    v_nombre      text := btrim(COALESCE(p_nombre, ''));
+    v_procedencia text := btrim(COALESCE(p_procedencia, ''));
+    v_asistente   bigint;
+    c             record;
+    e             record;
+BEGIN
+    p_id_registro := NULL;
+
+    SELECT * INTO c FROM catedras.fn_interpretar_contacto(p_contacto);
+    IF v_cedula !~ '^[0-9A-Za-z-]{4,20}$'
+       OR length(v_nombre) NOT BETWEEN 1 AND 200
+       OR NOT c.o_valido
+       OR length(v_procedencia) NOT BETWEEN 1 AND 150 THEN
+        p_estado := 'DATOS_INVALIDOS';  RETURN;
+    END IF;
+
+    SELECT * INTO e FROM catedras.fn_validar_enlace_y_ubicacion(p_token, p_latitud, p_longitud);
+    p_distancia_metros := e.o_distancia;
+    p_radio_metros     := e.o_radio;
+    IF e.o_estado <> 'OK' THEN
+        p_estado := e.o_estado;  RETURN;
+    END IF;
+
+    v_asistente := catedras.fn_persona_por_cedula(v_cedula, v_nombre, c.o_correo, c.o_celular);
+    IF v_asistente IS NULL THEN
+        p_estado := 'PERSONA_INACTIVA';  RETURN;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM vinculacion_asistente v
+                    WHERE v.fk_asistente = v_asistente
+                      AND v.fk_tipo_vinculacion = 'EXTERNO' AND v.fecha_fin IS NULL) THEN
+        INSERT INTO vinculacion_asistente (fk_asistente, fk_tipo_vinculacion, fecha_ini)
+        VALUES (v_asistente, 'EXTERNO', CURRENT_DATE)
+        ON CONFLICT (fk_asistente, fk_tipo_vinculacion, fecha_ini) DO UPDATE SET fecha_fin = NULL;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM registro_asistencia r
+                WHERE r.fk_sesion = e.o_id_sesion AND r.fk_asistente = v_asistente) THEN
+        p_estado := 'YA_REGISTRADO';  RETURN;
+    END IF;
+
+    BEGIN
+        INSERT INTO registro_asistencia (fk_sesion, fk_asistente, fk_enlace, fk_clave,
+                                         fk_vinculacion_snapshot, procedencia,
+                                         origen, ip, user_agent,
+                                         latitud, longitud, distancia_metros, identificado_por)
+        VALUES (e.o_id_sesion, v_asistente, e.o_id_enlace, NULL,
+                'EXTERNO', v_procedencia,
+                e.o_canal, p_ip, left(p_user_agent, 300),
+                e.o_latitud, e.o_longitud, e.o_distancia, 'DECLARADO')
+        RETURNING id_registro INTO p_id_registro;
+    EXCEPTION WHEN unique_violation THEN
+        p_id_registro := NULL;
+        p_estado := 'YA_REGISTRADO';  RETURN;
+    END;
+
+    p_estado := 'OK';
+END;
+$$;
+
+COMMENT ON PROCEDURE catedras.sp_registrar_asistencia_estudiante IS
+    'v7.2 D64. Registra la asistencia de un estudiante por carnet. Devuelve p_estado (OK u otro) y, si OK, p_id_registro. No lanza excepción para los casos de negocio.';
+COMMENT ON PROCEDURE catedras.sp_registrar_asistencia_docente IS
+    'v7.2 D64. Registra la asistencia de un docente (cédula, nombre, contacto, facultad). Crea o reutiliza la persona por cédula.';
+COMMENT ON PROCEDURE catedras.sp_registrar_asistencia_externo IS
+    'v7.2 D64. Registra la asistencia de un externo (cédula, nombre, contacto, procedencia). Crea o reutiliza la persona por cédula.';
+
+
+-- ----- migracion 064_sp_cargar_estudiante.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/064_sp_cargar_estudiante.sql
+--  Proyecto Cátedras · SUBVERSIÓN v7.2 · RF-S8 · D67, D68
+-- --------------------------------------------------------------------------
+--  Carga de UN estudiante del archivo (CC, Carnet_estudiante, Programa) +
+--  el periodo elegido en la pantalla. Es un UPSERT por carnet: volver a subir
+--  el mismo archivo actualiza y NO duplica. 'sp_guardar_asistente' (002) es un
+--  INSERT puro: repetir un id_asis lanzaba uq_asistente_asis.
+--
+--  Por fila, en una sola transacción:
+--    1) persona: se busca por id_asis (= carnet); si no existe, se crea con
+--       nombre provisional ('Estudiante <carnet>'), sin correo
+--       (contacto_sin_correo = true) y no externa (D67). Si ya existía NO se
+--       toca su nombre; si estaba inactiva, el archivo la reactiva.
+--    2) documento CC: si ese número ya es de OTRA persona se rechaza la fila.
+--       Si la persona tenía otro documento vigente, ese pasa a vigente = false
+--       (no se borra: RN-05) y el nuevo queda vigente.
+--    3) programa (P19): los OTROS programas ACTIVO de esa persona en ese mismo
+--       periodo pasan a RETIRADO; el del archivo queda ACTIVO. Así hay uno solo
+--       activo por persona y periodo y el 'snapshot' del registro de asistencia
+--       (fn_trg_registro_validar) es determinista. Otros periodos no se tocan.
+--    4) vinculación ESTUDIANTE: si no tiene una vigente, se crea con
+--       fecha_ini = hoy; si la tiene, se conserva su fecha.
+--
+--  Responde p_accion = 'CREADO' o 'ACTUALIZADO' y el id de la persona.
+--  Los rechazos (formato, programa o periodo inexistente, CC de otra persona)
+--  son excepciones: el front guarda su texto como motivo de la novedad de esa
+--  fila y sigue con las demás (carga parcial, D15).
+--
+--  Idempotente (CREATE OR REPLACE). Si conservas el volumen de PostgreSQL hay
+--  que aplicarla a mano.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+CREATE OR REPLACE PROCEDURE catedras.sp_cargar_estudiante(
+    IN    p_id_asis        character varying(15),
+    IN    p_documento      character varying(20),
+    IN    p_programa       character varying(5),
+    IN    p_periodo        character(6),
+    IN    p_fk_lote_carga  bigint DEFAULT NULL,
+    INOUT p_id_asistente   bigint DEFAULT NULL,
+    INOUT p_accion         text   DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_dueno_doc bigint;
+    v_doc_vigente boolean;
+BEGIN
+    -- 0) forma de los datos (mismos patrones que los CHECK de las tablas, con un mensaje claro)
+    IF p_id_asis IS NULL OR p_id_asis !~ '^[0-9A-Za-z]{5,15}$' THEN
+        RAISE EXCEPTION 'El carnet "%" no es válido: debe tener entre 5 y 15 letras o dígitos', p_id_asis
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF p_documento IS NULL OR p_documento !~ '^[0-9A-Za-z-]{4,20}$' THEN
+        RAISE EXCEPTION 'La CC "%" no es válida: debe tener entre 4 y 20 letras, dígitos o guiones', p_documento
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM programa_academico WHERE codigo = p_programa) THEN
+        RAISE EXCEPTION 'El programa "%" no existe en el catálogo', p_programa
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM periodo_academico WHERE id_periodo = p_periodo) THEN
+        RAISE EXCEPTION 'El periodo "%" no existe', p_periodo
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
+    -- 1) la persona. FOR UPDATE: dos cargas simultáneas del mismo carnet se turnan.
+    SELECT a.id_asistente INTO p_id_asistente
+      FROM asistente a WHERE a.id_asis = p_id_asis
+       FOR UPDATE;
+
+    IF p_id_asistente IS NULL THEN
+        INSERT INTO asistente (id_asis, nombres, apellidos, es_externo, contacto_sin_correo, fk_lote_carga)
+        VALUES (p_id_asis, 'Estudiante ' || p_id_asis, '-', false, true, p_fk_lote_carga)
+        RETURNING id_asistente INTO p_id_asistente;
+        p_accion := 'CREADO';
+    ELSE
+        -- el archivo es la fuente de verdad: una persona inactiva que aparece vuelve a estar activa
+        UPDATE asistente SET activo = true WHERE id_asistente = p_id_asistente AND NOT activo;
+        p_accion := 'ACTUALIZADO';
+    END IF;
+
+    -- 2) documento CC
+    SELECT d.fk_asistente, d.vigente INTO v_dueno_doc, v_doc_vigente
+      FROM documento_asistente d
+     WHERE d.fk_tipo_documento = 'CC' AND d.numero = p_documento;
+
+    IF v_dueno_doc IS NOT NULL AND v_dueno_doc <> p_id_asistente THEN
+        RAISE EXCEPTION 'La CC % ya pertenece a otra persona; no se carga el carnet %', p_documento, p_id_asis
+            USING ERRCODE = 'unique_violation';
+    END IF;
+
+    IF v_dueno_doc IS NULL OR NOT v_doc_vigente THEN
+        -- ux_documento_vigente: solo un documento vigente por persona. El actual se retira primero.
+        UPDATE documento_asistente SET vigente = false
+         WHERE fk_asistente = p_id_asistente AND vigente;
+
+        IF v_dueno_doc IS NULL THEN
+            INSERT INTO documento_asistente (fk_asistente, fk_tipo_documento, numero, vigente)
+            VALUES (p_id_asistente, 'CC', p_documento, true);
+        ELSE
+            -- tenía ese mismo número pero ya no vigente: vuelve a serlo
+            UPDATE documento_asistente SET vigente = true
+             WHERE fk_asistente = p_id_asistente AND fk_tipo_documento = 'CC' AND numero = p_documento;
+        END IF;
+    END IF;
+
+    -- 3) programa del periodo (P19): uno solo ACTIVO por persona y periodo
+    UPDATE programa_asistente SET estado = 'RETIRADO'
+     WHERE fk_asistente = p_id_asistente AND fk_periodo = p_periodo
+       AND estado = 'ACTIVO' AND fk_programa <> p_programa;
+
+    INSERT INTO programa_asistente (fk_asistente, fk_programa, fk_periodo, estado)
+    VALUES (p_id_asistente, p_programa, p_periodo, 'ACTIVO')
+    ON CONFLICT (fk_asistente, fk_programa, fk_periodo) DO UPDATE SET estado = 'ACTIVO';
+
+    -- 4) vinculación ESTUDIANTE vigente
+    IF NOT EXISTS (SELECT 1 FROM vinculacion_asistente v
+                    WHERE v.fk_asistente = p_id_asistente
+                      AND v.fk_tipo_vinculacion = 'ESTUDIANTE' AND v.fecha_fin IS NULL) THEN
+        INSERT INTO vinculacion_asistente (fk_asistente, fk_tipo_vinculacion, fecha_ini)
+        VALUES (p_id_asistente, 'ESTUDIANTE', CURRENT_DATE)
+        ON CONFLICT (fk_asistente, fk_tipo_vinculacion, fecha_ini) DO UPDATE SET fecha_fin = NULL;
+    END IF;
+END;
+$$;
+
+COMMENT ON PROCEDURE catedras.sp_cargar_estudiante IS
+    'v7.2 D68. Upsert de un estudiante por carnet (CC + programa + periodo). Idempotente. Retira los otros programas ACTIVO del mismo periodo (P19). Devuelve p_id_asistente y p_accion (CREADO / ACTUALIZADO).';
+
+
+-- ----- migracion 066_exportacion_catedras.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/066_exportacion_catedras.sql
+--  Proyecto Cátedras · SUBVERSIÓN v7.2 · RF-S13 / RF-S14 · D70
+-- --------------------------------------------------------------------------
+--  Consultas de SOLO LECTURA para la exportación de fin de periodo
+--  (/admin/exportar). El front arma los CSV y el ZIP; aquí solo se entregan
+--  los datos, ya deduplicados y clasificados:
+--
+--    fn_exportar_catedras_periodo(periodo)
+--        una fila por cátedra del periodo: id, título y cuántos estudiantes,
+--        docentes y externos asistieron (más "otros", que no se exportan).
+--    fn_exportar_asistentes_periodo(periodo, desde, limite)
+--        las mismas cátedras con la lista de quienes asistieron, PAGINADA POR
+--        CÁTEDRA (keyset por id_evento_asis) para que el ZIP no haga una
+--        petición por cátedra.
+--
+--  REGLAS (D70):
+--   · Clasificación por la instantánea de la VINCULACIÓN del registro
+--     (ESTUDIANTE / DOCENTE / EXTERNO), nunca por asistente.es_externo (los
+--     docentes nuevos también son es_externo = true, D67). Las asistencias de
+--     otras vinculaciones (ADMINISTRATIVO, EGRESADO...) solo se cuentan como
+--     "otros".
+--   · Una cátedra pertenece a un periodo por sus sesiones: aparece en cada
+--     periodo donde tiene al menos una sesión, y ahí solo cuentan los
+--     registros de ESAS sesiones.
+--   · Una persona aparece UNA vez por cátedra (y vinculación) aunque haya ido a
+--     varias sesiones; de sus datos variables (programa, facultad, procedencia)
+--     se toma el del registro más reciente.
+--   · Cátedras incluidas: las ACTIVAS y las inactivas que tengan asistencias en
+--     ese periodo (D59 desactivó miles de cátedras sin asistencias: sin este
+--     criterio llenarían la lista de ceros).
+--   · 'id_catedra' = catedra.id_evento_asis (9 dígitos, con ceros a la izquierda).
+--
+--  Idempotente (CREATE OR REPLACE). Si conservas el volumen de PostgreSQL hay
+--  que aplicarla a mano.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+-- --------------------------------------------------------------------------
+--  1) Cátedras del periodo con sus conteos
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION catedras.fn_exportar_catedras_periodo(p_periodo character(6))
+    RETURNS json
+    LANGUAGE sql
+    STABLE
+    SET search_path TO 'catedras', 'public'
+    AS $$
+    SELECT COALESCE(json_agg(t ORDER BY t.id_catedra), '[]'::json)
+      FROM (
+        SELECT c.id_evento_asis AS id_catedra,
+               c.nombre         AS titulo,
+               c.activo,
+               count(DISTINCT ra.fk_asistente) FILTER (WHERE ra.fk_vinculacion_snapshot = 'ESTUDIANTE') AS estudiantes,
+               count(DISTINCT ra.fk_asistente) FILTER (WHERE ra.fk_vinculacion_snapshot = 'DOCENTE')    AS docentes,
+               count(DISTINCT ra.fk_asistente) FILTER (WHERE ra.fk_vinculacion_snapshot = 'EXTERNO')    AS externos,
+               count(DISTINCT ra.fk_asistente) FILTER (WHERE ra.fk_vinculacion_snapshot
+                                                       NOT IN ('ESTUDIANTE', 'DOCENTE', 'EXTERNO'))     AS otros
+          FROM catedra c
+          JOIN sesion s ON s.fk_catedra = c.id_catedra AND s.fk_periodo = p_periodo
+          LEFT JOIN registro_asistencia ra ON ra.fk_sesion = s.id_sesion
+         GROUP BY c.id_catedra, c.id_evento_asis, c.nombre, c.activo
+        HAVING c.activo OR count(ra.id_registro) > 0
+      ) t;
+$$;
+
+COMMENT ON FUNCTION catedras.fn_exportar_catedras_periodo IS
+    'v7.2 D70. Cátedras con al menos una sesión en el periodo (activas, o inactivas con asistencias) y cuántos estudiantes, docentes y externos asistieron; "otros" = otras vinculaciones, que no se exportan.';
+
+-- --------------------------------------------------------------------------
+--  2) Asistentes por cátedra, paginado por cátedra.
+--     p_desde: último id_catedra (id_evento_asis) ya recibido; NULL = desde el
+--     principio. p_limite: cuántas cátedras por página (tope 500).
+--     Cada elemento de 'asistentes' trae TODOS los campos de los tres CSV; el
+--     front elige las columnas según el tipo:
+--       ESTUDIANTE -> cc, carnet, programa
+--       DOCENTE    -> cc, nombre, contacto, facultad
+--       EXTERNO    -> cc, nombre, contacto, procedencia
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION catedras.fn_exportar_asistentes_periodo(
+    p_periodo character(6),
+    p_desde   text    DEFAULT NULL,
+    p_limite  integer DEFAULT 100
+) RETURNS json
+    LANGUAGE sql
+    STABLE
+    SET search_path TO 'catedras', 'public'
+    AS $$
+    WITH cats AS (
+        SELECT c.id_catedra, c.id_evento_asis, c.nombre
+          FROM catedra c
+         WHERE (p_desde IS NULL OR c.id_evento_asis > p_desde)
+           AND EXISTS (SELECT 1 FROM sesion s
+                        WHERE s.fk_catedra = c.id_catedra AND s.fk_periodo = p_periodo)
+           AND (c.activo
+                OR EXISTS (SELECT 1 FROM sesion s
+                             JOIN registro_asistencia ra ON ra.fk_sesion = s.id_sesion
+                            WHERE s.fk_catedra = c.id_catedra AND s.fk_periodo = p_periodo))
+         ORDER BY c.id_evento_asis
+         LIMIT LEAST(GREATEST(COALESCE(p_limite, 100), 1), 500)
+    ),
+    filas AS (
+        -- una fila por (cátedra, persona, vinculación): la del registro más reciente
+        SELECT DISTINCT ON (cs.id_catedra, ra.fk_asistente, ra.fk_vinculacion_snapshot)
+               cs.id_catedra,
+               ra.fk_vinculacion_snapshot AS tipo,
+               ra.fk_asistente,
+               ra.fk_programa_snapshot,
+               ra.fk_facultad_snapshot,
+               ra.procedencia
+          FROM cats cs
+          JOIN sesion s ON s.fk_catedra = cs.id_catedra AND s.fk_periodo = p_periodo
+          JOIN registro_asistencia ra ON ra.fk_sesion = s.id_sesion
+               AND ra.fk_vinculacion_snapshot IN ('ESTUDIANTE', 'DOCENTE', 'EXTERNO')
+         ORDER BY cs.id_catedra, ra.fk_asistente, ra.fk_vinculacion_snapshot, ra.registrado_en DESC
+    )
+    SELECT COALESCE(json_agg(
+               json_build_object(
+                   'id_catedra', cs.id_evento_asis,
+                   'titulo',     cs.nombre,
+                   'asistentes', COALESCE((
+                       SELECT json_agg(
+                                  json_build_object(
+                                      'tipo',        f.tipo,
+                                      'cc',          d.numero,
+                                      'carnet',      a.id_asis,
+                                      'nombre',      COALESCE(a.nombre_completo_asis,
+                                                              btrim(a.nombres || ' ' || a.apellidos)),
+                                      'contacto',    COALESCE(a.correo_institucional::text,
+                                                              a.correo_personal::text,
+                                                              a.celular),
+                                      'programa',    f.fk_programa_snapshot,
+                                      'facultad',    fa.nombre,
+                                      'procedencia', f.procedencia)
+                                  ORDER BY f.tipo, a.id_asis NULLS LAST, d.numero)
+                         FROM filas f
+                         JOIN asistente a ON a.id_asistente = f.fk_asistente
+                         LEFT JOIN documento_asistente d ON d.fk_asistente = a.id_asistente AND d.vigente
+                         LEFT JOIN facultad fa ON fa.id_facultad = f.fk_facultad_snapshot
+                        WHERE f.id_catedra = cs.id_catedra), '[]'::json)
+               ) ORDER BY cs.id_evento_asis), '[]'::json)
+      FROM cats cs;
+$$;
+
+COMMENT ON FUNCTION catedras.fn_exportar_asistentes_periodo IS
+    'v7.2 D70. Asistentes por cátedra del periodo, sin repetir persona (por cátedra y vinculación), paginado por id_evento_asis (p_desde, p_limite). Clasifica por la vinculación del registro.';
+
+
+-- ----- migracion 067_sp_guardar_usuario.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/067_sp_guardar_usuario.sql
+--  Proyecto Cátedras · Guía IA, Regla 1 (maestro-detalle) · "crear usuario"
+-- --------------------------------------------------------------------------
+--  Maestro: 'usuario' (con la persona que es su dueña). Detalle: 'rol_por_usuario'.
+--
+--  CREAR UN USUARIO YA NO ES BUSCAR A UNA PERSONA: el administrador escribe los
+--  datos de la persona, los de la cuenta y marca uno o varios roles (ESTUDIANTE,
+--  PONENTE, ADMIN...). Este SP guarda las tres cosas en UNA sola transacción:
+--
+--     1) asistente          la persona (es_externo = true: no viene del ASIS, así
+--                           que no lleva id_asis; chk_asistente_externo lo permite)
+--     2) usuario            la cuenta, con el hash BCrypt que calculó ServicioUsuario
+--     3) rol_por_usuario    una fila por rol del arreglo p_roles (nacen vigentes)
+--
+--  Si CUALQUIER paso falla (login repetido, correo repetido, rol inexistente,
+--  rol repetido...), PostgreSQL revierte TODO el CALL: ni la persona ni la cuenta
+--  quedan a medias.
+--
+--  p_roles  [{"fk_rol":"ESTUDIANTE","fecha_ini":"2026-01-20"}]   (fecha_ini opcional = hoy)
+--
+--  Idempotente (CREATE OR REPLACE). Si conservas el volumen de PostgreSQL hay que
+--  aplicarla a mano con psql.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+CREATE OR REPLACE PROCEDURE catedras.sp_guardar_usuario(
+    -- La persona (maestro, parte 1).
+    IN    p_nombres             character varying(100),
+    IN    p_apellidos           character varying(100),
+    IN    p_correo_inst         character varying(254),
+    IN    p_correo_pers         character varying(254),
+    IN    p_celular             character varying(20),
+    -- La cuenta (maestro, parte 2). La clave llega YA hasheada (ADR D23).
+    IN    p_usuario             character varying(40),
+    IN    p_clave_hash          character varying(255),
+    IN    p_activo              boolean DEFAULT true,
+    IN    p_debe_cambiar_clave  boolean DEFAULT false,
+    -- Detalle: los roles.
+    IN    p_roles               jsonb   DEFAULT NULL,
+    INOUT p_resultado           json    DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_asistente bigint;
+    v_usuario   bigint;
+BEGIN
+    -- 1) La persona. Correo repetido o sin ningún correo -> excepción del motor (500).
+    INSERT INTO asistente (nombres, apellidos, correo_institucional, correo_personal, celular, es_externo, activo)
+    VALUES (p_nombres, p_apellidos, p_correo_inst, p_correo_pers, p_celular, true, true)
+    RETURNING id_asistente INTO v_asistente;
+
+    -- 2) La cuenta. Login repetido (uq_usuario_login) -> excepción -> se deshace la persona.
+    INSERT INTO usuario (fk_asistente, usuario, clave_hash, activo, debe_cambiar_clave)
+    VALUES (v_asistente, p_usuario, p_clave_hash, COALESCE(p_activo, true), COALESCE(p_debe_cambiar_clave, false))
+    RETURNING id_usuario INTO v_usuario;
+
+    -- 3) Los roles. 'fk_usuario' NO viene en el JSON: es la cuenta recién creada.
+    IF p_roles IS NOT NULL AND jsonb_array_length(p_roles) > 0 THEN
+        INSERT INTO rol_por_usuario (fk_usuario, fk_rol, fecha_ini)
+        SELECT v_usuario,
+               e ->> 'fk_rol',
+               COALESCE((e ->> 'fecha_ini')::date, CURRENT_DATE)
+          FROM jsonb_array_elements(p_roles) AS e;
+    END IF;
+
+    SELECT row_to_json(u) INTO p_resultado
+      FROM (SELECT id_usuario, fk_asistente, usuario, activo, debe_cambiar_clave, ultimo_acceso, creado_en
+              FROM usuario
+             WHERE id_usuario = v_usuario) u;
+END;
+$$;
+
+COMMENT ON PROCEDURE catedras.sp_guardar_usuario IS
+    'Guía IA · Regla 1. Crea la persona (asistente), su usuario y sus roles en una sola transacción. '
+    'La clave llega ya hasheada por ServicioUsuario. Devuelve el usuario creado (sin clave_hash).';
+
+RESET search_path;
+
+
+-- ----- migracion 068_rol_asistente_sin_coordinador_consulta.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/068_rol_asistente_sin_coordinador_consulta.sql
+--  Proyecto Cátedras · Catálogo de roles
+-- --------------------------------------------------------------------------
+--  1) Se QUITAN los roles COORDINADOR y CONSULTA. Nunca tuvieron una sola
+--     pantalla ni permiso asociado (el front solo conoce ADMIN, ESTUDIANTE y
+--     PONENTE) y el script base los sembraba solo como ejemplo.
+--     ⚠ fk_rolusr_rol es ON DELETE RESTRICT: para poder borrar el rol hay que
+--     borrar ANTES sus filas de rol_por_usuario (el historial de quien los tuvo).
+--  2) Se CREA el rol ASISTENTE: el administrador lo asigna a una cuenta y esa
+--     persona puede iniciar sesión y gestionar SOLO cátedras (agregar, editar
+--     y borrar). Lo que puede hacer lo decide el front (la API no autoriza por
+--     rol, ADR D28) y el login de la API ahora acepta ADMIN o ASISTENTE.
+--
+--  Idempotente: se puede ejecutar varias veces. Con un volumen de PostgreSQL ya
+--  creado hay que aplicarla a mano con psql.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+DELETE FROM rol_por_usuario WHERE fk_rol IN ('COORDINADOR', 'CONSULTA');
+DELETE FROM rol             WHERE id_rol IN ('COORDINADOR', 'CONSULTA');
+
+INSERT INTO rol (id_rol, nombre, descripcion) VALUES
+    ('ASISTENTE', 'Asistente', 'Inicia sesión y gestiona cátedras: agregar, editar y borrar')
+ON CONFLICT DO NOTHING;
+
+RESET search_path;
+
+
+-- ----- migracion 069_quitar_roles_estudiante_ponente.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/069_quitar_roles_estudiante_ponente.sql
+--  Proyecto Cátedras · Catálogo de roles
+-- --------------------------------------------------------------------------
+--  Se QUITAN los roles ESTUDIANTE y PONENTE (los sembró la migración 046).
+--  Desde la v7.1 · D55 estudiantes y ponentes NO tienen cuenta que entre: la
+--  asistencia es pública (QR) y todo lo gestiona el personal. El catálogo
+--  queda con ADMIN y ASISTENTE.
+--
+--  ⚠ NO se tocan otras cosas llamadas igual:
+--     · ponencia.rol = 'PONENTE'  (quién da una sesión; chk_ponencia_rol).
+--     · vinculacion_asistente.fk_tipo_vinculacion = 'ESTUDIANTE'  (tipo de persona).
+--  Aquí solo se borra del catálogo 'rol' (roles de CUENTA).
+--
+--  ⚠ fk_rolusr_rol es ON DELETE RESTRICT: antes se borran las filas de
+--  rol_por_usuario de esos roles (el historial de quien los tuvo).
+--  ⚠ sp_provisionar_cuenta_estudiante (052) y la semilla 048 asignan el rol
+--  ESTUDIANTE: con el rol borrado, volver a ejecutarlos fallaría por la FK. Ya
+--  nada de la API los llama.
+--
+--  Idempotente. Con un volumen de PostgreSQL ya creado hay que aplicarla a mano.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+DELETE FROM rol_por_usuario WHERE fk_rol IN ('ESTUDIANTE', 'PONENTE');
+DELETE FROM rol             WHERE id_rol IN ('ESTUDIANTE', 'PONENTE');
+
+RESET search_path;
+
+
+-- ----- catalogo facultad (lo necesita la migracion 070: programa_academico.fk_facultad) -----
+RESET search_path;
+SET search_path TO catedras, public;
+
+--  Las mismas 9 filas del script provisto (script_bdcatedras.sql). La USB es la raiz; las demas cuelgan de ella.
+INSERT INTO catedras.facultad VALUES ('USB', 'Universidad de San Buenaventura', NULL, true)           ON CONFLICT DO NOTHING;
+INSERT INTO catedras.facultad VALUES ('F_ING', 'Facultad de Ingenierias', 'USB', true)                 ON CONFLICT DO NOTHING;
+INSERT INTO catedras.facultad VALUES ('F_ARTES', 'Facultad de Artes Integradas', 'USB', true)          ON CONFLICT DO NOTHING;
+INSERT INTO catedras.facultad VALUES ('F_PSICO', 'Facultad de Psicologia', 'USB', true)                ON CONFLICT DO NOTHING;
+INSERT INTO catedras.facultad VALUES ('F_DERECHO', 'Facultad de Derecho y Ciencias Politicas', 'USB', true) ON CONFLICT DO NOTHING;
+INSERT INTO catedras.facultad VALUES ('F_EDU', 'Facultad de Educacion', 'USB', true)                   ON CONFLICT DO NOTHING;
+INSERT INTO catedras.facultad VALUES ('F_CIENCIAS', 'Facultad de Ciencias Empresariales', 'USB', true) ON CONFLICT DO NOTHING;
+INSERT INTO catedras.facultad VALUES ('F_SALUD', 'Facultad de Ciencias de la Salud', 'USB', true)      ON CONFLICT DO NOTHING;
+INSERT INTO catedras.facultad VALUES ('F_OTRA', 'Otras unidades academicas', 'USB', true)              ON CONFLICT DO NOTHING;
+
+
+-- ----- migracion 070_programas_reales_usb_medellin.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/070_programas_reales_usb_medellin.sql
+--  Proyecto Cátedras · Catálogo de programas académicos
+-- --------------------------------------------------------------------------
+--  Reemplaza los programas INVENTADOS por los programas REALES de la
+--  Universidad de San Buenaventura que se ofrecen en el Valle de Aburrá
+--  (sedes Medellín y Bello), según la oferta publicada en usbmed.edu.co
+--  (https://usbmed.edu.co/programas/pregrados y /programas/posgrados,
+--  consultadas el 2026-11-13).
+--
+--  QUÉ SE BORRA
+--   · Los programas de relleno «Programa M0110», «Programa M0200»...: el CÓDIGO
+--     venía del ASIS pero el NOMBRE era inventado.
+--   · Los «(mock)» sin equivalente real: INDS (duplicado de M0286), INGC (Ingeniería
+--     Civil), COMU (Comunicación Social) y EDUC (Licenciatura en Educación genérica);
+--     la USB Medellín no ofrece esos programas.
+--   · NO se borra un programa que tenga matrículas (programa_asistente) o registros
+--     de asistencia que lo usen (FK RESTRICT): se conserva y queda para revisarlo a mano.
+--
+--  QUÉ SE DEJA / CREA
+--   · Se conservan los códigos ARQU, DERE, PSIC, CONT, ADMO y M0286 y se les pone el
+--     nombre real. ADMO queda como «Administración de Negocios» (el programa real).
+--   · Los demás llevan un código INTERNO de 4 letras (no son códigos ASIS). Si llega
+--     un archivo real con otros códigos, se corrigen con un UPDATE del código o con un
+--     alias_programa, sin tocar los nombres.
+--   · Sin los 2 programas de Armenia (Psicología – Armenia, Maestría en Educación:
+--     Desarrollo Humano – Armenia): no son del Valle de Aburrá.
+--   · Los posgrados «– FUCN» son los ofrecidos en convenio, tal como los publica la USB.
+--   · La tecnología (Entrenamiento Deportivo) va como PREGRADO: el CHECK de nivel no
+--     tiene un valor de tecnología.
+--
+--  Idempotente: se puede ejecutar varias veces. Con un volumen de PostgreSQL ya
+--  creado hay que aplicarla a mano con psql.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+-- 1) Fuera los inventados (solo los que nadie usa).
+DELETE FROM programa_academico p
+ WHERE (p.nombre LIKE 'Programa M%' OR p.codigo IN ('INDS', 'INGC', 'COMU', 'EDUC'))
+   AND NOT EXISTS (SELECT 1 FROM programa_asistente   x WHERE x.fk_programa = p.codigo)
+   AND NOT EXISTS (SELECT 1 FROM registro_asistencia  r WHERE r.fk_programa_snapshot = p.codigo);
+
+-- 2) Los programas reales (si el código ya existe, se corrige nombre, facultad y nivel).
+INSERT INTO programa_academico (codigo, nombre, fk_facultad, nivel, activo) VALUES
+    -- Pregrado · Ciencias Empresariales
+    ('ADMO', 'Administración de Negocios',                     'F_CIENCIAS', 'PREGRADO', true),
+    ('CONT', 'Contaduría Pública',                             'F_CIENCIAS', 'PREGRADO', true),
+    ('NEGI', 'Negocios Internacionales',                       'F_CIENCIAS', 'PREGRADO', true),
+    -- Pregrado · Artes Integradas
+    ('ARQU', 'Arquitectura',                                   'F_ARTES',    'PREGRADO', true),
+    ('DMOD', 'Diseño de Modas',                                'F_ARTES',    'PREGRADO', true),
+    ('DIND', 'Diseño Industrial',                              'F_ARTES',    'PREGRADO', true),
+    -- Pregrado · Ingenierías
+    ('CCDI', 'Creación de Contenidos Digitales',               'F_ING',      'PREGRADO', true),
+    ('IAMB', 'Ingeniería Ambiental',                           'F_ING',      'PREGRADO', true),
+    ('M0286', 'Ingeniería de Datos y Software',                'F_ING',      'PREGRADO', true),
+    ('ISCI', 'Ingeniería de Sistemas Cibernéticos',            'F_ING',      'PREGRADO', true),
+    ('ISON', 'Ingeniería de Sonido',                           'F_ING',      'PREGRADO', true),
+    ('IIND', 'Ingeniería Industrial',                          'F_ING',      'PREGRADO', true),
+    ('IMUL', 'Ingeniería Multimedia',                          'F_ING',      'PREGRADO', true),
+    -- Pregrado · Derecho
+    ('DERE', 'Derecho',                                        'F_DERECHO',  'PREGRADO', true),
+    -- Pregrado · Psicología
+    ('PSIC', 'Psicología',                                     'F_PSICO',    'PREGRADO', true),
+    -- Pregrado · Educación
+    ('LEFD', 'Licenciatura en Educación Física y Deporte',     'F_EDU',      'PREGRADO', true),
+    ('LEIN', 'Licenciatura en Educación Infantil',             'F_EDU',      'PREGRADO', true),
+    ('TEDE', 'Tecnología en Entrenamiento Deportivo',          'F_EDU',      'PREGRADO', true),
+    -- Especializaciones
+    ('EDPP', 'Especialización en Derecho Penal y Procesal Penal',                          'F_DERECHO',  'ESPECIALIZACION', true),
+    ('ERSE', 'Especialización en Responsabilidad y Seguros',                               'F_DERECHO',  'ESPECIALIZACION', true),
+    ('EDGE', 'Especialización en Dirección y Gestión Educativa',                           'F_EDU',      'ESPECIALIZACION', true),
+    ('EFWE', 'Especialización en Fitness y Wellness',                                      'F_EDU',      'ESPECIALIZACION', true),
+    ('EGEF', 'Especialización en Gerencia Educativa – FUCN',                               'F_EDU',      'ESPECIALIZACION', true),
+    ('EDVI', 'Especialización en Diseño y Validación de Instrumentos de Medición',         'F_PSICO',    'ESPECIALIZACION', true),
+    ('EPST', 'Especialización en Psicología de la Salud y la Seguridad en el Trabajo',     'F_PSICO',    'ESPECIALIZACION', true),
+    ('EPOT', 'Especialización en Psicología de las Organizaciones y del Trabajo',          'F_PSICO',    'ESPECIALIZACION', true),
+    ('EPOF', 'Especialización en Psicología de las Organizaciones y del Trabajo – FUCN',   'F_PSICO',    'ESPECIALIZACION', true),
+    ('EPCP', 'Especialización en Psicología de los Cuidados Paliativos',                   'F_PSICO',    'ESPECIALIZACION', true),
+    ('EGDT', 'Especialización en Gestión de Destinos Turísticos Innovadores',              'F_CIENCIAS', 'ESPECIALIZACION', true),
+    ('EISP', 'Especialización en Interventoría y Supervisión de Proyectos y Obras Civiles','F_ARTES',    'ESPECIALIZACION', true),
+    ('ESIG', 'Especialización en Sistemas de Información Geográfica',                      'F_ING',      'ESPECIALIZACION', true),
+    -- Maestrías
+    ('MBIO', 'Maestría en Bioclimática',                       'F_ARTES',    'MAESTRIA', true),
+    ('MCRE', 'Maestría en Creatividad',                        'F_ARTES',    'MAESTRIA', true),
+    ('MCED', 'Maestría en Ciencias de la Educación',           'F_EDU',      'MAESTRIA', true),
+    ('MGEO', 'Maestría en Geoinformática',                     'F_ING',      'MAESTRIA', true),
+    ('MNEU', 'Maestría en Neuropsicología',                    'F_PSICO',    'MAESTRIA', true),
+    ('MPCL', 'Maestría en Psicología Clínica',                 'F_PSICO',    'MAESTRIA', true),
+    -- Doctorados
+    ('DCED', 'Doctorado en Ciencias de la Educación',          'F_EDU',      'DOCTORADO', true),
+    ('DPSI', 'Doctorado en Psicología',                        'F_PSICO',    'DOCTORADO', true)
+ON CONFLICT (codigo) DO UPDATE
+   SET nombre = EXCLUDED.nombre, fk_facultad = EXCLUDED.fk_facultad, nivel = EXCLUDED.nivel, activo = true;
+
+RESET search_path;
+
+
+-- ----- migracion 071_lista_personas_con_rol.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/071_lista_personas_con_rol.sql
+--  Proyecto Cátedras · Lista de personas (admin)
+-- --------------------------------------------------------------------------
+--  La lista de personas (GET /api/Asistente) mostraba una etiqueta «Externo»
+--  (asistente.es_externo). Ahora muestra el ROL de la persona, que tiene dos
+--  orígenes y por eso se devuelven dos campos nuevos (solo lectura):
+--
+--    roles_cuenta   nombres de los roles VIGENTES de su cuenta de usuario
+--                   (rol_por_usuario sin fecha_fin): Administrador, Asistente...
+--                   [] si la persona no tiene cuenta.
+--    vinculaciones  nombres de sus vinculaciones VIGENTES (vinculacion_asistente
+--                   sin fecha_fin): Estudiante USB, Docente USB, Publico externo...
+--
+--  Se calculan en la misma consulta de la página (máx. 50 filas), sin una petición
+--  por persona. Mismo procedimiento y mismos parámetros que en 024: solo se
+--  agregan las dos columnas. Idempotente (CREATE OR REPLACE).
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+CREATE OR REPLACE PROCEDURE catedras.sp_listar_asistente(
+    IN    p_q              text    DEFAULT NULL,
+    IN    p_limite         integer DEFAULT NULL,
+    IN    p_desplazamiento integer DEFAULT 0,
+    INOUT p_resultado      json    DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    -- NULLIF(btrim(...), '') convierte '' y '   ' en NULL: "sin búsqueda".
+    v_patron text := '%' || NULLIF(btrim(p_q), '') || '%';
+BEGIN
+    SELECT COALESCE(json_agg(a), '[]'::json)
+      INTO p_resultado
+      FROM (SELECT s.id_asistente, s.id_asis, s.nombres, s.apellidos, s.nombre_completo_asis,
+                   s.correo_institucional, s.correo_personal, s.celular,
+                   s.es_externo, s.activo, s.creado_en, s.fk_lote_carga,
+                   COALESCE((SELECT json_agg(r.nombre ORDER BY r.nombre)
+                               FROM usuario u
+                               JOIN rol_por_usuario ru ON ru.fk_usuario = u.id_usuario AND ru.fecha_fin IS NULL
+                               JOIN rol r ON r.id_rol = ru.fk_rol
+                              WHERE u.fk_asistente = s.id_asistente), '[]'::json) AS roles_cuenta,
+                   COALESCE((SELECT json_agg(tv.nombre ORDER BY tv.nombre)
+                               FROM vinculacion_asistente v
+                               JOIN tipo_vinculacion tv ON tv.id_tipo_vinculacion = v.fk_tipo_vinculacion
+                              WHERE v.fk_asistente = s.id_asistente AND v.fecha_fin IS NULL), '[]'::json) AS vinculaciones
+              FROM asistente s
+             WHERE s.activo
+               AND (v_patron IS NULL
+                    OR (s.nombres || ' ' || s.apellidos) ILIKE v_patron
+                    OR s.id_asis ILIKE v_patron)
+             ORDER BY s.id_asistente
+             LIMIT p_limite OFFSET COALESCE(p_desplazamiento, 0)) a;
+END;
+$$;
+
+COMMENT ON PROCEDURE catedras.sp_listar_asistente IS
+    'Solo activos; búsqueda ILIKE opcional y paginación (ADR D18). Trae roles_cuenta y vinculaciones vigentes (071).';
+
+RESET search_path;
+
+
+-- ----- migracion 072_quitar_modalidad_hibrida.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/072_quitar_modalidad_hibrida.sql
+--  Proyecto Cátedras · Catálogo de modalidades
+-- --------------------------------------------------------------------------
+--  Se BORRA la modalidad HIBRIDA. La 062 ya la había desactivado (P1/P1b: no se
+--  usa) pero la dejaba en el catálogo; ahora desaparece del todo.
+--
+--  Solo se borra si NADIE la usa: 'sesion' y 'solicitud_ponente' tienen FK a
+--  modalidad. Si en alguna base hay una sesión o una solicitud con HIBRIDA, la
+--  fila se conserva (desactivada) y hay que cambiarlas a mano antes de volver a
+--  ejecutar esta migración.
+--
+--  Idempotente. Con un volumen de PostgreSQL ya creado hay que aplicarla a mano.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+DELETE FROM modalidad m
+ WHERE m.id_modalidad = 'HIBRIDA'
+   AND NOT EXISTS (SELECT 1 FROM sesion            s WHERE s.fk_modalidad = m.id_modalidad)
+   AND NOT EXISTS (SELECT 1 FROM solicitud_ponente p WHERE p.fk_modalidad = m.id_modalidad);
+
+-- Si no se pudo borrar porque la usan, al menos que no se ofrezca.
+UPDATE modalidad SET activo = false WHERE id_modalidad = 'HIBRIDA' AND activo;
+
+RESET search_path;
+
+
+-- ----- migracion 073_ubicacion_por_modalidad.sql -----
+RESET search_path;
+-- ==========================================================================
+--  db/postgres/migraciones/073_ubicacion_por_modalidad.sql
+--  Proyecto Cátedras · La UBICACIÓN la decide la MODALIDAD, no el canal
+-- --------------------------------------------------------------------------
+--  Hasta ahora "pide ubicación" era lo mismo que "el enlace es de canal QR". Con las
+--  modalidades VIRTUAL y TELEPRESENCIAL en canal QR (como se decidió), el QR de una sesión
+--  virtual no se podía generar: exigía una sede física con coordenadas, y la sede VIRTUAL
+--  no las tiene. Pedir ubicación a una sesión virtual no tiene sentido.
+--
+--  AHORA
+--   · modalidad.requiere_ubicacion (boolean, por defecto true): PRESENCIAL la pide;
+--     VIRTUAL y TELEPRESENCIAL no.
+--   · Se pide ubicación solo si el canal del enlace es QR Y la modalidad la exige. Es la
+--     misma regla en las 4 piezas que la usaban:
+--       sp_emitir_qr_sesion             coordenadas de la sede solo si la modalidad pide ubicación
+--       fn_validar_enlace_y_ubicacion   la regla única del registro (los 3 procedimientos la usan)
+--       fn_consultar_enlace_publico     requiere_ubicacion que ve la página pública
+--       fn_verificar_ubicacion          aviso temprano
+--   · Una sesión virtual genera su QR sin coordenadas y quien se registra NO recibe el
+--     pedido de ubicación; latitud, longitud y distancia quedan en NULL (igual que con ENLACE).
+--
+--  El valor se cambia con:  UPDATE catedras.modalidad SET requiere_ubicacion = ... WHERE id_modalidad = ...;
+--  Las funciones se recrean a partir de las de la 062 y la 063 cambiando SOLO lo descrito.
+--  Idempotente (ADD COLUMN IF NOT EXISTS + CREATE OR REPLACE). Con un volumen de PostgreSQL
+--  ya creado hay que aplicarla a mano con psql.
+-- ==========================================================================
+
+SET search_path TO catedras, public;
+
+ALTER TABLE catedras.modalidad ADD COLUMN IF NOT EXISTS requiere_ubicacion boolean NOT NULL DEFAULT true;
+
+COMMENT ON COLUMN catedras.modalidad.requiere_ubicacion IS
+    '073. ¿Quien registra su asistencia (y el QR de la sesión) debe estar en la sede? true = sí (presencial); false = no se pide ubicación ni coordenadas (virtual, telepresencial).';
+
+UPDATE catedras.modalidad SET requiere_ubicacion = false WHERE id_modalidad IN ('VIRTUAL', 'TELEPRESENCIAL');
+
+-- --------------------------------------------------------------------------
+--  1) Emisión del QR
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE catedras.sp_emitir_qr_sesion(
+    IN    p_fk_sesion  bigint,
+    IN    p_fk_usuario bigint  DEFAULT NULL,
+    IN    p_regenerar  boolean DEFAULT false,
+    INOUT p_resultado  json    DEFAULT NULL
+)
+    LANGUAGE plpgsql
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_fin        timestamptz;
+    v_canal      varchar(10);
+    v_requiere   boolean;      -- 073: ¿la modalidad pide ubicación?
+    v_id_sede    varchar(15);
+    v_nom_sede   varchar(80);
+    v_sede_virt  boolean;
+    v_sede_lat   numeric;
+    v_id         bigint;
+    v_antes      integer;
+    v_desp       integer;
+    v_base       text;
+    v_token      uuid := gen_random_uuid();
+    v_existia    boolean := false;
+BEGIN
+    SELECT s.fin, m.canal_difusion, m.requiere_ubicacion, sd.id_sede, sd.nombre, sd.es_virtual, sd.latitud
+      INTO v_fin, v_canal, v_requiere, v_id_sede, v_nom_sede, v_sede_virt, v_sede_lat
+      FROM sesion s
+      JOIN modalidad m ON m.id_modalidad = s.fk_modalidad
+      JOIN sede sd     ON sd.id_sede     = s.fk_sede
+     WHERE s.id_sesion = p_fk_sesion;
+    IF v_fin IS NULL THEN
+        p_resultado := NULL;
+        RETURN;
+    END IF;
+
+    -- RN-13 (script provisto): el canal del enlace debe concordar con la modalidad:
+    -- presencial -> QR, virtual y telepresencial -> ENLACE, híbrida (AMBOS) -> QR.
+    v_canal := CASE WHEN v_canal = 'ENLACE' THEN 'ENLACE' ELSE 'QR' END;
+
+    -- v7.2 D72 · una sesión que PIDE ubicación (canal QR y modalidad con requiere_ubicacion) se valida contra
+    -- su sede; sin sede física con coordenadas no hay con qué comparar, así que no se emite el QR.
+    -- 073: una modalidad que no pide ubicación (virtual, telepresencial) genera su QR sin coordenadas.
+    IF v_canal = 'QR' AND v_requiere THEN
+        IF v_sede_virt THEN
+            RAISE EXCEPTION 'La sesión % se difunde por QR (presencial) pero su sede "%" (%) es virtual: cambia la sede o la modalidad antes de generar el QR',
+                p_fk_sesion, v_nom_sede, v_id_sede
+                USING ERRCODE = 'P0001';
+        END IF;
+        IF v_sede_lat IS NULL THEN
+            RAISE EXCEPTION 'La sede "%" (%) no tiene coordenadas: complétalas en Administración > Sedes antes de generar el QR de la sesión %',
+                v_nom_sede, v_id_sede, p_fk_sesion
+                USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    IF NOT coalesce(p_regenerar, false) THEN
+        SELECT e.id_enlace INTO v_id
+          FROM enlace_registro e
+         WHERE e.fk_sesion = p_fk_sesion AND e.revocado_en IS NULL AND e.qr_cierre
+         ORDER BY e.id_enlace DESC LIMIT 1;
+        v_existia := v_id IS NOT NULL;
+    END IF;
+
+    IF v_id IS NULL THEN
+        v_antes := greatest(coalesce((SELECT valor::int FROM parametro WHERE clave = 'QR_MINUTOS_ANTES_FIN'), 15), 1);
+        v_desp  := greatest(coalesce((SELECT valor::int FROM parametro WHERE clave = 'QR_MINUTOS_DESPUES_FIN'), 0), 0);
+        v_base  := coalesce((SELECT valor FROM parametro WHERE clave = 'URL_BASE'), 'https://catedras.usbmed.edu.co/r/');
+
+        -- RN-14 · un solo enlace vigente por sesión
+        UPDATE enlace_registro SET revocado_en = now()
+         WHERE fk_sesion = p_fk_sesion AND revocado_en IS NULL;
+
+        INSERT INTO enlace_registro (fk_sesion, token, url_publica, ruta_imagen_qr, canal, ventana,
+                                     fk_usuario_crea, requiere_inscripcion, qr_cierre)
+        VALUES (p_fk_sesion, v_token, v_base || v_token::text, 'qr/' || v_token::text || '.png', v_canal,
+                tstzrange(v_fin - make_interval(mins => v_antes), v_fin + make_interval(mins => v_desp), '[)'),
+                p_fk_usuario, false, true)
+        RETURNING id_enlace INTO v_id;
+    END IF;
+
+    SELECT row_to_json(r) INTO p_resultado
+      FROM (SELECT e.id_enlace, e.fk_sesion, e.token, e.canal, lower(e.ventana) AS ventana_desde,
+                   upper(e.ventana) AS ventana_hasta, e.revocado_en,
+                   v_existia AS ya_existia
+              FROM enlace_registro e WHERE e.id_enlace = v_id) r;
+END;
+$$;
+COMMENT ON PROCEDURE catedras.sp_emitir_qr_sesion IS
+    'v7.1 D53/D54 + v7.2 D72 + 073. QR de cierre: ventana [fin - QR_MINUTOS_ANTES_FIN, fin + QR_MINUTOS_DESPUES_FIN). Si el canal es QR y la modalidad pide ubicación, exige una sede física con coordenadas (P0001 si no). NULL = la sesión no existe.';
+
+-- --------------------------------------------------------------------------
+--  2) Registro público: la regla única de ubicación
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION catedras.fn_validar_enlace_y_ubicacion(
+    IN  p_token     uuid,
+    IN  p_latitud   numeric,
+    IN  p_longitud  numeric,
+    OUT o_estado    text,
+    OUT o_id_enlace bigint,
+    OUT o_id_sesion bigint,
+    OUT o_canal     text,
+    OUT o_latitud   numeric,     -- lo que se guardará (NULL si el canal es ENLACE)
+    OUT o_longitud  numeric,
+    OUT o_distancia numeric,     -- metros, redondeada a 0,1; NULL si el canal es ENLACE
+    OUT o_radio     integer      -- radio que se aplicó; NULL si el canal es ENLACE
+)
+    LANGUAGE plpgsql
+    STABLE
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_ventana   tstzrange;
+    v_revocado  timestamptz;
+    v_requiere  boolean;     -- 073: ¿la modalidad de la sesión pide ubicación?
+    v_sede_virt boolean;
+    v_sede_lat  numeric;
+    v_sede_lon  numeric;
+    v_sede_rad  integer;
+    v_dist      double precision;
+BEGIN
+    SELECT e.id_enlace, e.fk_sesion, e.canal, e.ventana, e.revocado_en
+      INTO o_id_enlace, o_id_sesion, o_canal, v_ventana, v_revocado
+      FROM enlace_registro e
+     WHERE e.token = p_token;
+
+    IF NOT FOUND THEN
+        o_estado := 'ENLACE_NO_EXISTE';  RETURN;
+    END IF;
+    IF v_revocado IS NOT NULL THEN
+        o_estado := 'ENLACE_REVOCADO';   RETURN;
+    END IF;
+    IF NOT (v_ventana @> now()) THEN
+        o_estado := 'FUERA_DE_VENTANA';  RETURN;
+    END IF;
+
+    -- 073: la ubicación se pide solo si el canal es QR Y la modalidad de la sesión la exige
+    -- (modalidad.requiere_ubicacion). Una sesión virtual o telepresencial no la pide, aunque se difunda por QR.
+    SELECT m.requiere_ubicacion INTO v_requiere
+      FROM sesion s JOIN modalidad m ON m.id_modalidad = s.fk_modalidad
+     WHERE s.id_sesion = o_id_sesion;
+
+    IF o_canal <> 'QR' OR NOT coalesce(v_requiere, true) THEN
+        o_latitud := NULL;  o_longitud := NULL;  o_distancia := NULL;  o_radio := NULL;
+        o_estado := 'OK';   RETURN;
+    END IF;
+
+    -- Sesión que pide ubicación (presencial): es obligatoria y debe caer en la sede.
+    IF p_latitud IS NULL OR p_longitud IS NULL THEN
+        o_estado := 'SIN_UBICACION';     RETURN;
+    END IF;
+    IF p_latitud NOT BETWEEN -90 AND 90 OR p_longitud NOT BETWEEN -180 AND 180 THEN
+        o_estado := 'DATOS_INVALIDOS';   RETURN;
+    END IF;
+
+    SELECT sd.es_virtual, sd.latitud, sd.longitud, sd.radio_metros
+      INTO v_sede_virt, v_sede_lat, v_sede_lon, v_sede_rad
+      FROM sesion s JOIN sede sd ON sd.id_sede = s.fk_sede
+     WHERE s.id_sesion = o_id_sesion;
+
+    -- Sin coordenadas de sede NO se acepta la asistencia sin comprobar el lugar.
+    IF v_sede_virt OR v_sede_lat IS NULL OR v_sede_lon IS NULL THEN
+        o_estado := 'SEDE_SIN_COORDENADAS';  RETURN;
+    END IF;
+
+    -- Radio efectivo: el de la sede, o el parámetro global, o 200 por si falta.
+    o_radio := COALESCE(v_sede_rad,
+                        (SELECT valor::int FROM parametro WHERE clave = 'RADIO_VALIDACION_METROS'),
+                        200);
+    v_dist  := catedras.fn_distancia_metros(p_latitud::double precision, p_longitud::double precision,
+                                            v_sede_lat::double precision, v_sede_lon::double precision);
+    o_distancia := round(v_dist::numeric, 1);
+    o_latitud   := p_latitud;
+    o_longitud  := p_longitud;
+
+    IF v_dist > o_radio THEN
+        o_estado := 'FUERA_DE_RADIO';    RETURN;
+    END IF;
+
+    o_estado := 'OK';
+END;
+$$;
+COMMENT ON FUNCTION catedras.fn_validar_enlace_y_ubicacion IS
+    'v7.2 D61/D64 + 073. Valida enlace (existe, no revocado, en ventana) y, si el canal es QR y la modalidad pide ubicación, la ubicación contra la sede. Devuelve el estado y los datos a guardar.';
+
+CREATE OR REPLACE FUNCTION catedras.fn_consultar_enlace_publico(p_token uuid)
+    RETURNS json
+    LANGUAGE plpgsql
+    STABLE
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v_res json;
+BEGIN
+    SELECT row_to_json(r) INTO v_res
+      FROM (SELECT e.id_enlace,
+                   s.id_sesion,
+                   s.titulo                               AS titulo_sesion,
+                   s.numero_reunion,
+                   c.id_evento_asis                       AS id_catedra,
+                   c.nombre                               AS titulo_catedra,
+                   s.inicio, s.fin,
+                   s.fk_modalidad                         AS modalidad,
+                   e.canal,
+                   (e.canal = 'QR' AND m.requiere_ubicacion) AS requiere_ubicacion,
+                   lower(e.ventana)                       AS ventana_desde,
+                   upper(e.ventana)                       AS ventana_hasta,
+                   CASE WHEN e.revocado_en IS NOT NULL THEN 'revocado'
+                        WHEN now() <  lower(e.ventana)    THEN 'pendiente'
+                        WHEN e.ventana @> now()           THEN 'abierto'
+                        ELSE 'cerrado' END                AS estado_ventana
+              FROM enlace_registro e
+              JOIN sesion  s ON s.id_sesion   = e.fk_sesion
+              JOIN modalidad m ON m.id_modalidad = s.fk_modalidad
+              JOIN catedra c ON c.id_catedra  = s.fk_catedra
+             WHERE e.token = p_token) r;
+    RETURN v_res;
+END;
+$$;
+COMMENT ON FUNCTION catedras.fn_consultar_enlace_publico IS
+    'v7.2 RF-S9 + 073. Título de la cátedra y la sesión, canal, si requiere ubicación (canal QR y modalidad que la exige) y estado de la ventana. NULL si el token no existe. No devuelve coordenadas.';
+
+CREATE OR REPLACE FUNCTION catedras.fn_verificar_ubicacion(
+    p_token    uuid,
+    p_latitud  numeric,
+    p_longitud numeric
+) RETURNS json
+    LANGUAGE plpgsql
+    STABLE
+    SET search_path TO 'catedras', 'public'
+    AS $$
+DECLARE
+    v     record;
+    v_req boolean;     -- 073: ¿este enlace pide ubicación? (canal QR y modalidad que la exige)
+BEGIN
+    SELECT * INTO v FROM catedras.fn_validar_enlace_y_ubicacion(p_token, p_latitud, p_longitud);
+
+    SELECT (e.canal = 'QR' AND m.requiere_ubicacion) INTO v_req
+      FROM enlace_registro e
+      JOIN sesion    s ON s.id_sesion    = e.fk_sesion
+      JOIN modalidad m ON m.id_modalidad = s.fk_modalidad
+     WHERE e.token = p_token;
+
+    RETURN json_build_object(
+        'estado',             v.o_estado,
+        'requiere_ubicacion', coalesce(v_req, false),
+        'dentro',             CASE WHEN NOT coalesce(v_req, false)        THEN NULL
+                                   WHEN v.o_estado = 'OK'              THEN true
+                                   WHEN v.o_estado = 'FUERA_DE_RADIO'  THEN false
+                                   ELSE NULL END,
+        'distancia_metros',   v.o_distancia,
+        'radio_metros',       v.o_radio);
+END;
+$$;
+COMMENT ON FUNCTION catedras.fn_verificar_ubicacion IS
+    'v7.2 RF-S10 + 073. Aviso temprano: dice si la ubicación cae dentro del radio de la sede (solo si el enlace la pide). No guarda nada; el procedimiento de registro la vuelve a verificar.';
+
+RESET search_path;
+
+-- ----- ajustes de catalogo: los mismos valores de la base local -----
+RESET search_path;
+SET search_path TO catedras, public;
+
+--  AJUSTES DE CATALOGO (iguales a la base local de desarrollo; el script provisto traia otros valores).
+--  Si no los quieres, borra este bloque:
+--
+--  1) Modalidades VIRTUAL y TELEPRESENCIAL con canal 'QR' (el provisto: 'ENLACE').
+--     La ubicacion NO se pide por esto: la decide modalidad.requiere_ubicacion (migracion 073: PRESENCIAL si; VIRTUAL y
+--     TELEPRESENCIAL no), asi que una sesion virtual genera su QR sin coordenadas aunque el canal sea QR.
+--     Para volver al canal original:
+--       UPDATE catedras.modalidad SET canal_difusion = 'ENLACE' WHERE id_modalidad IN ('VIRTUAL', 'TELEPRESENCIAL');
+UPDATE catedras.modalidad SET canal_difusion = 'QR' WHERE id_modalidad IN ('VIRTUAL', 'TELEPRESENCIAL');
+
+--  2) Tipo de documento «LC» (licencia de conduccion) inactivo (el provisto: activo).
+UPDATE catedras.tipo_documento SET activo = false WHERE id_tipo_documento = 'LC';
+
 -- ##########  PARTE 3: ADMINISTRADOR INICIAL (opcional)  ##########
 --  Sin al menos un administrador nadie puede entrar a /admin. Es la misma cuenta
 --  del script provisto ('admin.catedras', con su clave actual): se recrea sin
@@ -14232,6 +16303,9 @@ SELECT (SELECT count(*) FROM information_schema.tables WHERE table_schema='cated
        (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='catedras') AS rutinas,
        (SELECT count(*) FROM catedras.usuario) AS usuarios,
        (SELECT count(*) FROM catedras.asistente) AS asistentes,
-       (SELECT count(*) FROM catedras.catedra) AS catedras;
+       (SELECT count(*) FROM catedras.catedra) AS catedras,
+       (SELECT string_agg(id_rol, ', ' ORDER BY id_rol) FROM catedras.rol) AS roles,
+       (SELECT string_agg(id_modalidad, ', ' ORDER BY id_modalidad) FROM catedras.modalidad) AS modalidades,
+       (SELECT count(*) FROM catedras.programa_academico) AS programas;
 
 COMMIT;

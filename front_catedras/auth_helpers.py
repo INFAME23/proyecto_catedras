@@ -23,6 +23,8 @@ ROL_ADMIN = 'ADMIN'
 # de catedras.rol (migración 046); el login es el mismo para los tres.
 ROL_ESTUDIANTE = 'ESTUDIANTE'
 ROL_PONENTE = 'PONENTE'
+# Asistente: inicia sesión y gestiona SOLO cátedras (agregar, editar, borrar). Código de catedras.rol (migración 068).
+ROL_ASISTENTE = 'ASISTENTE'
 
 
 def sesion_activa():
@@ -82,10 +84,13 @@ def rol_requerido(*roles):
 
 
 def endpoint_de_inicio():
-    """A dónde llevar al usuario recién autenticado. v7.1 · D55: solo el ADMINISTRADOR
-    inicia sesión, así que va al panel de administración; cualquier otro caso, al inicio público."""
+    """A dónde llevar al usuario recién autenticado. v7.1 · D55: solo el personal inicia sesión: el
+    ADMINISTRADOR va al panel de administración y el ASISTENTE a la lista de cátedras (lo único que
+    gestiona); cualquier otro caso, al inicio público."""
     if tiene_rol(ROL_ADMIN):
         return 'admin.panel'
+    if tiene_rol(ROL_ASISTENTE):
+        return 'admin.catedras_listar'
     return 'catedras.inicio'
 
 

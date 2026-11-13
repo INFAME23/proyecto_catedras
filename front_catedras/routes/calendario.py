@@ -54,7 +54,7 @@ CAMPOS_PONENTE = ['nombres', 'apellidos', 'fk_tipo_documento', 'numero_documento
                   'inicio', 'fin', 'fk_modalidad', 'fk_sede', 'fk_periodo']
 
 # Color de cada modalidad en el calendario (los mismos de la leyenda en static/estilo.css).
-COLOR_MODALIDAD = {'presencial': '#EF7D00', 'virtual': '#1D1D1B', 'telepresencial': '#2F6F8F', 'hibrida': '#8A4B00'}
+COLOR_MODALIDAD = {'presencial': '#EF7D00', 'virtual': '#1D1D1B', 'telepresencial': '#2F6F8F'}
 COLOR_SIN_MODALIDAD = '#6B6B6B'
 
 # La agenda de la API acepta rangos de hasta 31 días; se pide en tramos de 30.

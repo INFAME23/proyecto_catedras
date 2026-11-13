@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block titulo %}Asistencia registrada · Cátedras USB{% endblock %}
+{% block contenido %}
+{# v7.2 · RF-S9 · Confirmación del registro público. Tampoco usa '.alert' (main.js los borra a los 5 s). #}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow-sm animate-fade-in">
+            <div class="card-body p-4 text-center">
+                {% if ya_registrado %}
+                <i class="fas fa-info-circle fa-4x text-primary-custom mb-3"></i>
+                <h1 class="h4 fw-bold">Ya estabas registrado</h1>
+                <p class="text-muted">Tu asistencia a <strong>{{ enlace.titulo_catedra }}</strong> (sesión {{ enlace.numero_reunion }}) ya quedó guardada. No tienes que hacer nada más.</p>
+                {% else %}
+                <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+                <h1 class="h4 fw-bold">¡Asistencia registrada!</h1>
+                <p class="text-muted">Quedaste registrado en <strong>{{ enlace.titulo_catedra }}</strong> (sesión {{ enlace.numero_reunion }}).{% if not id_sesion_encuesta %} Ya puedes cerrar esta página.{% endif %}</p>
+                {% endif %}
+
+                {% if id_sesion_encuesta %}
+                <p class="mb-3">Esta sesión tiene una <strong>encuesta</strong>. Ayúdanos a mejorar respondiéndola ahora (solo se puede mientras tengas abierta esta página).</p>
+                <a class="btn btn-primary mb-2" href="{{ url_for('encuestas.responder', id_sesion=id_sesion_encuesta) }}">
+                    <i class="fas fa-clipboard-list me-1"></i>Responder la encuesta
+                </a><br>
+                {% endif %}
+                <a class="btn btn-outline-primary" href="{{ url_for('catedras.inicio') }}">
+                    <i class="fas fa-home me-1"></i>Ir al inicio
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

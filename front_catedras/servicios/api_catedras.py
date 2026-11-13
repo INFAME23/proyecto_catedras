@@ -34,12 +34,17 @@ def llave(*partes):
 class ErrorApi(Exception):
     """Envuelve un error devuelto por ApiCatedras (4xx/5xx) o de red."""
 
-    def __init__(self, mensaje, detalle=None, errores=None, codigo=None):
+    def __init__(self, mensaje, detalle=None, errores=None, codigo=None, estado=None, cuerpo=None):
         super().__init__(mensaje)
         self.mensaje = mensaje
         self.detalle = detalle
         self.errores = errores or []  # lista de {campo, mensaje} del 422
         self.codigo = codigo
+        # v7.2: el 'estado' del sobre de error ({estado, mensaje, detalle}). El registro público de
+        # asistencia lo usa como CÓDIGO (FUERA_DE_RADIO, YA_REGISTRADO...) y 'cuerpo' guarda el JSON
+        # completo (trae, por ejemplo, distancia_metros y radio_metros).
+        self.estado = estado
+        self.cuerpo = cuerpo or {}
 
 
 def _url(recurso, id_valor=None):
@@ -68,6 +73,8 @@ def _procesar(respuesta):
         detalle=cuerpo.get('detalle'),
         errores=cuerpo.get('errores', []),
         codigo=respuesta.status_code,
+        estado=cuerpo.get('estado'),
+        cuerpo=cuerpo,
     )
 
 

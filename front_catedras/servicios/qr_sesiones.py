@@ -51,9 +51,13 @@ def qr_de_sesion(id_sesion):
     return consultar('QrSesion', fkSesion=id_sesion)
 
 
-def asegurar_qr_de_catedra(id_catedra, id_usuario=None):
+def asegurar_qr_de_catedra(id_catedra, id_usuario=None, motivos=None):
     """Emite el QR de cada sesión de una cátedra recién creada. Devuelve (hechos, total).
-    No lanza: si algo falla, esas sesiones quedan sin QR y se pueden generar desde su pantalla."""
+    No lanza: si algo falla, esas sesiones quedan sin QR y se pueden generar desde su pantalla.
+
+    v7.2 · D72: una sesión presencial en una sede SIN coordenadas no genera QR, y la API dice qué sede
+    completar (409). Si se pasa una lista en 'motivos', se le agregan esos mensajes (sin repetir) para
+    que la pantalla los muestre FIJOS, con la sede nombrada, en vez de un «se generó el QR de 2 de 3»."""
     try:
         sesiones = listar('Sesion', limite=500, fkCatedra=id_catedra)
     except ErrorApi:
@@ -63,9 +67,21 @@ def asegurar_qr_de_catedra(id_catedra, id_usuario=None):
         try:
             emitir_qr(s['id_sesion'], id_usuario)
             hechos += 1
-        except ErrorApi:
-            pass
+        except ErrorApi as ex:
+            if motivos is not None and ex.codigo == 409 and ex.mensaje and ex.mensaje not in motivos:
+                motivos.append(ex.mensaje)
     return hechos, len(sesiones)
+
+
+def avisar_qr_pendientes(flash, hechos, total, motivos):
+    """Avisos (flash de error: NO desaparecen solos) cuando alguna sesión quedó sin QR. Si la API dio el
+    motivo (sede sin coordenadas), se muestra tal cual; si no, el conteo de siempre."""
+    if hechos == total:
+        return
+    for motivo in motivos or []:
+        flash(motivo, 'error')
+    if not motivos:
+        flash(f'Se generó el QR de {hechos} de {total} sesiones.', 'error')
 
 
 def _momento(texto_iso):

@@ -107,6 +107,11 @@ public class ServicioSede : IServicioSede
             Direccion = peticion.Direccion,          // opcional: puede ir null
             EsVirtual = peticion.EsVirtual!.Value,
             Activo = peticion.Activo!.Value,
+            // v7.2: ubicación y radio (opcionales). Una sede virtual no lleva ubicación:
+            // aunque llegara, se descarta para no chocar con 'chk_sede_virtual_sin_geo'.
+            Latitud = peticion.EsVirtual == true ? null : peticion.Latitud,
+            Longitud = peticion.EsVirtual == true ? null : peticion.Longitud,
+            RadioMetros = peticion.EsVirtual == true ? null : peticion.RadioMetros,
         };
 
         await _repositorio.CrearAsync(sede);
@@ -124,6 +129,10 @@ public class ServicioSede : IServicioSede
             ["es_virtual"] = peticion.EsVirtual!.Value,
             ["activo"]     = peticion.Activo!.Value,
         };
+
+        // v7.2: la ubicación solo cambia si el body la trae (así un PUT de la v7.1, que no la
+        // conoce, no borra las coordenadas). Una sede que pasa a ser virtual las pierde.
+        AplicarUbicacion(datos, peticion.EsVirtual!.Value, peticion.Latitud, peticion.Longitud, peticion.RadioMetros);
 
         // [FLUJO 5] Una sola sentencia UPDATE. [ACID · A] PostgreSQL la
         // aplica entera o nada: las 4 columnas cambian juntas.
@@ -151,12 +160,37 @@ public class ServicioSede : IServicioSede
             throw new ArgumentException(
                 "El cuerpo del PATCH no trae ningún campo para actualizar.");
 
+        // v7.2: si el PATCH vuelve virtual a la sede, se borra su ubicación (el CHECK de la BD no la admite).
+        if (peticion.EsVirtual == true)
+            AplicarUbicacion(datos, true, null, null, null);
+
         int filas = await _repositorio.ActualizarAsync(idSede, datos);
 
         if (filas == 0)
             throw new NoEncontradoExcepcion($"No existe la sede '{idSede}'.");
 
         return filas;
+    }
+
+    // ----------------------------------------------------------------------
+    //  Ubicación de la sede (v7.2): qué claves viajan al repositorio.
+    //  Que una clave esté en el diccionario significa "cámbiala"; si falta, se conserva.
+    // ----------------------------------------------------------------------
+    private static void AplicarUbicacion(
+        Dictionary<string, object?> datos, bool esVirtual, decimal? latitud, decimal? longitud, int? radioMetros)
+    {
+        if (esVirtual)
+        {
+            // Una sede virtual no está en ningún lugar: se limpian los tres (null explícito).
+            datos["latitud"] = null;
+            datos["longitud"] = null;
+            datos["radio_metros"] = null;
+            return;
+        }
+
+        if (latitud is not null) datos["latitud"] = latitud;
+        if (longitud is not null) datos["longitud"] = longitud;
+        if (radioMetros is not null) datos["radio_metros"] = radioMetros;
     }
 
     // ----------------------------------------------------------------------

@@ -594,7 +594,6 @@ main {
 .calendario-punto.mod-presencial { background: #EF7D00; }
 .calendario-punto.mod-virtual { background: #1D1D1B; }
 .calendario-punto.mod-telepresencial { background: #2F6F8F; }
-.calendario-punto.mod-hibrida { background: #8A4B00; }
 /* Campo trampa antispam del formulario «Soy ponente»: fuera de pantalla, no display:none (algunos robots lo ignoran). */
 .trampa-formulario {
     position: absolute;
@@ -633,3 +632,135 @@ main {
 .modal-dialog-scrollable .modal-content > form > .modal-body::-webkit-scrollbar { width: 10px; }
 .modal-dialog-scrollable .modal-content > form > .modal-body::-webkit-scrollbar-track { background: var(--gray-mid); border-radius: 8px; }
 .modal-dialog-scrollable .modal-content > form > .modal-body::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 8px; }
+
+/* ============================================
+   CARRUSEL DE FOTOS DEL CAMPUS (inicio)
+   Horizontal y automático (Bootstrap). Mismas esquinas y sombra que las tarjetas;
+   indicadores y flechas con el naranja institucional.
+   ============================================ */
+.carrusel-campus {
+    position: relative;
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    background: var(--secondary);
+    box-shadow: var(--shadow-md);
+    /* ZOOM OUT: proporción (ancho / alto) de la franja. Más cerca de 3 / 2 = se ve la foto casi completa
+       (más alta); más ancha (p. ej. 16 / 6) = más recortada. Las fotos originales son 3 / 2 y 4 / 3. */
+    --proporcion: 16 / 9;
+    /* TAMAÑO: tope de alto de la franja (en celular, abajo). Súbelo para una franja más grande. */
+    --alto-max: 400px;
+}
+.carrusel-campus .carousel-item img {
+    width: 100%;
+    height: auto;   /* los atributos width/height de la <img> fijarían 1500px; manda aspect-ratio */
+    aspect-ratio: var(--proporcion);
+    max-height: var(--alto-max);
+    object-fit: cover;
+    object-position: var(--foco, center 40%);   /* cada <img> puede fijar su --foco (ver inicio.html) */
+}
+/* Degradado oscuro abajo: da contraste a los indicadores sin tapar la foto. */
+.carrusel-campus::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 38%;
+    background: linear-gradient(to top, rgba(29, 29, 27, 0.6), rgba(29, 29, 27, 0));
+    pointer-events: none;
+}
+.carrusel-campus .carousel-indicators { z-index: 3; margin-bottom: 0.9rem; }
+.carrusel-campus .carousel-indicators [data-bs-target] {
+    width: 10px;
+    height: 10px;
+    margin: 0 5px;
+    border: 0;
+    border-radius: 999px;
+    background-color: var(--white);
+    opacity: 0.65;
+    transition: width var(--transition-speed), background-color var(--transition-speed), opacity var(--transition-speed);
+}
+.carrusel-campus .carousel-indicators .active {
+    width: 30px;
+    background-color: var(--primary);
+    opacity: 1;
+}
+.carrusel-campus .carousel-control-prev,
+.carrusel-campus .carousel-control-next {
+    z-index: 3;
+    width: 72px;
+    opacity: 1;
+}
+.carrusel-campus .carrusel-flecha {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    color: var(--white);
+    background: rgba(29, 29, 27, 0.55);
+    backdrop-filter: blur(2px);
+    transition: background-color var(--transition-speed), transform var(--transition-speed);
+}
+.carrusel-campus .carousel-control-prev:hover .carrusel-flecha,
+.carrusel-campus .carousel-control-next:hover .carrusel-flecha,
+.carrusel-campus .carousel-control-prev:focus-visible .carrusel-flecha,
+.carrusel-campus .carousel-control-next:focus-visible .carrusel-flecha {
+    background: var(--primary);
+    transform: scale(1.08);
+}
+@media (max-width: 767.98px) {
+    .carrusel-campus { --proporcion: 4 / 3; --alto-max: 290px; }
+    .carrusel-campus .carousel-control-prev,
+    .carrusel-campus .carousel-control-next { width: 52px; }
+    .carrusel-campus .carrusel-flecha { width: 34px; height: 34px; font-size: 0.8rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .carrusel-campus .carousel-item { transition: none; }
+}
+/* Título «Cátedras USB» con el escudo, SOBRE las fotos (sin recuadro negro). */
+.carrusel-campus::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 55%;
+    background: linear-gradient(to bottom, rgba(29, 29, 27, 0.7), rgba(29, 29, 27, 0));
+    pointer-events: none;
+    z-index: 2;
+}
+.carrusel-titulo {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.4rem 1.6rem;
+    color: var(--white);
+    pointer-events: none;
+}
+.carrusel-escudo {
+    height: 64px;
+    width: auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.carrusel-h1 {
+    margin: 0 0 0.15rem;
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.1;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+}
+.carrusel-sub {
+    margin: 0;
+    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.88);
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+@media (max-width: 767.98px) {
+    .carrusel-titulo { gap: 0.7rem; padding: 0.9rem 1rem; }
+    .carrusel-escudo { height: 42px; }
+    .carrusel-h1 { font-size: 1.3rem; }
+    .carrusel-sub { font-size: 0.8rem; }
+}

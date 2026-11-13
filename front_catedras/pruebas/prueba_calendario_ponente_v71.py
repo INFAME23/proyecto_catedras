@@ -164,7 +164,7 @@ R_cal.ventanas_activas = lambda: VENTANAS
 R_sol.listar = listar_falso
 R_sol.obtener = obtener_falso
 R_sol.actualizar_parcial = parcial_falso
-R_sol.asegurar_qr_de_catedra = lambda id_catedra, id_usuario=None: (qr_pedidos.append((id_catedra, id_usuario)) or (1, 1))
+R_sol.asegurar_qr_de_catedra = lambda id_catedra, id_usuario=None, motivos=None: (qr_pedidos.append((id_catedra, id_usuario)) or (1, 1))
 R_admin._conflictos_de_horario = conflictos_falso
 
 FORM = {'nombres': 'Ana', 'apellidos': 'Perez', 'fk_tipo_documento': 'PA', 'numero_documento': 'AB123456',
@@ -465,7 +465,7 @@ print('\n== Panel de administración ==')
 t = admin().get('/admin/').get_data(as_text=True)
 v('El panel muestra la bandeja con 2 pendientes', 'Bandeja de ponentes' in t and '2 pendientes</span>' in t)
 v('...y enlaza a la bandeja', '/admin/solicitudes-ponente' in t)
-v('El panel conserva sus 39 secciones (la bandeja no es una de ellas)', t.count('<a class="card text-center') == 39)
+v('El panel conserva sus 40 secciones (39 + «Exportar asistencia» de la v7.2) (la bandeja no es una de ellas)', t.count('<a class="card text-center') == 40)
 
 print(f'\n{ok} pasadas, {fall} fallidas')
 sys.exit(1 if fall else 0)

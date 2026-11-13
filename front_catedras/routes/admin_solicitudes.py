@@ -32,7 +32,7 @@ from flask import abort, flash, redirect, render_template, request, url_for
 from auth_helpers import usuario_actual
 from servicios.api_catedras import ErrorApi, actualizar_parcial, listar, obtener
 from servicios.fechas import a_local, desde_input
-from servicios.qr_sesiones import asegurar_qr_de_catedra
+from servicios.qr_sesiones import asegurar_qr_de_catedra, avisar_qr_pendientes
 
 # Pestañas de la bandeja: (valor de '?estado=', texto). 'todas' no filtra.
 PESTANAS = [('PENDIENTE', 'Pendientes'), ('APROBADA', 'Aprobadas'), ('RECHAZADA', 'Rechazadas'), ('todas', 'Todas')]
@@ -202,7 +202,7 @@ def registrar_rutas(admin_bp):
         resuelta = respuesta.get('solicitud') or {}
         if decision == 'aprobar' and resuelta.get('fk_catedra'):
             # v7.1 · D53: cada sesión nace con su QR de cierre (se ve en «QR de asistencia» de la sesión).
-            hechos, total = asegurar_qr_de_catedra(resuelta['fk_catedra'], usuario.get('id_usuario'))
-            if hechos != total:
-                flash(f'Se generó el QR de {hechos} de {total} sesiones.', 'error')
+            motivos_qr = []
+            hechos, total = asegurar_qr_de_catedra(resuelta['fk_catedra'], usuario.get('id_usuario'), motivos_qr)
+            avisar_qr_pendientes(flash, hechos, total, motivos_qr)   # v7.2 · D72: nombra la sede sin coordenadas
         return redirect(url_for('admin.solicitudes_ponente_detalle', id_solicitud=id_solicitud))

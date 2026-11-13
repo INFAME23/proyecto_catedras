@@ -131,7 +131,7 @@ var servicioModalidad = new ServicioModalidad(new RepositorioModalidadFalso());
 Console.WriteLine("\n== Prueba de capas: ServicioModalidad + repositorio falso en memoria ==\n");
 
 var (datosMod, totalMod) = await servicioModalidad.ListarAsync(null);
-Afirmar("Listar() devuelve las 4 modalidades semilla", totalMod == 4 && datosMod.Count == 4);
+Afirmar("Listar() devuelve las 3 modalidades semilla", totalMod == 3 && datosMod.Count == 3);
 
 await AfirmarLanza<ArgumentException>(
     "Listar(0) lanza ArgumentException", () => servicioModalidad.ListarAsync(0));
@@ -2428,8 +2428,40 @@ var ahoraAdmin55 = await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "
 Afirmar("Cuando se le da el rol ADMIN, entra (el rol es lo que manda, no la persona)", ahoraAdmin55 is not null && ahoraAdmin55.Value.Roles.Contains("ADMIN"));
 Afirmar("Con el rol ADMIN pero la clave mal escrita, no entra",
     await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.uno", Clave = "otra-clave" }) is null);
+
+// Rol ASISTENTE: inicia sesión (solo gestiona cátedras; eso lo limita el front, la API no autoriza por rol, D28).
+var asist55 = await servicioUsr55.CrearAsync(new UsuarioCrear { FkAsistente = 9072, Usuario = "asistente.uno", Clave = "Clave-Asistente-1" });
+Afirmar("Una cuenta con la clave correcta pero SIN rol de personal no entra (antes de darle ASISTENTE)",
+    await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "asistente.uno", Clave = "Clave-Asistente-1" }) is null);
+await repoRoles55.CrearAsync(new RolPorUsuario { FkUsuario = asist55.IdUsuario, FkRol = "ASISTENTE", FechaIni = new DateOnly(2026, 1, 1) });
+var loginAsist55 = await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "asistente.uno", Clave = "Clave-Asistente-1" });
+Afirmar("Con el rol ASISTENTE entra, y la respuesta trae ese rol",
+    loginAsist55 is not null && loginAsist55.Value.Roles.SequenceEqual(new[] { "ASISTENTE" }));
+Afirmar("...y se le anota el acceso", (await repoUsr55.ObtenerPorIdAsync(asist55.IdUsuario))!.UltimoAcceso is not null);
+Afirmar("Con el rol ASISTENTE pero la clave mal escrita, no entra",
+    await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "asistente.uno", Clave = "otra-clave" }) is null);
 Afirmar("Un correo institucional ya no es un nombre de usuario válido para entrar",
     await servicioUsr55.LoginAsync(new UsuarioLogin { Usuario = "estudiante.prueba@usbmed.edu.co", Clave = "3000999111" }) is null);
+
+// Guía IA, Regla 1 · crear usuario como maestro-detalle: la persona SE CREA con la cuenta y sus roles.
+UsuarioConRolesCrear NuevoConRoles(string usuario = "maria.perez", string? correo = "maria@usbmed.edu.co", params string[] roles) => new()
+{
+    Nombres = "María", Apellidos = "Pérez", CorreoInstitucional = correo, Usuario = usuario, Clave = "Clave-Maestro-1",
+    Roles = roles.Select(r => new DetalleRolInicial { FkRol = r }).ToList(),
+};
+await AfirmarLanza<ArgumentException>("CrearConRoles sin ningún correo lanza ArgumentException (400)",
+    () => servicioUsr55.CrearConRolesAsync(NuevoConRoles("sin.correo", null, "ASISTENTE")));
+await AfirmarLanza<ArgumentException>("CrearConRoles sin roles lanza ArgumentException (400)",
+    () => servicioUsr55.CrearConRolesAsync(NuevoConRoles("sin.roles", "a@b.co")));
+await AfirmarLanza<ArgumentException>("CrearConRoles con un rol repetido lanza ArgumentException (400)",
+    () => servicioUsr55.CrearConRolesAsync(NuevoConRoles("rol.repetido", "a@b.co", "ASISTENTE", "asistente")));
+var conRoles55 = await servicioUsr55.CrearConRolesAsync(NuevoConRoles("maria.perez", "maria@usbmed.edu.co", "ASISTENTE", "ADMIN"));
+Afirmar("CrearConRoles crea la cuenta y devuelve el id de la persona creada", conRoles55.IdUsuario > 0 && conRoles55.FkAsistente > 0);
+Afirmar("...y manda los dos roles al repositorio, en mayúsculas", repoUsr55.UltimosRoles.SequenceEqual(new[] { "ASISTENTE", "ADMIN" }));
+Afirmar("...y la clave quedó como hash BCrypt, nunca en claro",
+    BCrypt.Net.BCrypt.Verify("Clave-Maestro-1", (await repoUsr55.ObtenerPorLoginAsync("maria.perez"))!.ClaveHash));
+await AfirmarLanza<InvalidOperationException>("CrearConRoles con un login ya usado lo rechaza el repositorio (no se crea nada)",
+    () => servicioUsr55.CrearConRolesAsync(NuevoConRoles("maria.perez", "otra@usbmed.edu.co", "ASISTENTE")));
 
 // cambio obligatorio de clave (sirve para cualquier cuenta, p. ej. un administrador nuevo con clave temporal)
 var conFlag55 = await servicioUsr55.CrearAsync(new UsuarioCrear { FkAsistente = 71, Usuario = "admin.nuevo", Clave = "Temporal-1234", DebeCambiarClave = true });
@@ -2565,7 +2597,7 @@ await servicioSolicitudes.CrearAsync(new SolicitudPonenteCrear
     CorreoInstitucional = "eva@usbmed.edu.co", TituloPonencia = "Memoria urbana",
     ResumenPonencia = "Un resumen largo sobre la memoria urbana de la ciudad de Medellin.",
     Inicio = DateTimeOffset.UtcNow.AddDays(30), Fin = DateTimeOffset.UtcNow.AddDays(30).AddHours(2),
-    FkModalidad = "HIBRIDA", FkSede = "BELLO", FkPeriodo = "2026-2",
+    FkModalidad = "TELEPRESENCIAL", FkSede = "BELLO", FkPeriodo = "2026-2",
 });
 
 var (todasSol, totalSol) = await servicioSolicitudes.ListarAsync(null, null);
@@ -2625,7 +2657,7 @@ Afirmar("...con los datos limpios: modalidad en mayúsculas, sede y lugar sin es
 // Eva eligió modalidad, sede y periodo: aprobarla sin escribir nada es válido (la base de datos usa lo del ponente).
 var aprobadaEva = await servicioSolicitudes.ResolverAsync(3, new SolicitudPonenteResolver { Aprobar = true, ResueltoPor = 3 });
 Afirmar("Resolver(aprobar) sin datos de cátedra funciona si el ponente ya eligió modalidad, sede y periodo (se crea la cátedra)",
-    aprobadaEva.Estado == "APROBADA" && aprobadaEva.FkCatedra is not null && aprobadaEva.FkModalidad == "HIBRIDA"
+    aprobadaEva.Estado == "APROBADA" && aprobadaEva.FkCatedra is not null && aprobadaEva.FkModalidad == "TELEPRESENCIAL"
     && repoSolicitudes.UltimaCatedra is { FkModalidad: null, FkSede: null, FkPeriodo: null });
 await AfirmarLanza<InvalidOperationException>(
     "Resolver() una solicitud ya resuelta falla (la base de datos responde P0001; en la API real -> 409)",
@@ -2781,14 +2813,224 @@ await AfirmarLanza<ArgumentException>("Validar() con fin <= inicio lanza Argumen
 Afirmar("IRepositorioRestriccionProgramacion no tiene método de borrado lógico ni de PATCH (activar/pausar es un PUT)",
     typeof(IRepositorioRestriccionProgramacion).GetMethods().All(m => !m.Name.Contains("Desactivar") && !m.Name.Contains("Actualizar")));
 
+// ---------------------------------------------------------------------------
+//  v7.2 · Sede con ubicación, registro público, carga de estudiantes y exportación
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.2 · Prueba de capas: sede con coordenadas y radio (RF-S11) ==\n");
+
+Afirmar("SedeCrear: latitud sin longitud NO es válida (van juntas o ninguna)",
+    !EsValida(new SedeCrear { IdSede = "X1", Nombre = "X", EsVirtual = false, Activo = true, Latitud = 6.3m }));
+Afirmar("SedeCrear: longitud sin latitud NO es válida",
+    !EsValida(new SedeCrear { IdSede = "X1", Nombre = "X", EsVirtual = false, Activo = true, Longitud = -75.5m }));
+Afirmar("SedeCrear: latitud y longitud juntas SÍ son válidas",
+    EsValida(new SedeCrear { IdSede = "X1", Nombre = "X", EsVirtual = false, Activo = true, Latitud = 6.333129m, Longitud = -75.569174m }));
+Afirmar("SedeCrear: sin ubicación sigue siendo válida (es opcional)",
+    EsValida(new SedeCrear { IdSede = "X1", Nombre = "X", EsVirtual = false, Activo = true }));
+Afirmar("SedeCrear: latitud 91 y longitud -181 fuera de rango NO son válidas",
+    !EsValida(new SedeCrear { IdSede = "X1", Nombre = "X", EsVirtual = false, Activo = true, Latitud = 91m, Longitud = 0m })
+    && !EsValida(new SedeCrear { IdSede = "X1", Nombre = "X", EsVirtual = false, Activo = true, Latitud = 0m, Longitud = -181m }));
+Afirmar("SedeCrear: radio 5 (menos de 10) y 6000 (más de 5000) NO son válidos; 200 sí",
+    !EsValida(new SedeCrear { IdSede = "X1", Nombre = "X", EsVirtual = false, Activo = true, RadioMetros = 5 })
+    && !EsValida(new SedeCrear { IdSede = "X1", Nombre = "X", EsVirtual = false, Activo = true, RadioMetros = 6000 })
+    && EsValida(new SedeCrear { IdSede = "X1", Nombre = "X", EsVirtual = false, Activo = true, RadioMetros = 200 }));
+Afirmar("SedeReemplazo: latitud sin longitud NO es válida",
+    !EsValida(new SedeReemplazo { Nombre = "X", EsVirtual = false, Activo = true, Latitud = 6.3m }));
+Afirmar("SedeActualizar (PATCH): solo la longitud NO es válida; las dos juntas sí",
+    !EsValida(new SedeActualizar { Longitud = -75.5m }) && EsValida(new SedeActualizar { Latitud = 6.3m, Longitud = -75.5m }));
+
+var repoSedeGeo72 = new RepositorioSedeEspia();
+var servicioSedeGeo72 = new ServicioSede(repoSedeGeo72);
+
+await servicioSedeGeo72.CrearAsync(new SedeCrear { IdSede = "G1", Nombre = "Con geo", EsVirtual = false, Activo = true, Latitud = 6.1m, Longitud = -75.1m, RadioMetros = 120 });
+Afirmar("Crear una sede física guarda coordenadas y radio",
+    repoSedeGeo72.Creada!.Latitud == 6.1m && repoSedeGeo72.Creada.Longitud == -75.1m && repoSedeGeo72.Creada.RadioMetros == 120);
+await servicioSedeGeo72.CrearAsync(new SedeCrear { IdSede = "G2", Nombre = "Virtual geo", EsVirtual = true, Activo = true, Latitud = 6.1m, Longitud = -75.1m, RadioMetros = 120 });
+Afirmar("Crear una sede VIRTUAL descarta la ubicación aunque llegue (chk_sede_virtual_sin_geo)",
+    repoSedeGeo72.Creada!.Latitud is null && repoSedeGeo72.Creada.Longitud is null && repoSedeGeo72.Creada.RadioMetros is null);
+
+await servicioSedeGeo72.ReemplazarAsync("G1", new SedeReemplazo { Nombre = "G1", EsVirtual = false, Activo = true });
+Afirmar("PUT sin ubicación NO manda claves de ubicación (un PUT de la v7.1 no borra las coordenadas)",
+    !repoSedeGeo72.UltimosDatos!.ContainsKey("latitud") && !repoSedeGeo72.UltimosDatos.ContainsKey("longitud") && !repoSedeGeo72.UltimosDatos.ContainsKey("radio_metros"));
+await servicioSedeGeo72.ReemplazarAsync("G1", new SedeReemplazo { Nombre = "G1", EsVirtual = false, Activo = true, Latitud = 6.5m, Longitud = -75.6m, RadioMetros = 90 });
+Afirmar("PUT con ubicación manda latitud, longitud y radio",
+    (decimal)repoSedeGeo72.UltimosDatos!["latitud"]! == 6.5m && (decimal)repoSedeGeo72.UltimosDatos["longitud"]! == -75.6m && (int)repoSedeGeo72.UltimosDatos["radio_metros"]! == 90);
+await servicioSedeGeo72.ReemplazarAsync("G1", new SedeReemplazo { Nombre = "G1", EsVirtual = true, Activo = true, Latitud = 6.5m, Longitud = -75.6m });
+Afirmar("PUT que vuelve virtual a la sede manda null explícito en la ubicación (la borra)",
+    repoSedeGeo72.UltimosDatos!.ContainsKey("latitud") && repoSedeGeo72.UltimosDatos["latitud"] is null
+    && repoSedeGeo72.UltimosDatos["longitud"] is null && repoSedeGeo72.UltimosDatos["radio_metros"] is null);
+
+await servicioSedeGeo72.ActualizarAsync("G1", new SedeActualizar { Nombre = "Nuevo nombre" });
+Afirmar("PATCH sin ubicación no manda claves de ubicación", !repoSedeGeo72.UltimosDatos!.ContainsKey("latitud") && !repoSedeGeo72.UltimosDatos.ContainsKey("radio_metros"));
+await servicioSedeGeo72.ActualizarAsync("G1", new SedeActualizar { RadioMetros = 60 });
+Afirmar("PATCH solo con el radio manda únicamente el radio",
+    (int)repoSedeGeo72.UltimosDatos!["radio_metros"]! == 60 && !repoSedeGeo72.UltimosDatos.ContainsKey("latitud"));
+await servicioSedeGeo72.ActualizarAsync("G1", new SedeActualizar { EsVirtual = true });
+Afirmar("PATCH que vuelve virtual a la sede borra la ubicación", repoSedeGeo72.UltimosDatos!["latitud"] is null && repoSedeGeo72.UltimosDatos["radio_metros"] is null);
+
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.2 · Prueba de capas: registro público de asistencia (RF-S9, RF-S10) ==\n");
+
+var repoPub72 = new RepositorioAsistenciaPublicaFalso();
+var servicioPub72 = new ServicioAsistenciaPublica(repoPub72);
+var tokenOk72 = RepositorioAsistenciaPublicaFalso.TokenValido;
+
+// ---- Las peticiones (formas -> 422) ----
+Afirmar("AsistenciaEstudianteCrear: token y carnet válidos SÍ pasan",
+    EsValida(new AsistenciaEstudianteCrear { Token = tokenOk72, Carnet = "30000124726" }));
+Afirmar("AsistenciaEstudianteCrear: sin token NO pasa", !EsValida(new AsistenciaEstudianteCrear { Carnet = "30000124726" }));
+Afirmar("AsistenciaEstudianteCrear: carnet de 3 caracteres o con símbolos NO pasa",
+    !EsValida(new AsistenciaEstudianteCrear { Token = tokenOk72, Carnet = "abc" })
+    && !EsValida(new AsistenciaEstudianteCrear { Token = tokenOk72, Carnet = "3000-12" }));
+Afirmar("La ubicación es opcional pero va completa: latitud sin longitud NO pasa",
+    !EsValida(new AsistenciaEstudianteCrear { Token = tokenOk72, Carnet = "30000124726", Latitud = 6.3m }));
+Afirmar("...y con latitud y longitud juntas SÍ pasa",
+    EsValida(new AsistenciaEstudianteCrear { Token = tokenOk72, Carnet = "30000124726", Latitud = 6.333129m, Longitud = -75.569174m }));
+Afirmar("...y fuera de rango NO pasa",
+    !EsValida(new AsistenciaEstudianteCrear { Token = tokenOk72, Carnet = "30000124726", Latitud = 95m, Longitud = 0m }));
+Afirmar("AsistenciaDocenteCrear: exige cédula, nombre, contacto y facultad",
+    EsValida(new AsistenciaDocenteCrear { Token = tokenOk72, Cedula = "1012345678", Nombre = "Ana", Contacto = "ana@x.co", FkFacultad = "F_ING" })
+    && !EsValida(new AsistenciaDocenteCrear { Token = tokenOk72, Cedula = "1012345678", Nombre = "Ana", Contacto = "ana@x.co" })
+    && !EsValida(new AsistenciaDocenteCrear { Token = tokenOk72, Cedula = "12", Nombre = "Ana", Contacto = "ana@x.co", FkFacultad = "F_ING" }));
+Afirmar("AsistenciaExternoCrear: exige cédula, nombre, contacto y procedencia",
+    EsValida(new AsistenciaExternoCrear { Token = tokenOk72, Cedula = "1012345678", Nombre = "Luis", Contacto = "3001234567", Procedencia = "Colegio X" })
+    && !EsValida(new AsistenciaExternoCrear { Token = tokenOk72, Cedula = "1012345678", Nombre = "Luis", Contacto = "3001234567" }));
+
+// ---- Los mensajes ----
+string[] estados72 = ["OK", "ENLACE_NO_EXISTE", "ENLACE_REVOCADO", "FUERA_DE_VENTANA", "SIN_UBICACION", "SEDE_SIN_COORDENADAS",
+    "FUERA_DE_RADIO", "ESTUDIANTE_NO_EXISTE", "SIN_VINCULACION_VIGENTE", "PERSONA_INACTIVA", "YA_REGISTRADO", "DATOS_INVALIDOS"];
+Afirmar("Cada estado de negocio de la base de datos tiene su mensaje propio en español",
+    estados72.All(e => !string.IsNullOrWhiteSpace(ServicioAsistenciaPublica.MensajeDe(e)))
+    && estados72.Select(ServicioAsistenciaPublica.MensajeDe).Distinct().Count() == estados72.Length);
+Afirmar("FUERA_DE_RADIO dice «Parece que no estás en el lugar de la cátedra»",
+    ServicioAsistenciaPublica.MensajeDe("FUERA_DE_RADIO").StartsWith("Parece que no estás en el lugar de la cátedra"));
+
+// ---- Datos de la página ----
+var enlace72 = await servicioPub72.ConsultarEnlaceAsync(tokenOk72);
+Afirmar("ConsultarEnlace devuelve el título de la cátedra, el canal y si requiere ubicación",
+    enlace72.TituloCatedra == "Cátedra de prueba" && enlace72.Canal == "QR" && enlace72.RequiereUbicacion);
+await AfirmarLanza<NoEncontradoExcepcion>("ConsultarEnlace con un token inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioPub72.ConsultarEnlaceAsync(Guid.NewGuid()));
+await AfirmarLanza<ArgumentException>("ConsultarEnlace sin token lanza ArgumentException (400)",
+    () => servicioPub72.ConsultarEnlaceAsync(null));
+await AfirmarLanza<NoEncontradoExcepcion>("ConsultarEnlace con el token vacío (00000000-...) es un enlace que no existe: NoEncontradoExcepcion (404), no un 500",
+    () => servicioPub72.ConsultarEnlaceAsync(Guid.Empty));
+
+// ---- Aviso temprano de ubicación ----
+var dentro72 = await servicioPub72.VerificarUbicacionAsync(tokenOk72, 6.333129m, -75.569174m);
+Afirmar("Aviso temprano dentro del radio: estado OK, dentro = true y con mensaje",
+    dentro72.Estado == "OK" && dentro72.Dentro == true && !string.IsNullOrEmpty(dentro72.Mensaje));
+var fuera72 = await servicioPub72.VerificarUbicacionAsync(tokenOk72, 6.255095m, -75.572969m);
+Afirmar("Aviso temprano fuera del radio: FUERA_DE_RADIO, dentro = false y con la distancia",
+    fuera72.Estado == "FUERA_DE_RADIO" && fuera72.Dentro == false && fuera72.DistanciaMetros > 8000);
+var sinUbi72 = await servicioPub72.VerificarUbicacionAsync(tokenOk72, null, null);
+Afirmar("Aviso temprano sin coordenadas: SIN_UBICACION (la página aún no la tiene)", sinUbi72.Estado == "SIN_UBICACION");
+Afirmar("El aviso temprano en OK dice «Estás en el lugar de la cátedra», no «Asistencia registrada» (no guarda nada)",
+    dentro72.Mensaje == "Estás en el lugar de la cátedra.");
+await AfirmarLanza<ArgumentException>("Aviso temprano con solo la latitud lanza ArgumentException (400)",
+    () => servicioPub72.VerificarUbicacionAsync(tokenOk72, 6.3m, null));
+await AfirmarLanza<ArgumentException>("Aviso temprano con latitud fuera de rango lanza ArgumentException (400)",
+    () => servicioPub72.VerificarUbicacionAsync(tokenOk72, 95m, 0m));
+await AfirmarLanza<NoEncontradoExcepcion>("Aviso temprano con un token inexistente lanza NoEncontradoExcepcion (404)",
+    () => servicioPub72.VerificarUbicacionAsync(Guid.NewGuid(), 6.3m, -75.5m));
+
+// ---- Registrar ----
+var regEst72 = await servicioPub72.RegistrarEstudianteAsync(new AsistenciaEstudianteCrear
+{ Token = tokenOk72, Carnet = "  30000124726 ", Latitud = 6.333129m, Longitud = -75.569174m, Ip = "10.0.0.5", UserAgent = "Mozilla/5.0" });
+Afirmar("Registrar estudiante OK devuelve el id y el mensaje «Asistencia registrada»",
+    regEst72.Estado == "OK" && regEst72.IdRegistro == 1 && regEst72.Mensaje == "Asistencia registrada.");
+Afirmar("...el carnet llega SIN espacios, y la IP y el navegador se pasan al repositorio",
+    repoPub72.UltimoCarnet == "30000124726" && repoPub72.UltimaIp == "10.0.0.5" && repoPub72.UltimoUserAgent == "Mozilla/5.0");
+
+repoPub72.EstadoARetornar = "YA_REGISTRADO";
+var dup72 = await servicioPub72.RegistrarEstudianteAsync(new AsistenciaEstudianteCrear { Token = tokenOk72, Carnet = "30000124726" });
+Afirmar("Un rechazo de negocio vuelve como estado + mensaje, sin id (YA_REGISTRADO)",
+    dup72.Estado == "YA_REGISTRADO" && dup72.IdRegistro is null && dup72.Mensaje == ServicioAsistenciaPublica.MensajeDe("YA_REGISTRADO"));
+repoPub72.EstadoARetornar = "OK";
+
+await AfirmarLanza<ArgumentException>("Una IP mal formada lanza ArgumentException (400): sería un 500 del motor",
+    () => servicioPub72.RegistrarEstudianteAsync(new AsistenciaEstudianteCrear { Token = tokenOk72, Carnet = "30000124726", Ip = "no-es-una-ip" }));
+await servicioPub72.RegistrarEstudianteAsync(new AsistenciaEstudianteCrear
+{ Token = tokenOk72, Carnet = "30000124726", Ip = "2001:db8::1", UserAgent = new string('a', 500) });
+Afirmar("Una IP v6 se acepta y el navegador se recorta a 300 caracteres (varchar(300))",
+    repoPub72.UltimaIp == "2001:db8::1" && repoPub72.UltimoUserAgent!.Length == 300);
+await servicioPub72.RegistrarEstudianteAsync(new AsistenciaEstudianteCrear { Token = tokenOk72, Carnet = "30000124726", Ip = "  " });
+Afirmar("Una IP en blanco se manda como null", repoPub72.UltimaIp is null);
+
+var regDoc72 = await servicioPub72.RegistrarDocenteAsync(new AsistenciaDocenteCrear
+{ Token = tokenOk72, Cedula = " 1012345678", Nombre = " Ana Pérez ", Contacto = " ana@usbmed.edu.co ", FkFacultad = "F_ING " });
+Afirmar("Registrar docente OK; cédula, nombre, contacto y facultad llegan sin espacios sobrantes",
+    regDoc72.Estado == "OK" && repoPub72.UltimaCedula == "1012345678" && repoPub72.UltimoNombre == "Ana Pérez"
+    && repoPub72.UltimoContacto == "ana@usbmed.edu.co" && repoPub72.UltimaFacultad == "F_ING");
+var regExt72 = await servicioPub72.RegistrarExternoAsync(new AsistenciaExternoCrear
+{ Token = tokenOk72, Cedula = "1012345679", Nombre = "Luis Gómez", Contacto = "3001234567", Procedencia = " Colegio San José " });
+Afirmar("Registrar externo OK; la procedencia llega sin espacios sobrantes",
+    regExt72.Estado == "OK" && repoPub72.UltimaProcedencia == "Colegio San José");
+
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.2 · Prueba de capas: carga de estudiantes (RF-S8) ==\n");
+
+var repoCarga72 = new RepositorioCargaEstudianteFalso();
+var servicioCarga72 = new ServicioCargaEstudiante(repoCarga72);
+
+Afirmar("EstudianteCargar: una fila válida del archivo SÍ pasa",
+    EsValida(new EstudianteCargar { IdAsis = "30000124726", Documento = "1032456789", Programa = "INDS", Periodo = "2026-2" }));
+Afirmar("EstudianteCargar: falta el carnet, la CC, el programa o el periodo -> NO pasa",
+    !EsValida(new EstudianteCargar { Documento = "1032456789", Programa = "INDS", Periodo = "2026-2" })
+    && !EsValida(new EstudianteCargar { IdAsis = "30000124726", Programa = "INDS", Periodo = "2026-2" })
+    && !EsValida(new EstudianteCargar { IdAsis = "30000124726", Documento = "1032456789", Periodo = "2026-2" })
+    && !EsValida(new EstudianteCargar { IdAsis = "30000124726", Documento = "1032456789", Programa = "INDS" }));
+Afirmar("EstudianteCargar: carnet o CC con formato inválido NO pasan",
+    !EsValida(new EstudianteCargar { IdAsis = "ab", Documento = "1032456789", Programa = "INDS", Periodo = "2026-2" })
+    && !EsValida(new EstudianteCargar { IdAsis = "30000124726", Documento = "10 32", Programa = "INDS", Periodo = "2026-2" }));
+
+var cargado72 = await servicioCarga72.CargarAsync(
+    new EstudianteCargar { IdAsis = " 30000124726 ", Documento = "1032456789", Programa = " inds ", Periodo = "2026-2", FkLoteCarga = 9 });
+Afirmar("Cargar devuelve el id de la persona y la acción (CREADO)", cargado72.IdAsistente == 1 && cargado72.Accion == "CREADO");
+Afirmar("...el carnet llega sin espacios y el código de programa en mayúsculas (INDS)",
+    repoCarga72.Ultimo == ("30000124726", "1032456789", "INDS", "2026-2", 9L));
+var cargado72b = await servicioCarga72.CargarAsync(
+    new EstudianteCargar { IdAsis = "30000124726", Documento = "1032456789", Programa = "INDS", Periodo = "2026-2" });
+Afirmar("Cargar el mismo carnet otra vez es idempotente: ACTUALIZADO con el MISMO id", cargado72b.Accion == "ACTUALIZADO" && cargado72b.IdAsistente == cargado72.IdAsistente);
+
+// ---------------------------------------------------------------------------
+Console.WriteLine("\n== v7.2 · Prueba de capas: exportación por cátedra (RF-S13, RF-S14) ==\n");
+
+var servicioExp72 = new ServicioExportacion(new RepositorioExportacionFalso());
+
+var catedras72 = await servicioExp72.CatedrasAsync(" 2026-2 ");
+Afirmar("Cátedras del periodo devuelve las del repositorio, con su id de 9 dígitos y los conteos por tipo",
+    catedras72.Count == 3 && catedras72[0].IdCatedra == "000000001" && catedras72[0].Estudiantes == 2 && catedras72[0].Otros == 0);
+await AfirmarLanza<ArgumentException>("Cátedras sin periodo lanza ArgumentException (400)", () => servicioExp72.CatedrasAsync(null));
+await AfirmarLanza<ArgumentException>("Cátedras con un periodo de más de 6 caracteres lanza ArgumentException (400)", () => servicioExp72.CatedrasAsync("2026-2-X"));
+
+var pag1 = await servicioExp72.AsistentesAsync("2026-2", null, 100);
+Afirmar("Asistentes: una página llena trae 100 cátedras y 'siguiente' = el id de la última (000000100)",
+    pag1.Datos.Count == 100 && pag1.Siguiente == "000000100");
+var pag3 = await servicioExp72.AsistentesAsync("2026-2", "000000200", 100);
+Afirmar("Asistentes: la última página (50 cátedras < límite) no trae 'siguiente' (fin de la lista)",
+    pag3.Datos.Count == 50 && pag3.Siguiente is null && pag3.Datos[0].IdCatedra == "000000201");
+Afirmar("Asistentes: cada cátedra trae sus asistentes con el tipo (ESTUDIANTE, DOCENTE o EXTERNO)",
+    pag1.Datos[0].Asistentes.Count == 3 && pag1.Datos[0].Asistentes.Select(a => a.Tipo).Distinct().Count() == 3);
+var porDefecto72 = await servicioExp72.AsistentesAsync("2026-2", null, null);
+Afirmar("Asistentes sin 'limite' usa 100 por página", porDefecto72.Datos.Count == ServicioExportacion.LimitePorDefecto);
+await AfirmarLanza<ArgumentException>("Asistentes con limite 0 lanza ArgumentException (400)", () => servicioExp72.AsistentesAsync("2026-2", null, 0));
+await AfirmarLanza<ArgumentException>("Asistentes con limite 501 (más que el máximo) lanza ArgumentException (400)", () => servicioExp72.AsistentesAsync("2026-2", null, 501));
+await AfirmarLanza<ArgumentException>("Asistentes con 'desde' que no es un id de cátedra lanza ArgumentException (400)", () => servicioExp72.AsistentesAsync("2026-2", "abc'; --", 10));
+await AfirmarLanza<ArgumentException>("Asistentes sin periodo lanza ArgumentException (400)", () => servicioExp72.AsistentesAsync(null, null, 10));
+Afirmar("IRepositorioExportacion es de SOLO LECTURA (ningún método crea, actualiza ni elimina)",
+    typeof(IRepositorioExportacion).GetMethods().All(m => !m.Name.StartsWith("Crear") && !m.Name.StartsWith("Actualizar") && !m.Name.StartsWith("Eliminar")));
+Afirmar("IRepositorioAsistenciaPublica no tiene método para consultar claves de acceso (D60: ya no se usa la clave por correo)",
+    typeof(IRepositorioAsistenciaPublica).GetMethods().All(m => !m.Name.Contains("Clave")));
+
 // ---- Cuenta de control --------------------------------------------------------
 Console.WriteLine("\n== Cuenta de control: 37 tablas, 37 recursos ==\n");
 // v7.1: D52 agrega Disponibilidad (consultas de solo lectura), D53 agrega QrSesion (el QR de cierre: enlace_registro +
 // asistencia), D56 agrega SolicitudPonente (la bandeja de ponentes) y D57 agrega RestriccionProgramacion (periodos y horarios).
 // La inscripción (D50) se quitó en la D55. 37 del script + 4.
-Afirmar("La API declara 41 controladores (los 37 de bdcatedras + Disponibilidad + QrSesion + SolicitudPonente + RestriccionProgramacion de la v7.1)",
+// Nota: ya antes de la v7.2 había 42 archivos de controlador (esta prueba esperaba 41 y fallaba); con los 3 de la v7.2 son 45.
+Afirmar("La API declara 45 controladores (los 42 que ya había + AsistenciaPublica + CargaEstudiante + Exportacion de la v7.2)",
     typeof(ApiCatedras.Controllers.BitacoraController).Assembly.GetTypes()
-        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 41);
+        .Count(t => t.IsClass && !t.IsAbstract && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)) == 45);
 
 // --------------------------------------------------------------------------
 //  Resultado final -> código de salida del proceso.
@@ -2871,11 +3113,10 @@ class RepositorioModalidadFalso : IRepositorioModalidad
 
     public RepositorioModalidadFalso()
     {
-        // Las 4 modalidades semilla del script real.
+        // Las 3 modalidades que se usan (HIBRIDA se borró en la migración 072).
         _tabla["PRESENCIAL"] = new Modalidad { IdModalidad = "PRESENCIAL", Nombre = "Presencial", CanalDifusion = "QR", Activo = true };
         _tabla["VIRTUAL"] = new Modalidad { IdModalidad = "VIRTUAL", Nombre = "Virtual", CanalDifusion = "ENLACE", Activo = true };
         _tabla["TELEPRESENCIAL"] = new Modalidad { IdModalidad = "TELEPRESENCIAL", Nombre = "Telepresencial", CanalDifusion = "ENLACE", Activo = true };
-        _tabla["HIBRIDA"] = new Modalidad { IdModalidad = "HIBRIDA", Nombre = "Hibrida", CanalDifusion = "AMBOS", Activo = true };
     }
 
     public Task<List<Modalidad>> ObtenerTodosAsync(int limite) =>
@@ -4227,6 +4468,23 @@ class RepositorioUsuarioFalso : IRepositorioUsuario
         return Task.FromResult((usuario.IdUsuario, usuario.CreadoEn));
     }
 
+    public Task<(long IdUsuario, long FkAsistente, DateTime CreadoEn)> GuardarConRolesAsync(
+        Asistente persona, Usuario usuario, IReadOnlyList<(string FkRol, DateOnly? FechaIni)> roles)
+    {
+        // Como el SP: si el login ya existe, no se crea nada (ni persona ni cuenta).
+        if (_tabla.Values.Any(u => u.NombreUsuario == usuario.NombreUsuario))
+            throw new InvalidOperationException("uq_usuario_login (simulado).");
+
+        usuario.FkAsistente = 100 + _siguienteId;   // la "persona" recién creada
+        usuario.IdUsuario = _siguienteId++;
+        usuario.CreadoEn = DateTime.UtcNow;
+        _tabla[usuario.IdUsuario] = usuario;
+        UltimosRoles = roles.Select(r => r.FkRol).ToList();
+        return Task.FromResult((usuario.IdUsuario, usuario.FkAsistente, usuario.CreadoEn));
+    }
+
+    public List<string> UltimosRoles { get; private set; } = new();
+
     public Task<int> ActualizarAsync(long idUsuario, Dictionary<string, object?> datos)
     {
         if (!_tabla.TryGetValue(idUsuario, out var u))
@@ -4999,4 +5257,138 @@ class RepositorioQrSesionFalso : IRepositorioQrSesion
         new() { FkAsistente = 1, Nombres = "Ana", Apellidos = "A", RegistradoEn = FinSesion.AddMinutes(-5), Latitud = 6.24m, Longitud = -75.58m, Origen = "QR" },
         new() { FkAsistente = 3, Nombres = "Cami", Apellidos = "C", RegistradoEn = FinSesion.AddMinutes(-3), Origen = "QR" },
     });
+}
+
+
+// ==========================================================================
+//  v7.2 · Repositorios FALSOS de la subversión (sin PostgreSQL)
+// ==========================================================================
+
+// Repositorio de Sede que SOLO anota lo que el servicio le manda (para ver qué claves de ubicación viajan).
+class RepositorioSedeEspia : IRepositorioSede
+{
+    public Sede? Creada { get; private set; }
+    public Dictionary<string, object?>? UltimosDatos { get; private set; }
+
+    public Task<List<Sede>> ObtenerTodosAsync(int limite, bool incluirInactivos = false) => Task.FromResult(new List<Sede>());
+    public Task<Sede?> ObtenerPorIdAsync(string idSede) => Task.FromResult<Sede?>(null);
+    public Task CrearAsync(Sede sede) { Creada = sede; return Task.CompletedTask; }
+    public Task<int> ActualizarAsync(string idSede, Dictionary<string, object?> datos) { UltimosDatos = datos; return Task.FromResult(1); }
+    public Task<int> EliminarAsync(string idSede) => Task.FromResult(1);
+}
+
+// Registro público: el token válido existe, la sede está en (6.333129, -75.569174) con radio de 200 m.
+class RepositorioAsistenciaPublicaFalso : IRepositorioAsistenciaPublica
+{
+    public static readonly Guid TokenValido = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    /// <summary>Estado que devolverán los tres registros (para probar los rechazos).</summary>
+    public string EstadoARetornar { get; set; } = "OK";
+
+    public string? UltimoCarnet { get; private set; }
+    public string? UltimaCedula { get; private set; }
+    public string? UltimoNombre { get; private set; }
+    public string? UltimoContacto { get; private set; }
+    public string? UltimaFacultad { get; private set; }
+    public string? UltimaProcedencia { get; private set; }
+    public string? UltimaIp { get; private set; }
+    public string? UltimoUserAgent { get; private set; }
+
+    public Task<EnlacePublico?> ConsultarEnlaceAsync(Guid token) =>
+        Task.FromResult<EnlacePublico?>(token != TokenValido ? null : new EnlacePublico
+        {
+            IdEnlace = 1, IdSesion = 7, TituloCatedra = "Cátedra de prueba", IdCatedra = "000000001",
+            Canal = "QR", RequiereUbicacion = true, Modalidad = "PRESENCIAL", EstadoVentana = "abierto",
+        });
+
+    public Task<UbicacionVerificada> VerificarUbicacionAsync(Guid token, decimal? latitud, decimal? longitud)
+    {
+        if (token != TokenValido)
+            return Task.FromResult(new UbicacionVerificada { Estado = "ENLACE_NO_EXISTE" });
+        if (latitud is null || longitud is null)
+            return Task.FromResult(new UbicacionVerificada { Estado = "SIN_UBICACION", RequiereUbicacion = true });
+
+        // "Dentro" = a menos de ~0.002 grados de la sede (≈ 200 m); si no, fuera, con una distancia ficticia.
+        bool dentro = Math.Abs(latitud.Value - 6.333129m) < 0.002m && Math.Abs(longitud.Value + 75.569174m) < 0.002m;
+        return Task.FromResult(new UbicacionVerificada
+        {
+            Estado = dentro ? "OK" : "FUERA_DE_RADIO", RequiereUbicacion = true, Dentro = dentro,
+            DistanciaMetros = dentro ? 0m : 8700m, RadioMetros = 200,
+        });
+    }
+
+    private ResultadoRegistroPublico Resultado(string? ip, string? userAgent)
+    {
+        UltimaIp = ip;
+        UltimoUserAgent = userAgent;
+        return new ResultadoRegistroPublico { Estado = EstadoARetornar, IdRegistro = EstadoARetornar == "OK" ? 1 : null };
+    }
+
+    public Task<ResultadoRegistroPublico> RegistrarEstudianteAsync(
+        Guid token, string carnet, decimal? latitud, decimal? longitud, string? ip, string? userAgent)
+    {
+        UltimoCarnet = carnet;
+        return Task.FromResult(Resultado(ip, userAgent));
+    }
+
+    public Task<ResultadoRegistroPublico> RegistrarDocenteAsync(
+        Guid token, string cedula, string nombre, string contacto, string fkFacultad,
+        decimal? latitud, decimal? longitud, string? ip, string? userAgent)
+    {
+        (UltimaCedula, UltimoNombre, UltimoContacto, UltimaFacultad) = (cedula, nombre, contacto, fkFacultad);
+        return Task.FromResult(Resultado(ip, userAgent));
+    }
+
+    public Task<ResultadoRegistroPublico> RegistrarExternoAsync(
+        Guid token, string cedula, string nombre, string contacto, string procedencia,
+        decimal? latitud, decimal? longitud, string? ip, string? userAgent)
+    {
+        (UltimaCedula, UltimoNombre, UltimoContacto, UltimaProcedencia) = (cedula, nombre, contacto, procedencia);
+        return Task.FromResult(Resultado(ip, userAgent));
+    }
+}
+
+// Carga de estudiantes: recuerda el último llamado y responde CREADO la primera vez y ACTUALIZADO después.
+class RepositorioCargaEstudianteFalso : IRepositorioCargaEstudiante
+{
+    private readonly HashSet<string> _vistos = new();
+
+    public (string IdAsis, string Documento, string Programa, string Periodo, long? Lote) Ultimo { get; private set; }
+
+    public Task<ResultadoCargaEstudiante> CargarAsync(string idAsis, string documento, string programa, string periodo, long? fkLoteCarga)
+    {
+        Ultimo = (idAsis, documento, programa, periodo, fkLoteCarga);
+        bool nuevo = _vistos.Add(idAsis);
+        return Task.FromResult(new ResultadoCargaEstudiante { IdAsistente = 1, Accion = nuevo ? "CREADO" : "ACTUALIZADO" });
+    }
+}
+
+// Exportación: 3 cátedras en la lista del periodo y 250 (ids 000000001..000000250) para probar la paginación por cátedra.
+class RepositorioExportacionFalso : IRepositorioExportacion
+{
+    public Task<List<ExportacionCatedra>> CatedrasDelPeriodoAsync(string periodo) =>
+        Task.FromResult(new List<ExportacionCatedra>
+        {
+            new() { IdCatedra = "000000001", Titulo = "Primera", Activo = true, Estudiantes = 2, Docentes = 1, Externos = 1 },
+            new() { IdCatedra = "000000002", Titulo = "Segunda", Activo = true },
+            new() { IdCatedra = "000000003", Titulo = "Inactiva con asistencias", Activo = false, Estudiantes = 1, Otros = 2 },
+        });
+
+    public Task<List<ExportacionCatedraAsistentes>> AsistentesDelPeriodoAsync(string periodo, string? desde, int limite)
+    {
+        int primero = desde is null ? 1 : int.Parse(desde) + 1;
+        var lista = Enumerable.Range(primero, Math.Max(0, 250 - primero + 1)).Take(limite)
+            .Select(n => new ExportacionCatedraAsistentes
+            {
+                IdCatedra = n.ToString("D9"),
+                Titulo = $"Cátedra {n}",
+                Asistentes =
+                [
+                    new() { Tipo = "ESTUDIANTE", Cc = "1032456789", Carnet = "30000124726", Programa = "INDS" },
+                    new() { Tipo = "DOCENTE", Cc = "1012345678", Nombre = "Ana", Contacto = "ana@x.co", Facultad = "Facultad de Ingenierias" },
+                    new() { Tipo = "EXTERNO", Cc = "1012345679", Nombre = "Luis", Contacto = "3001234567", Procedencia = "Colegio X" },
+                ],
+            }).ToList();
+        return Task.FromResult(lista);
+    }
 }

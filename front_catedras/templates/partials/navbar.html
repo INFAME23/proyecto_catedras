@@ -32,6 +32,18 @@
                         <i class="fas fa-cogs"></i> Administración
                     </a>
                 </li>
+                {% elif tiene_rol('ASISTENTE') %}
+                {# El ASISTENTE solo gestiona cátedras: su entrada va directo a ellas. #}
+                <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('admin.catedras') }}" href="{{ url_for('admin.catedras_listar') }}">
+                        <i class="fas fa-book-open"></i> Gestionar cátedras
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('admin.solicitudes_ponente') }}" href="{{ url_for('admin.solicitudes_ponente_listar') }}">
+                        <i class="fas fa-inbox"></i> Bandeja de ponentes
+                    </a>
+                </li>
                 {% endif %}
             </ul>
             {# auth_helpers.py (v5): lee la sesión de Flask que llena routes/auth.py. #}

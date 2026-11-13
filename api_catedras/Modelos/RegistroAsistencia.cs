@@ -70,4 +70,26 @@ public class RegistroAsistencia
     /// <summary>RF-S1 (v7.1). Longitud; va siempre junto a la latitud.</summary>
     [JsonPropertyName("longitud")]
     public decimal? Longitud { get; set; }
+
+    // ----------------------------------------------------------------------
+    //  v7.2 (migración 061): cómo se identificó quien registró y qué más se guardó ese día.
+    //  Son HECHOS del momento del registro: la API solo los LEE (el registro público los pone
+    //  el procedimiento almacenado, no el cliente).
+    // ----------------------------------------------------------------------
+
+    /// <summary>CLAVE (clave por correo, v5/v7.1 y filas anteriores), CARNET (estudiante) o DECLARADO (docente o externo).</summary>
+    [JsonPropertyName("identificado_por")]
+    public string IdentificadoPor { get; set; } = "CLAVE";
+
+    /// <summary>INSTANTÁNEA: la facultad que declaró un DOCENTE. Null en los demás.</summary>
+    [JsonPropertyName("fk_facultad_snapshot")]
+    public string? FkFacultadSnapshot { get; set; }
+
+    /// <summary>INSTANTÁNEA: de dónde dijo venir un EXTERNO. Null en los demás.</summary>
+    [JsonPropertyName("procedencia")]
+    public string? Procedencia { get; set; }
+
+    /// <summary>Metros entre la ubicación enviada y la sede, calculados por la BD. Solo en registros de canal QR.</summary>
+    [JsonPropertyName("distancia_metros")]
+    public decimal? DistanciaMetros { get; set; }
 }

@@ -24,7 +24,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 /// <summary>Body del PUT /api/Sede/{id_sede}.</summary>
-public class SedeReemplazo
+public class SedeReemplazo : IValidatableObject
 {
     /// <summary>Nuevo nombre de la sede. Obligatorio, no vacío, hasta 80.</summary>
     [Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
@@ -48,4 +48,29 @@ public class SedeReemplazo
     [Required(ErrorMessage = "El campo 'activo' es obligatorio (true o false).")]
     [JsonPropertyName("activo")]
     public bool? Activo { get; set; }
+
+    // ----------------------------------------------------------------------
+    //  v7.2 (RF-S11): ubicación de la sede. Los tres campos son OPCIONALES:
+    //  una sede virtual no los lleva, y una sede física sin ellos no podrá
+    //  generar QR (migración 062) hasta que se completen.
+    // ----------------------------------------------------------------------
+
+    /// <summary>Latitud en grados, entre -90 y 90. Va junto a la longitud.</summary>
+    [Range(-90.0, 90.0, ErrorMessage = "El campo 'latitud' debe estar entre -90 y 90.")]
+    [JsonPropertyName("latitud")]
+    public decimal? Latitud { get; set; }
+
+    /// <summary>Longitud en grados, entre -180 y 180. Va junto a la latitud.</summary>
+    [Range(-180.0, 180.0, ErrorMessage = "El campo 'longitud' debe estar entre -180 y 180.")]
+    [JsonPropertyName("longitud")]
+    public decimal? Longitud { get; set; }
+
+    /// <summary>Radio propio de la sede en metros (10 a 5000). Sin él se usa el parámetro global.</summary>
+    [Range(10, 5000, ErrorMessage = "El campo 'radio_metros' debe estar entre 10 y 5000.")]
+    [JsonPropertyName("radio_metros")]
+    public int? RadioMetros { get; set; }
+
+    /// <summary>Regla de dos campos: latitud y longitud juntas o ninguna (-> 422).</summary>
+    public IEnumerable<ValidationResult> Validate(ValidationContext contexto) =>
+        ValidacionGeo.LatitudYLongitudJuntas(Latitud, Longitud);
 }

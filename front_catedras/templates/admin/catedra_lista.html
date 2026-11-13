@@ -3,10 +3,30 @@
 {% block contenido %}
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
-        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        {% if tiene_rol('ADMIN') %}<li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>{% endif %}
         <li class="breadcrumb-item active">Cátedra</li>
     </ol>
 </nav>
+
+{# El ASISTENTE no tiene panel: su bandeja de ponentes (la misma del ADMIN) se ofrece aquí. #}
+{% if bandeja %}
+<a class="card shadow-custom shadow-custom-hover text-decoration-none mb-4 {{ 'border border-primary' if bandeja.pendientes }}" href="{{ url_for('admin.solicitudes_ponente_listar') }}">
+    <div class="card-body d-flex align-items-center gap-3">
+        <i class="fas fa-inbox fa-2x text-primary-custom"></i>
+        <div class="flex-grow-1">
+            <h2 class="h6 fw-bold mb-1">Bandeja de ponentes</h2>
+            <p class="text-muted small mb-0">Solicitudes «Soy ponente» que llegan del calendario: aprueba o rechaza al ponente y su ponencia.</p>
+        </div>
+        {% if bandeja.pendientes is none %}
+        <span class="badge badge-warning" title="No se pudo consultar la API">sin dato</span>
+        {% elif bandeja.pendientes %}
+        <span class="badge badge-primary">{{ bandeja.pendientes }} pendiente{{ 's' if bandeja.pendientes != 1 }}</span>
+        {% else %}
+        <span class="badge badge-secondary">Sin pendientes</span>
+        {% endif %}
+    </div>
+</a>
+{% endif %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="h3 fw-bold mb-0"><i class="fas fa-book-open text-primary-custom me-2"></i>Cátedras</h1>

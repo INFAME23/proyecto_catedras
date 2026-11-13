@@ -32,7 +32,8 @@ LARGO_MAXIMO_MOTIVO = 200
 # Encabezado normalizado -> campo. Varios nombres posibles por campo, porque
 # el archivo real del ASIS y un archivo armado a mano no siempre coinciden.
 SINONIMOS = {
-    'id_asis': ['id_asis', 'emplid', 'codigo_asis'],
+    # v7.2 · RF-S8: 'carnet_estudiante' es el código del estudiante del archivo (CC, Carnet_estudiante, Programa)
+    'id_asis': ['id_asis', 'emplid', 'codigo_asis', 'carnet_estudiante'],
     'nombres': ['nombres', 'nombre'],
     'apellidos': ['apellidos', 'apellido'],
     'nombre_completo_asis': ['nombre_completo', 'nombre_completo_asis'],
@@ -41,7 +42,7 @@ SINONIMOS = {
     'celular': ['celular', 'telefono', 'movil'],
     'es_externo': ['es_externo', 'externo'],
     'tipo_documento': ['tipo_documento', 'tipo_doc'],
-    'documento': ['documento', 'numero_documento', 'num_documento'],
+    'documento': ['documento', 'numero_documento', 'num_documento', 'cc'],   # v7.2: 'cc' = la cédula del archivo de estudiantes
     'tipo_vinculacion': ['tipo_vinculacion', 'vinculacion'],
     'programa': ['programa', 'codigo_programa', 'programa_academico'],
     'periodo': ['periodo', 'periodo_academico'],
@@ -86,7 +87,16 @@ def _celda_a_texto(valor):
 
 
 def leer_filas(archivo):
-    """Lee el archivo subido (un FileStorage de Flask) y devuelve una lista
+    """Lee el archivo y devuelve solo las filas (ver 'leer_archivo', que además dice qué columnas trae)."""
+    return leer_archivo(archivo)[1]
+
+
+def leer_archivo(archivo):
+    """v7.2: como 'leer_filas', pero devuelve (columnas, filas): 'columnas' es el conjunto de
+    campos conocidos que trae el ENCABEZADO del archivo (así se sabe de qué formato es aunque
+    una columna esté vacía en todas las filas).
+
+    Lee el archivo subido (un FileStorage de Flask) y devuelve una lista
     de (numero_fila, fila_original, campos):
       · numero_fila: el renglón en el archivo (el encabezado es el 1, así
         que la primera persona es la fila 2) — para encontrarla a mano.
@@ -125,7 +135,7 @@ def leer_filas(archivo):
             if campo and valor:
                 campos[campo] = valor
         filas.append((numero_fila, original, campos))
-    return filas
+    return {c for c in campos_por_columna if c}, filas
 
 
 def _renglones_csv(contenido):
@@ -212,6 +222,39 @@ def construir_asistente(campos, fk_lote_carga, indice_programas):
             'fk_periodo': campos.get('periodo', ''),
         }]
     return datos
+
+
+# --------------------------------------------------------------------------
+#  v7.2 · RF-S8 · Archivo de ESTUDIANTES: exactamente CC, Carnet_estudiante, Programa
+# --------------------------------------------------------------------------
+
+# Campos que tiene el archivo de estudiantes y que NO puede traer ninguna columna de personas completas.
+CAMPOS_ESTUDIANTE = {'documento', 'id_asis', 'programa'}
+CAMPOS_DE_PERSONA = {'nombres', 'apellidos', 'nombre_completo_asis', 'correo_institucional', 'correo_personal',
+                     'celular', 'es_externo', 'tipo_documento', 'tipo_vinculacion', 'periodo'}
+
+
+def es_archivo_de_estudiantes(columnas):
+    """True si el encabezado trae CC, Carnet_estudiante y Programa y NINGUNA otra columna de
+    persona (nombres, correo, periodo...). Un archivo con esas tres columnas y nada más es el
+    de estudiantes; cualquier otro sigue el camino de siempre (POST /api/Asistente)."""
+    return CAMPOS_ESTUDIANTE <= columnas and not (columnas & CAMPOS_DE_PERSONA)
+
+
+def construir_estudiante(campos, periodo, fk_lote_carga, indice_programas):
+    """Fila del archivo de estudiantes -> body de POST /api/Asistente/cargar-estudiante.
+    El archivo no trae periodo: lo elige el administrador en la pantalla. Lo que falte se manda
+    como null (no como ''): la API responde un solo error claro, «campo obligatorio»."""
+    programa = campos.get('programa')
+    return {
+        'id_asis': campos.get('id_asis'),
+        'documento': campos.get('documento'),
+        # Código tal cual si existe; si no, por nombre o alias. Si no se resuelve, se manda el texto
+        # y la API lo rechaza con un motivo claro (no se inventa un programa).
+        'programa': resolver_programa(programa, indice_programas) if programa else None,
+        'periodo': periodo,
+        'fk_lote_carga': fk_lote_carga,
+    }
 
 
 def contenido_crudo(fila_original):

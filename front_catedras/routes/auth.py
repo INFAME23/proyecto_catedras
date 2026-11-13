@@ -51,8 +51,8 @@ def login():
         return render_template('login.html', siguiente=siguiente, usuario=usuario), (
             401 if ex.codigo == 401 else 200)
 
-    # v7.1 · D55: solo el administrador inicia sesión (la API ya lo exige; esto es el cinturón del front).
-    if 'ADMIN' not in list(respuesta.get('roles', [])):
+    # v7.1 · D55: solo el personal (ADMIN o ASISTENTE) inicia sesión (la API ya lo exige; esto es el cinturón del front).
+    if not {'ADMIN', 'ASISTENTE'} & set(respuesta.get('roles', [])):
         flash(MENSAJE_GENERICO, 'error')
         return render_template('login.html', siguiente=siguiente, usuario=usuario), 401
 
@@ -73,7 +73,7 @@ def login():
     flash(f"Bienvenido, {datos['usuario']}.", 'exito')
     if siguiente:
         return redirect(siguiente)
-    # v7.1 · D55: solo el administrador inicia sesión: va al panel de administración.
+    # v7.1 · D55: el administrador va al panel de administración; el asistente, a las cátedras.
     return redirect(url_for(endpoint_de_inicio()))
 
 

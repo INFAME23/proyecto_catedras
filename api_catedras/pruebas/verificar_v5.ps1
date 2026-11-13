@@ -90,7 +90,7 @@ Verificar "PATCH /api/Usuario/1 fija la clave del administrador de ejemplo (200)
 
 $login = Llamar POST "/api/Usuario/login" @{ usuario = "admin.catedras"; clave = "Admin12345" }
 Verificar "Login correcto -> 200" ($login.Codigo -eq 200) $login
-Verificar "...con los roles vigentes ADMIN y CONSULTA" (($login.Json.roles -contains "ADMIN") -and ($login.Json.roles -contains "CONSULTA")) $login
+Verificar "...con el rol vigente ADMIN" ($login.Json.roles -contains "ADMIN") $login
 Verificar "...y la respuesta NO trae ningun hash" ($login.Texto -notmatch "clave_hash" -and $login.Texto -notmatch '\$2[aby]\$') $login
 
 $mala = Llamar POST "/api/Usuario/login" @{ usuario = "admin.catedras"; clave = "ClaveIncorrecta" }
@@ -128,7 +128,7 @@ $reac = Llamar PATCH "/api/Usuario/$idUsuario" @{ activo = $true }
 
 # --------------------------------------------------------------------------
 Titulo "3. RolPorUsuario: abrir, cerrar, repetir el cierre (D16)"
-$abrir = Llamar POST "/api/RolPorUsuario" @{ fk_usuario = $idUsuario; fk_rol = "CONSULTA" }
+$abrir = Llamar POST "/api/RolPorUsuario" @{ fk_usuario = $idUsuario; fk_rol = "ASISTENTE" }
 Verificar "POST /api/RolPorUsuario -> 200" ($abrir.Codigo -eq 200) $abrir
 # Se saca la fecha del TEXTO crudo: PowerShell 7 convertiria "2026-10-11" en DateTime al parsear el JSON.
 $fechaIni = [regex]::Match($abrir.Texto, '"fecha_ini":"([0-9-]+)"').Groups[1].Value
@@ -137,11 +137,13 @@ $lista = Llamar GET "/api/RolPorUsuario?fkUsuario=$idUsuario"
 Verificar "GET ?fkUsuario= lista el rol abierto" ($lista.Codigo -eq 200 -and $lista.Json.total -eq 1) $lista
 
 $loginRol = Llamar POST "/api/Usuario/login" @{ usuario = "prueba.login"; clave = "Secreta123" }
-Verificar "Con el rol CONSULTA tampoco entra (solo ADMIN inicia sesion, D55) -> 401" ($loginRol.Codigo -eq 401) $loginRol
+Verificar "Con el rol ASISTENTE entra (solo ADMIN o ASISTENTE inician sesion, D55) -> 200" ($loginRol.Codigo -eq 200 -and ($loginRol.Json.roles -contains "ASISTENTE")) $loginRol
 
-$cerrar = Llamar PATCH "/api/RolPorUsuario/cerrar" @{ fk_usuario = $idUsuario; fk_rol = "CONSULTA"; fecha_ini = $fechaIni }
+$cerrar = Llamar PATCH "/api/RolPorUsuario/cerrar" @{ fk_usuario = $idUsuario; fk_rol = "ASISTENTE"; fecha_ini = $fechaIni }
 Verificar "PATCH /api/RolPorUsuario/cerrar -> 200" ($cerrar.Codigo -eq 200) $cerrar
-$cerrar2 = Llamar PATCH "/api/RolPorUsuario/cerrar" @{ fk_usuario = $idUsuario; fk_rol = "CONSULTA"; fecha_ini = $fechaIni }
+$loginCerrado = Llamar POST "/api/Usuario/login" @{ usuario = "prueba.login"; clave = "Secreta123" }
+Verificar "Con el rol ya cerrado y sin otro rol vigente NO entra (401, D55)" ($loginCerrado.Codigo -eq 401) $loginCerrado
+$cerrar2 = Llamar PATCH "/api/RolPorUsuario/cerrar" @{ fk_usuario = $idUsuario; fk_rol = "ASISTENTE"; fecha_ini = $fechaIni }
 Verificar "Repetir el cierre -> 400" ($cerrar2.Codigo -eq 400) $cerrar2
 $cerrar3 = Llamar PATCH "/api/RolPorUsuario/cerrar" @{ fk_usuario = $idUsuario; fk_rol = "ADMIN"; fecha_ini = "2020-01-01" }
 Verificar "Cerrar una llave inexistente -> 404" ($cerrar3.Codigo -eq 404) $cerrar3

@@ -7,14 +7,45 @@
    ========================================================================== #}
 {% block titulo %}Cátedras USB · Inicio{% endblock %}
 {% block contenido %}
-<div class="bg-secondary-custom text-white p-4 p-md-5 rounded-3 mb-4 animate-fade-in">
-    <div class="d-flex align-items-center">
-        <img src="{{ url_for('static', filename='img/escudo-usb.jpeg') }}" alt="Escudo USB" class="me-3 rounded" style="height:64px;width:auto;">
+{# Carrusel de fotos del campus: horizontal y automático (Bootstrap), pausa al pasar el mouse. Estilos en estilo.css (.carrusel-campus).
+   Qué parte de cada foto se ve: cambia su style="--foco: X Y" (p. ej. «center top», «center 20%», «left center»). #}
+<div id="carruselCampus" class="carousel slide carrusel-campus animate-fade-in mb-4" data-bs-ride="carousel" data-bs-interval="5000"
+     aria-roledescription="carrusel" aria-label="Fotos de la Universidad San Buenaventura Medellín">
+    {# Título sobre las fotos (antes era un recuadro negro aparte). No intercepta clics: las flechas y los puntos siguen funcionando. #}
+    <div class="carrusel-titulo">
+        <img src="{{ url_for('static', filename='img/escudo-usb.jpeg') }}" alt="Escudo USB" class="carrusel-escudo">
         <div>
-            <h1 class="fw-bold mb-1">Cátedras USB</h1>
-            <p class="text-white-50 mb-0">Universidad San Buenaventura Medellín</p>
+            <h1 class="carrusel-h1">Cátedras USB</h1>
+            <p class="carrusel-sub">Universidad San Buenaventura Medellín</p>
         </div>
     </div>
+    <div class="carousel-indicators">
+        <button type="button" data-bs-target="#carruselCampus" data-bs-slide-to="0" class="active" aria-current="true" aria-label="Foto 1"></button>
+        <button type="button" data-bs-target="#carruselCampus" data-bs-slide-to="1" aria-label="Foto 2"></button>
+        <button type="button" data-bs-target="#carruselCampus" data-bs-slide-to="2" aria-label="Foto 3"></button>
+    </div>
+    <div class="carousel-inner">
+        <div class="carousel-item active">
+            <img src="{{ url_for('static', filename='img/campus-1.webp') }}" class="d-block w-100" width="1960" height="1307" style="--foco: center 40%"
+                 alt="Edificio de la universidad con zonas verdes y las montañas del valle de fondo">
+        </div>
+        <div class="carousel-item">
+            <img src="{{ url_for('static', filename='img/campus-san-benito.webp') }}" class="d-block w-100" width="1592" height="1148" loading="lazy" style="--foco: center bottom"
+                 alt="Fachada de la universidad al atardecer">
+        </div>
+        <div class="carousel-item">
+            <img src="{{ url_for('static', filename='img/campus-3.jpg') }}" class="d-block w-100" width="2000" height="1500" loading="lazy" style="--foco: center 40%"
+                 alt="Vista del campus con el coliseo, la piscina y el valle al fondo">
+        </div>
+    </div>
+    <button class="carousel-control-prev" type="button" data-bs-target="#carruselCampus" data-bs-slide="prev">
+        <span class="carrusel-flecha" aria-hidden="true"><i class="fas fa-chevron-left"></i></span>
+        <span class="visually-hidden">Foto anterior</span>
+    </button>
+    <button class="carousel-control-next" type="button" data-bs-target="#carruselCampus" data-bs-slide="next">
+        <span class="carrusel-flecha" aria-hidden="true"><i class="fas fa-chevron-right"></i></span>
+        <span class="visually-hidden">Foto siguiente</span>
+    </button>
 </div>
 
 <div class="card shadow-sm mb-4">
@@ -22,7 +53,7 @@
         <h2 class="h5 fw-bold"><i class="fas fa-book-open text-primary-custom me-2"></i>¿Qué son las cátedras?</h2>
         <p class="mb-3">
             Las cátedras son espacios académicos y culturales que la universidad ofrece a su comunidad. Cada cátedra
-            se organiza en <strong>sesiones</strong> (reuniones con fecha, hora, sede y modalidad: presencial, virtual o híbrida)
+            se organiza en <strong>sesiones</strong> (reuniones con fecha, hora, sede y modalidad: presencial, virtual o telepresencial)
             que dictan uno o varios <strong>ponentes</strong>. Aquí puedes conocer las que hay disponibles y dejar
             constancia de tu asistencia a cada sesión.
         </p>

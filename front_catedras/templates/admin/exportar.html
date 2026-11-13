@@ -1,0 +1,108 @@
+{% extends 'admin/base_admin.html' %}
+{% block titulo %}Exportar asistencia · Administración{% endblock %}
+{% block contenido %}
+{# v7.2 · RF-S13 / RF-S14 · Exportación de fin de periodo. Solo ADMIN. #}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        <li class="breadcrumb-item active">Exportar asistencia</li>
+    </ol>
+</nav>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-file-export text-primary-custom me-2"></i>Exportar asistencia por cátedra</h1>
+<p class="text-muted">Para llevar el recuento de <strong>a cuántas cátedras asistió cada estudiante</strong>: un estudiante sale en un archivo por cada cátedra a la que fue,
+    y contar en cuántos archivos aparece su carnet da el total. El sistema no calcula ese total.</p>
+
+{# ---------- Periodo (Regla 2: un select) ---------- #}
+<form method="get" class="card shadow-sm mb-4">
+    <div class="card-body d-flex flex-wrap align-items-end gap-3">
+        <div>
+            <label class="form-label mb-1" for="periodo">Periodo académico</label>
+            <select class="form-select" id="periodo" name="periodo" onchange="this.form.submit()">
+                {% for p in periodos %}
+                <option value="{{ p.id_periodo }}" {{ 'selected' if p.id_periodo == periodo }}>{{ p.id_periodo }} · {{ p.fecha_ini }} a {{ p.fecha_fin }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <noscript><button class="btn btn-primary" type="submit">Ver</button></noscript>
+    </div>
+</form>
+
+{% if error %}
+<div class="alert alert-danger">{{ error.mensaje }} {{ error.detalle or '' }}</div>
+{% elif not periodo %}
+<p class="text-muted">No hay periodos académicos para elegir.</p>
+{% else %}
+
+{# ---------- 4.1 Descarga por cátedra ---------- #}
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h2 class="h5 fw-bold mb-0">Descarga por cátedra · {{ periodo }}</h2>
+            {% if catedras %}
+            <a class="btn btn-primary" href="{{ url_for('admin.exportar_zip', periodo=periodo) }}">
+                <i class="fas fa-file-archive me-1"></i>Descargar todas (ZIP)
+            </a>
+            {% endif %}
+        </div>
+        <p class="small text-muted">Cada CSV lleva UTF-8 con BOM y coma como separador. El <strong>id de la cátedra</strong> (el código de 9 dígitos) va en el nombre del archivo
+            (<code>catedra_&lt;id&gt;_estudiantes.csv</code>), no como columna. Quien asistió a varias sesiones de la misma cátedra aparece <strong>una sola vez</strong> en ese archivo.
+            Un botón apagado significa que nadie de ese tipo asistió; en el ZIP esos archivos sí vienen, solo con el encabezado.</p>
+        <p class="small text-muted mb-3">Si abres un CSV con doble clic en Excel, los ceros a la izquierda del id (<code>000035392</code>) se pierden;
+            para cruzar con el catálogo, importa la columna como <em>texto</em>.</p>
+
+        {% if catedras %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Id</th><th>Cátedra</th><th class="text-center">Estudiantes</th><th class="text-center">Docentes</th><th class="text-center">Externos</th><th class="text-end">Descargar</th></tr>
+                </thead>
+                <tbody>
+                    {% for c in catedras %}
+                    <tr>
+                        <td class="font-monospace">{{ c.id_catedra }}</td>
+                        <td>{{ c.titulo }}{% if not c.activo %} <span class="badge badge-secondary" title="Cátedra inactiva; aparece porque tiene asistencias en este periodo.">inactiva</span>{% endif %}</td>
+                        <td class="text-center">{{ c.estudiantes }}</td>
+                        <td class="text-center">{{ c.docentes }}</td>
+                        <td class="text-center">{{ c.externos }}</td>
+                        <td class="text-end text-nowrap">
+                            {% for tipo, etiqueta, n, icono in (('estudiantes', 'Estudiantes', c.estudiantes, 'user-graduate'), ('docentes', 'Docentes', c.docentes, 'chalkboard-teacher'), ('externos', 'Externos', c.externos, 'user-friends')) %}
+                            {% if n %}
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.exportar_catedra_csv', periodo=periodo, id_catedra=c.id_catedra, tipo=tipo) }}">
+                                <i class="fas fa-{{ icono }} me-1"></i>{{ etiqueta }}</a>
+                            {% else %}
+                            <span class="btn btn-sm btn-outline-secondary disabled" aria-disabled="true" title="Nadie de este tipo asistió.">
+                                <i class="fas fa-{{ icono }} me-1"></i>{{ etiqueta }}</span>
+                            {% endif %}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr><th colspan="2">{{ catedras|length }} cátedras</th>
+                        <th class="text-center">{{ totales.estudiantes }}</th><th class="text-center">{{ totales.docentes }}</th><th class="text-center">{{ totales.externos }}</th><th></th></tr>
+                </tfoot>
+            </table>
+        </div>
+        <p class="small text-muted mt-2 mb-0">Los totales suman personas por cátedra: quien fue a 3 cátedras cuenta 3 veces.
+            {% if totales.otros %}<strong>{{ totales.otros }}</strong> asistencias de otras vinculaciones (administrativos, egresados…) <strong>no se exportan</strong>.{% endif %}</p>
+        {% else %}
+        <p class="text-muted text-center py-4 mb-0">El periodo {{ periodo }} no tiene cátedras con sesiones.</p>
+        {% endif %}
+    </div>
+</div>
+
+{# ---------- 4.2 Catálogo ---------- #}
+<div class="card shadow-sm mb-4">
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <h2 class="h5 fw-bold mb-1">Catálogo de cátedras · {{ periodo }}</h2>
+            <p class="small text-muted mb-0">Todas las cátedras del periodo con su id (<code>id_catedra, titulo</code>), para cruzarlo con los archivos de arriba.</p>
+        </div>
+        <a class="btn btn-outline-primary{{ '' if catedras else ' disabled' }}" href="{{ url_for('admin.exportar_catalogo', periodo=periodo) }}">
+            <i class="fas fa-list me-1"></i>Descargar catedras_{{ periodo }}.csv
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

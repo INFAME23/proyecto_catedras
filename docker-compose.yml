@@ -160,6 +160,29 @@ services:
       - ./db/postgres/migraciones/058_solicitud_ponente_modalidad_sede_periodo.sql:/docker-entrypoint-initdb.d/z058_solicitud_ponente_modalidad_sede_periodo.sql:ro
       # 059: una hora de margen entre sesiones (todas usan el mismo enlace) + enlace de ingreso al aprobar.
       - ./db/postgres/migraciones/059_separacion_entre_sesiones_enlace.sql:/docker-entrypoint-initdb.d/z059_separacion_entre_sesiones_enlace.sql:ro
+      # Subversión v7.2 (registro público con 3 tipos de asistente, ubicación contra la sede,
+      # carga de estudiantes y exportación por cátedra). Con un volumen ya creado se aplican a mano.
+      - ./db/postgres/migraciones/060_sede_coordenadas.sql:/docker-entrypoint-initdb.d/z060_sede_coordenadas.sql:ro
+      - ./db/postgres/migraciones/061_registro_publico_columnas.sql:/docker-entrypoint-initdb.d/z061_registro_publico_columnas.sql:ro
+      - ./db/postgres/migraciones/062_qr_exige_sede_con_coordenadas.sql:/docker-entrypoint-initdb.d/z062_qr_exige_sede_con_coordenadas.sql:ro
+      - ./db/postgres/migraciones/063_sp_registro_publico.sql:/docker-entrypoint-initdb.d/z063_sp_registro_publico.sql:ro
+      - ./db/postgres/migraciones/064_sp_cargar_estudiante.sql:/docker-entrypoint-initdb.d/z064_sp_cargar_estudiante.sql:ro
+      - ./db/postgres/migraciones/065_programas_archivo.sql:/docker-entrypoint-initdb.d/z065_programas_archivo.sql:ro
+      - ./db/postgres/migraciones/066_exportacion_catedras.sql:/docker-entrypoint-initdb.d/z066_exportacion_catedras.sql:ro
+      # 067: crear usuario como maestro-detalle (persona + cuenta + roles en una transacción).
+      - ./db/postgres/migraciones/067_sp_guardar_usuario.sql:/docker-entrypoint-initdb.d/z067_sp_guardar_usuario.sql:ro
+      # 068: se quitan los roles COORDINADOR y CONSULTA y se crea ASISTENTE (inicia sesión y gestiona cátedras).
+      - ./db/postgres/migraciones/068_rol_asistente_sin_coordinador_consulta.sql:/docker-entrypoint-initdb.d/z068_rol_asistente_sin_coordinador_consulta.sql:ro
+      # 069: se quitan los roles ESTUDIANTE y PONENTE (el catálogo queda con ADMIN y ASISTENTE).
+      - ./db/postgres/migraciones/069_quitar_roles_estudiante_ponente.sql:/docker-entrypoint-initdb.d/z069_quitar_roles_estudiante_ponente.sql:ro
+      # 070: se reemplazan los programas inventados por los programas reales de la USB en el Valle de Aburrá.
+      - ./db/postgres/migraciones/070_programas_reales_usb_medellin.sql:/docker-entrypoint-initdb.d/z070_programas_reales_usb_medellin.sql:ro
+      # 071: la lista de personas trae el rol de la cuenta y la vinculación vigente (reemplaza la etiqueta «Externo»).
+      - ./db/postgres/migraciones/071_lista_personas_con_rol.sql:/docker-entrypoint-initdb.d/z071_lista_personas_con_rol.sql:ro
+      # 072: se borra la modalidad HIBRIDA (no se usa).
+      - ./db/postgres/migraciones/072_quitar_modalidad_hibrida.sql:/docker-entrypoint-initdb.d/z072_quitar_modalidad_hibrida.sql:ro
+      # 073: la ubicación la decide la modalidad (modalidad.requiere_ubicacion): una sesión virtual genera su QR sin coordenadas.
+      - ./db/postgres/migraciones/073_ubicacion_por_modalidad.sql:/docker-entrypoint-initdb.d/z073_ubicacion_por_modalidad.sql:ro
 
     # Docker pregunta cada 5 s si PostgreSQL ya acepta conexiones. Cuando
     # responde OK, el servicio pasa a 'healthy' y la API puede arrancar.
@@ -247,6 +270,7 @@ services:
       SMTP_NOMBRE_REMITENTE: "${SMTP_NOMBRE_REMITENTE:-Cátedras USB}"
       URL_PUBLICA: "${URL_PUBLICA:-}"
       CORREO_MODO_CONSOLA: "${CORREO_MODO_CONSOLA:-}"
+      PROXY_CONFIABLES: "${PROXY_CONFIABLES:-0}"
 
     # Flask escucha en 5000 dentro del contenedor; se publica como 5000.
     # Si choca con el proyecto del curso, súbelo a 5100 (mismo patrón +100

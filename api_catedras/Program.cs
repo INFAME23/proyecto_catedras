@@ -366,6 +366,25 @@ builder.Services.AddScoped<IRepositorioQrSesion>(
     _ => new RepositorioQrSesionPostgres(cadenaConexion));
 builder.Services.AddScoped<IServicioQrSesion, ServicioQrSesion>();
 
+// ----------------------------------------------------------------------
+//  Subversión v7.2 · registro público de asistencia (sin clave por correo, D60),
+//  carga idempotente de estudiantes y consultas de exportación (solo lectura).
+//  Ninguna tiene tabla propia: usan funciones y procedimientos de las
+//  migraciones 063, 064 y 066. Mismo patrón de siempre: el ensamblador es el
+//  único que conoce las clases concretas (Artículo 3).
+// ----------------------------------------------------------------------
+builder.Services.AddScoped<IRepositorioAsistenciaPublica>(
+    _ => new RepositorioAsistenciaPublicaPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioAsistenciaPublica, ServicioAsistenciaPublica>();
+
+builder.Services.AddScoped<IRepositorioCargaEstudiante>(
+    _ => new RepositorioCargaEstudiantePostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioCargaEstudiante, ServicioCargaEstudiante>();
+
+builder.Services.AddScoped<IRepositorioExportacion>(
+    _ => new RepositorioExportacionPostgres(cadenaConexion));
+builder.Services.AddScoped<IServicioExportacion, ServicioExportacion>();
+
 // v7.1 · D56: bandeja de ponentes. El formulario «Soy ponente» del calendario público crea la solicitud
 // y el ADMIN la aprueba (asistente + documento + ponencia en una transacción) o la rechaza.
 builder.Services.AddScoped<IRepositorioSolicitudPonente>(

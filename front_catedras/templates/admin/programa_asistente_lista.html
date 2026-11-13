@@ -4,20 +4,20 @@
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
         <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
-        <li class="breadcrumb-item active">Programa de asistente</li>
+        <li class="breadcrumb-item active">Programa de persona</li>
     </ol>
 </nav>
-<h1 class="h3 fw-bold mb-1"><i class="fas fa-user-graduate text-primary-custom me-2"></i>Programas de asistentes</h1>
+<h1 class="h3 fw-bold mb-1"><i class="fas fa-user-graduate text-primary-custom me-2"></i>Programas de personas</h1>
 {# ADR D16: llave compuesta (asistente + programa + periodo). Se matricula
    y se cambia el estado; no se edita ni se borra. #}
-<p class="text-muted small">Las 200 primeras{% if fk_asistente %} del asistente {{ fk_asistente }}{% endif %}. Esta tabla no tiene id propio: se matricula y se cambia el estado (nunca se edita ni se borra) desde la ficha del asistente.</p>
+<p class="text-muted small">Las 200 primeras{% if fk_asistente %} de la persona {{ fk_asistente }}{% endif %}. Esta tabla no tiene id propio: se matricula y se cambia el estado (nunca se edita ni se borra) desde la ficha del asistente.</p>
 
 <div class="card shadow-sm">
     <div class="card-body p-0">
         {% if programas %}
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th>Asistente</th><th>Programa</th><th>Periodo</th><th>Estado</th></tr></thead>
+                <thead class="table-light"><tr><th>Persona</th><th>Programa</th><th>Periodo</th><th>Estado</th></tr></thead>
                 <tbody>
                     {% for p in programas %}
                     <tr>

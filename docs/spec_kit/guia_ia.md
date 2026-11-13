@@ -40,6 +40,8 @@ nombre del maestro cuando es largo (`sp_guardar_lote_carga` para
 | `catedra` | `sesion` | Formulario maestro-detalle (hecho: `sp_guardar_catedra`, migración 042; reutiliza `sp_crear_catedra` y `sp_crear_sesion`) |
 | `encuesta` | `pregunta` → `opcion_pregunta` (2 niveles) | Formulario maestro-detalle (hecho: `sp_guardar_encuesta`, migración 043; reutiliza `sp_guardar_pregunta` por cada pregunta) |
 | `sesion` | `enlace_registro` (el primero) | Formulario maestro-detalle (hecho: `sp_guardar_sesion`, migración 044; reutiliza `sp_crear_sesion` y `sp_emitir_enlace` del script) |
+| `asistente` | `documento_asistente`, `programa_asistente`, `vinculacion_asistente` | v7.2: `sp_cargar_estudiante` (migración 064): una fila del archivo de estudiantes, en UNA transacción y repetible (upsert por carnet, D68) |
+| `asistente` (si no existe) | `documento_asistente`, `vinculacion_asistente` y el `registro_asistencia` | v7.2: `sp_registrar_asistencia_estudiante` / `_docente` / `_externo` (migración 063): validan enlace, ubicación, persona y duplicado y registran en UNA transacción; devuelven un `estado` en vez de lanzar para los casos de negocio (D64) |
 
 ## Regla 2 — Las claves foráneas se seleccionan, no se digitan
 
@@ -152,6 +154,17 @@ desalinearía las listas): los sí/no van en un `<select>`.
   `/admin`.
 
 Detalle y decisiones: [Versiones/version7_1/v7_1_subversion.md](Versiones/version7_1/v7_1_subversion.md).
+
+**Subversión v7.2 (2026-11-12)** — sobre las reglas:
+- *Regla 1:* cumple. `sp_cargar_estudiante` y los tres `sp_registrar_asistencia_*` resuelven maestro (persona) + detalles
+  (documento, vinculación, programa) o el registro en una sola transacción. Las consultas de exportación son funciones de solo lectura.
+- *Regla 2:* cumple. El periodo de la carga y de la exportación salen de un `<select>` (`GET /api/PeriodoAcademico`); la facultad del
+  docente, de `GET /api/Facultad` (`id · nombre`). El programa del archivo de estudiantes sí se escribe en el archivo (es el contenido
+  que se carga, no un campo de formulario) y se valida contra el catálogo. La sede de una sesión sigue saliendo de un `<select>`.
+- *Regla 3 (BCrypt):* no aplica (ninguna credencial nueva; el registro público no tiene cuenta).
+- *Regla 4:* sin cambios; no hay maestros nuevos con pantalla de detalle (la exportación es una consulta, no un maestro-detalle).
+
+Detalle y decisiones: [Versiones/version7_2/v7_2_subversion.md](Versiones/version7_2/v7_2_subversion.md).
 
 Guía específica de la V4 (orden de lectura, prompts por fase, trampas):
 [Versiones/version4/guia_ia_v4.md](Versiones/version4/guia_ia_v4.md).
