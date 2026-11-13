@@ -28,20 +28,16 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
 from auth_helpers import ROL_ADMIN, ROL_ASISTENTE, exigir_rol, tiene_rol, usuario_actual
-from auth_helpers import ROL_ADMIN, ROL_ASISTENTE, exigir_rol, tiene_rol, usuario_actual
-from servicios.api_catedras import (ErrorApi, actualizar_parcial, crear, eliminar, listar,
+from servicios.api_catedras import (ErrorApi, actualizar_parcial, consultar, crear, eliminar, listar,
                                     obtener, reemplazar)
 from servicios.fechas import ZONA_COLOMBIA, a_local, desde_input, fecha_hora
-from servicios.api_catedras import consultar
-from servicios.qr_sesiones import (asegurar_qr_de_catedra, avisar_qr_pendientes, emitir_qr, estado_de_ventana, qr_de_sesion,
-from servicios.qr_sesiones import (asegurar_qr_de_catedra, avisar_qr_pendientes, emitir_qr, estado_de_ventana, qr_de_sesion,
-                                   svg_qr, url_de_registro)
+from servicios.qr_sesiones import (asegurar_qr_de_catedra, avisar_qr_pendientes, emitir_qr,
+                                    estado_de_ventana, qr_de_sesion, svg_qr, url_de_registro)
 from routes.sesiones import (ROLES_PONENCIA, asignar_ponente, buscar_candidatos, ponentes_de,
                              quitar_ponente)
-from routes.admin_solicitudes import contar_pendientes, registrar_rutas   # v7.1 · D56: bandeja de ponentes
-from routes import admin_restricciones   # v7.1 · D57: periodos y horarios en que se pueden programar cátedras
-from routes import admin_exportar   # v7.2 · RF-S13: exportación de asistencia por cátedra
-from routes import admin_exportar   # v7.2 · RF-S13: exportación de asistencia por cátedra
+from routes.admin_solicitudes import contar_pendientes, registrar_rutas   # v7.1 - D56: bandeja de ponentes
+from routes import admin_restricciones   # v7.1 - D57: periodos y horarios en que se pueden programar cátedras
+from routes import admin_exportar   # v7.2 - RF-S13: exportación de asistencia por cátedra
 
 admin_bp = Blueprint('admin', __name__)
 
