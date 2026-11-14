@@ -167,7 +167,7 @@ v('P21.4 ...la pantalla ya dibuja el nuevo y no el anterior', f'/registro/{nuevo
 
 # ---------------------------------------------------------------- P21.6 el resto de /admin sigue cerrado
 for ruta in ('/admin/', '/admin/usuarios', '/admin/sedes', '/admin/parametros', '/admin/sesiones', '/admin/sesiones/1',
-             '/admin/exportar', '/admin/asistentes'):
+             '/admin/asistentes'):
     v(f'P21.6 ASISTENTE en {ruta} -> 403', cliente(ASISTENTE).get(ruta).status_code == 403)
 v('P21.6 La lista del asistente tiene el QR pero no la asistencia en vivo',
   'admin.sesiones_qr' in AD.ENDPOINTS_DEL_ASISTENTE and 'admin.sesiones_asistencia_json' not in AD.ENDPOINTS_DEL_ASISTENTE)

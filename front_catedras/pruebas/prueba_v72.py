@@ -268,7 +268,7 @@ t = texto(subir(viejo, 'personas.csv', periodo='2026-2'))
 v('Un archivo con las columnas de siempre sigue el camino de personas (POST Asistente) y no usa el periodo del select',
   any(rec == 'Asistente' for rec, _ in llamadas_desde(n)) and not any(rec == 'Asistente/cargar-estudiante' for rec, _ in llamadas_desde(n))
   and 'Archivo de estudiantes · periodo' not in t)
-v('La carga sigue siendo solo del ADMIN', cliente().post('/carga_datos', data={}).status_code == 302 and cliente([]).post('/carga_datos', data={}).status_code == 403)
+v('La carga es solo del personal (ADMIN y ASISTENTE, D74): sin sesión va al login y otro rol da 403', cliente().post('/carga_datos', data={}).status_code == 302 and cliente([]).post('/carga_datos', data={}).status_code == 403 and cliente(['ESTUDIANTE']).get('/carga_datos').status_code == 403)
 
 # ===================================================================================== 2. REGISTRO PÚBLICO (RF-S9, D60)
 print('\n== 2. Registro público: 3 opciones, sin clave por correo ==')
@@ -510,7 +510,7 @@ v('...y una cátedra que no existe en el periodo da lista vacía (no la del veci
 
 # rutas
 for ruta in ('/admin/exportar', '/admin/exportar/2026-2/catalogo.csv', '/admin/exportar/2026-2/todas.zip', '/admin/exportar/2026-2/catedra/000000001/estudiantes.csv'):
-    v(f'{ruta}: sin sesión va al login y con otro rol da 403 (solo ADMIN)', cliente().get(ruta).status_code == 302 and cliente(['CONSULTA']).get(ruta).status_code == 403)
+    v(f'{ruta}: sin sesión va al login y con otro rol da 403 (solo ADMIN y ASISTENTE, D74)', cliente().get(ruta).status_code == 302 and cliente(['CONSULTA']).get(ruta).status_code == 403)
 
 t = texto(cliente(ADMIN).get('/admin/exportar'))
 v('La pantalla propone el periodo que cubre hoy (o el más reciente) y trae el <select> de periodos (Regla 2)',
@@ -549,6 +549,36 @@ r = cliente(ADMIN).get('/admin/exportar/2024-1/todas.zip', follow_redirects=True
 v('...y pedir el ZIP de ese periodo avisa en vez de bajar un ZIP vacío', 'no tiene cátedras' in texto(r) and r.mimetype == 'text/html')
 t = texto(cliente(ADMIN).get('/admin/'))
 v('El panel de administración tiene la tarjeta «Exportar asistencia»', 'Exportar asistencia' in t and '/admin/exportar' in t)
+
+# ===================================================================================== 8. EL ASISTENTE SUBE Y DESCARGA LOS CSV (D74)
+print('\n== 8. El ASISTENTE sube y descarga los CSV de asistencia (D74) ==')
+ASIST = ['ASISTENTE']
+t = texto(cliente(ASIST).get('/carga_datos'))
+v('El ASISTENTE abre la carga de datos (200), con el <select> de periodos', 'name="periodo"' in t and 'value="2026-2"' in t)
+v('...sin el enlace al panel de Administración (le daría 403); su miga lleva a Cátedras', 'href="/admin/"' not in t and 'href="/admin/catedras"' in t)
+n = len(db['llamadas'])
+r = cliente(ASIST).post('/carga_datos', data={'archivo': (io.BytesIO(ARCHIVO), 'estudiantes.csv'), 'periodo': '2026-2'}, content_type='multipart/form-data')
+t = texto(r)
+v('El ASISTENTE sube el CSV de estudiantes: cada fila llega a cargar-estudiante y se cierra el lote',
+  r.status_code == 200 and sum(1 for rec, _ in llamadas_desde(n) if rec == 'Asistente/cargar-estudiante') == 3
+  and any(rec.endswith('/cerrar') for rec, _ in llamadas_desde(n)))
+v('...y el resultado muestra el número del lote SIN enlace a /admin/lotes (solo ADMIN)', 'Resultado · lote' in t and '/admin/lotes' not in t)
+t = texto(cliente(ASIST).get('/admin/exportar'))
+v('El ASISTENTE abre «Exportar asistencia» (200), con las descargas y sin enlace al panel',
+  '/admin/exportar/2026-2/todas.zip' in t and '/admin/exportar/2026-2/catedra/000000001/estudiantes.csv' in t and 'href="/admin/"' not in t)
+r = cliente(ASIST).get('/admin/exportar/2026-2/catedra/000000001/estudiantes.csv')
+v('El ASISTENTE descarga el CSV de una cátedra (adjunto, UTF-8 con BOM)',
+  r.status_code == 200 and r.mimetype == 'text/csv' and 'attachment' in r.headers['Content-Disposition'] and r.data.startswith(BOM) and b'30000124726' in r.data)
+r = cliente(ASIST).get('/admin/exportar/2026-2/catalogo.csv')
+v('...el catálogo del periodo', r.status_code == 200 and 'catedras_2026-2.csv' in r.headers['Content-Disposition'])
+r = cliente(ASIST).get('/admin/exportar/2026-2/todas.zip')
+v('...y el ZIP con todo', r.status_code == 200 and r.mimetype == 'application/zip' and len(zipfile.ZipFile(io.BytesIO(r.data)).namelist()) == 9)
+for ruta in ('/admin/', '/admin/usuarios', '/admin/lotes', '/admin/asistentes', '/admin/sesiones'):
+    v(f'El resto de /admin sigue cerrado al ASISTENTE: {ruta} -> 403', cliente(ASIST).get(ruta).status_code == 403)
+t = texto(cliente(ASIST).get('/admin/catedras'))
+v('La barra del ASISTENTE trae UN solo menú «Gestionar archivos» con «Cargar CSV» y «Exportar asistencia»', t.count('Gestionar archivos') == 1 and 'data-bs-toggle="dropdown"' in t and '/carga_datos' in t and '/admin/exportar' in t)
+t = texto(cliente(ADMIN).get('/admin/'))
+v('El ADMIN conserva su panel (con las dos tarjetas)', '/carga_datos' in t and '/admin/exportar' in t)
 
 # ===================================================================================== 7. P15: IP real detrás del proxy
 print('\n== 7. IP real detrás de un proxy ==')

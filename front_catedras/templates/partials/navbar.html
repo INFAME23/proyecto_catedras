@@ -14,11 +14,14 @@
                         <i class="fas fa-home"></i> Inicio
                     </a>
                 </li>
+                {# El ASISTENTE (sin ser ADMIN) no ve «Catálogo» aquí para despejar su barra: entra al catálogo desde el inicio. #}
+                {% if tiene_rol('ADMIN') or not tiene_rol('ASISTENTE') %}
                 <li class="nav-item">
                     <a class="nav-link {{ 'active' if request.endpoint in ('catedras.catalogo', 'catedras.detalle', 'sesiones.detalle') }}" href="{{ url_for('catedras.catalogo') }}">
                         <i class="fas fa-book-open"></i> Catálogo
                     </a>
                 </li>
+                {% endif %}
                 {# v7.1 · D56: calendario público de sesiones (con el botón «Soy ponente»). #}
                 <li class="nav-item">
                     <a class="nav-link {{ 'active' if request.endpoint in ('calendario.calendario', 'calendario.enviar_ponente') }}" href="{{ url_for('calendario.calendario') }}">
@@ -39,10 +42,17 @@
                         <i class="fas fa-book-open"></i> Gestionar cátedras
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link {{ 'active' if request.endpoint and request.endpoint.startswith('admin.solicitudes_ponente') }}" href="{{ url_for('admin.solicitudes_ponente_listar') }}">
-                        <i class="fas fa-inbox"></i> Bandeja de ponentes
+                {# La «Bandeja de ponentes» ya no va en la barra del asistente (la barra se despeja); la tiene como tarjeta en la lista de cátedras. #}
+                {# v7.2 · D74: un solo menú «Gestionar archivos» con subir el CSV de estudiantes y descargar los CSV de asistencia. #}
+                {% set en_archivos = request.endpoint == 'carga.carga_datos' or (request.endpoint and request.endpoint.startswith('admin.exportar')) %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {{ 'active' if en_archivos }}" href="#" id="menu-archivos" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-folder-open"></i> Gestionar archivos
                     </a>
+                    <ul class="dropdown-menu" aria-labelledby="menu-archivos">
+                        <li><a class="dropdown-item {{ 'active' if request.endpoint == 'carga.carga_datos' }}" href="{{ url_for('carga.carga_datos') }}"><i class="fas fa-file-upload"></i> Cargar CSV</a></li>
+                        <li><a class="dropdown-item {{ 'active' if request.endpoint and request.endpoint.startswith('admin.exportar') }}" href="{{ url_for('admin.exportar') }}"><i class="fas fa-file-export"></i> Exportar asistencia</a></li>
+                    </ul>
                 </li>
                 {% endif %}
             </ul>

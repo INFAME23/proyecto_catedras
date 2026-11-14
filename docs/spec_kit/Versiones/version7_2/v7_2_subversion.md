@@ -393,3 +393,17 @@ Hoy el asistente llega al detalle de la cátedra, pulsa el botón de QR de una s
 | # | Pendiente | Mi recomendación |
 |---|---|---|
 | **P21** | ¿Aprobáis D73 tal como está (el asistente regenera sin pedir nada más que la confirmación existente)? | Sí |
+
+## 14. Apartado adicional — El ASISTENTE sube y descarga los CSV de asistencia (D74 · RF-S16)
+
+**D74.** El rol `ASISTENTE` puede (1) **subir** el CSV de estudiantes en `/carga_datos` y (2) **descargar** los CSV de `/admin/exportar`
+(uno por cátedra y tipo, el catálogo del periodo y el ZIP). Se agregan `admin.exportar`, `admin.exportar_catedra_csv`, `admin.exportar_catalogo`
+y `admin.exportar_zip` a `ENDPOINTS_DEL_ASISTENTE`, y `carga.carga_datos` acepta `ROL_ASISTENTE`. No cambia la API ni la BD.
+
+- Sigue siendo solo del ADMIN: el detalle de lotes (`/admin/lotes/...`; al asistente se le muestra el número del lote sin enlace), personas, usuarios,
+  sesiones y la lista en vivo de quienes se registraron (`admin.sesiones_asistencia_json`).
+- **Dato a tener presente:** los CSV de exportación contienen carnets y datos de contacto de docentes y externos; abrirlos al asistente amplía
+  quién ve datos de personas respecto de D73. Fue una decisión pedida expresamente.
+- **Corrección de D73:** `catedra_detalle.html` envolvía toda la columna de acciones en `tiene_rol('ADMIN')`, así que el asistente no veía el botón de QR
+  (la prueba `P21.1` fallaba). Ahora la columna se muestra al ADMIN y al ASISTENTE; el asistente solo ve el botón de QR.
+- Pruebas: `prueba_v72.py` sección 8, `prueba_rol_asistente.py` y `prueba_asistente_qr_v72.py` (el `/admin/exportar` ya no se espera en 403).

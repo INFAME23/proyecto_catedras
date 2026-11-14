@@ -3,7 +3,11 @@
 {% block contenido %}
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
+        {% if tiene_rol('ADMIN') %}
         <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        {% else %}
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_listar') }}">Cátedras</a></li>
+        {% endif %}
         <li class="breadcrumb-item active">Carga de datos</li>
     </ol>
 </nav>
@@ -15,7 +19,8 @@
 {% if resultado %}
 <div class="card shadow-sm mb-4">
     <div class="card-body">
-        <h2 class="h5 fw-bold">Resultado · lote <a href="{{ url_for('admin.lotes_detalle', id_lote_carga=resultado.id_lote_carga) }}">{{ resultado.id_lote_carga }}</a>
+        {# El detalle del lote es de /admin (solo ADMIN): al ASISTENTE se le muestra el número sin enlace. #}
+        <h2 class="h5 fw-bold">Resultado · lote {% if tiene_rol('ADMIN') %}<a href="{{ url_for('admin.lotes_detalle', id_lote_carga=resultado.id_lote_carga) }}">{{ resultado.id_lote_carga }}</a>{% else %}{{ resultado.id_lote_carga }}{% endif %}
             <span class="badge {{ 'badge-success' if resultado.cerrado else 'badge-danger' }}">{{ 'Cerrado' if resultado.cerrado else 'Abierto' }}</span></h2>
         <p class="small text-muted mb-3">{{ resultado.nombre_archivo }} · {{ resultado.total_archivo }} filas con datos en el archivo
             {% if resultado.modo_estudiantes %}· <span class="badge badge-primary">Archivo de estudiantes · periodo {{ resultado.periodo }}</span>{% endif %}</p>

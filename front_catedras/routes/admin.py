@@ -52,6 +52,9 @@ ENDPOINTS_DEL_ASISTENTE = frozenset({
     # v7.2 · D73 (RF-S15): ver, generar y regenerar el QR de una sesión. La lista de quienes se registraron
     # ('admin.sesiones_asistencia_json') NO está aquí: son datos de personas y siguen siendo solo del ADMIN.
     'admin.sesiones_qr',
+    # v7.2 · D74: descargar los CSV de asistencia (por cátedra, catálogo y ZIP del periodo). La CARGA de estudiantes
+    # (/carga_datos) vive en otro blueprint y se abre al ASISTENTE en routes/carga.py.
+    'admin.exportar', 'admin.exportar_catedra_csv', 'admin.exportar_catalogo', 'admin.exportar_zip',
 })
 
 

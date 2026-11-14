@@ -30,7 +30,7 @@ from datetime import date
 
 from flask import Blueprint, render_template, request
 
-from auth_helpers import ROL_ADMIN, rol_requerido
+from auth_helpers import ROL_ADMIN, ROL_ASISTENTE, rol_requerido
 from servicios.api_catedras import ErrorApi, crear, listar
 from servicios.carga_asistentes import (ErrorArchivo, construir_asistente, construir_estudiante, contenido_crudo,
                                         es_archivo_de_estudiantes, indice_de_programas, leer_archivo, motivo_de)
@@ -61,9 +61,10 @@ def _pantalla(resultado=None, error=None, periodo=None):
                            periodo=periodo or por_defecto)
 
 
-# v7.1: cargar personas masivamente es de ADMIN (antes era público).
+# v7.1: cargar personas masivamente es de ADMIN (antes era público). v7.2 · D74: el ASISTENTE también sube
+# el archivo de estudiantes; el detalle del lote (/admin/lotes) sigue siendo solo del ADMIN.
 @carga_bp.route('/carga_datos', methods=['GET', 'POST'])
-@rol_requerido(ROL_ADMIN)
+@rol_requerido(ROL_ADMIN, ROL_ASISTENTE)
 def carga_datos():
     if request.method == 'GET':
         return _pantalla()

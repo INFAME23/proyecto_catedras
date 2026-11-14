@@ -98,6 +98,35 @@ main {
     margin-right: 0.5rem;
 }
 
+/* Menú desplegable del navbar (p. ej. «Gestionar archivos»): oscuro, como la barra */
+.navbar .dropdown-menu {
+    background: var(--secondary);
+    border: 1px solid var(--secondary-light);
+    border-radius: 8px;
+    padding: 0.4rem;
+    box-shadow: var(--shadow-md);
+}
+
+.navbar .dropdown-item {
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 500;
+    font-size: 0.9rem;
+    border-radius: 6px;
+    padding: 0.5rem 0.9rem;
+}
+
+.navbar .dropdown-item i {
+    margin-right: 0.5rem;
+    color: var(--primary);
+}
+
+.navbar .dropdown-item:hover,
+.navbar .dropdown-item:focus,
+.navbar .dropdown-item.active {
+    color: var(--white);
+    background: rgba(239, 125, 0, 0.2);
+}
+
 /* Badge de notificaciones */
 .nav-badge {
     background: var(--primary);

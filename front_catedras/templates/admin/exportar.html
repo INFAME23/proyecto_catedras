@@ -4,7 +4,11 @@
 {# v7.2 · RF-S13 / RF-S14 · Exportación de fin de periodo. Solo ADMIN. #}
 <nav aria-label="breadcrumb">
     <ol class="breadcrumb small">
+        {% if tiene_rol('ADMIN') %}
         <li class="breadcrumb-item"><a href="{{ url_for('admin.panel') }}">Administración</a></li>
+        {% else %}
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.catedras_listar') }}">Cátedras</a></li>
+        {% endif %}
         <li class="breadcrumb-item active">Exportar asistencia</li>
     </ol>
 </nav>

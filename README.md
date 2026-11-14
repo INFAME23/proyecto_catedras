@@ -25,6 +25,7 @@ decisiones `D60`…`D72` y las migraciones `060`–`066`. Documento completo, co
 - **El QR no se genera si la sede no tiene coordenadas (D72)**, con un mensaje que nombra la sede a completar en `/admin/sedes`.
 - **El ASISTENTE maneja el QR de las sesiones (D73 · RF-S15).** Desde el detalle de la cátedra ve el QR, lo genera si falta y lo regenera
   (con confirmación: el anterior deja de servir). No ve la lista de quienes se registraron; esa y el resto de `/admin` siguen siendo del ADMIN.
+- **El ASISTENTE también sube y descarga los CSV de asistencia (D74).** Además del QR, abre `/carga_datos` (subir el CSV de estudiantes) y `/admin/exportar` (CSV por cátedra, catálogo y ZIP del periodo), con enlaces «Cargar CSV» y «Exportar asistencia» en su barra. El resto de `/admin` (lotes, personas, usuarios…) sigue siendo solo del ADMIN. Se corrigió además que el botón de QR no salía en el detalle de la cátedra para el asistente (la columna de acciones estaba tras `tiene_rol('ADMIN')`).
 - **Carga de estudiantes** (`/carga_datos`): archivo `CC, Carnet_estudiante, Programa` + periodo en un `<select>`; es **idempotente**
   por carnet (D68): volver a subirlo actualiza, no duplica.
 - **Exportación de fin de periodo** (`/admin/exportar`, solo ADMIN): por cátedra, un CSV de estudiantes, otro de docentes y otro de

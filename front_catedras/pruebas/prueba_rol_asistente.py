@@ -119,6 +119,7 @@ v('Lista las cátedras (200)', r.status_code == 200 and 'Catedra Dos' in t)
 v('...sin el enlace al panel de Administración en la miga de pan', 'href="/admin/"' not in t)
 v('La barra de navegación le ofrece «Gestionar cátedras» y no «Administración»',
   'Gestionar cátedras' in t and 'fa-cogs' not in t)
+v('La barra del asistente NO trae «Catálogo» (se entra desde el inicio) pero el ADMIN sí', 'href="/catedras"' not in t.split('</nav>')[0] and 'href="/catedras"' in cliente(ADMIN).get('/admin/catedras').get_data(as_text=True).split('</nav>')[0])
 r = cliente(ASISTENTE).get('/admin/catedras/nueva')
 t = r.get_data(as_text=True)
 v('Abre el formulario de cátedra nueva (200)', r.status_code == 200 and 'name="nombre"' in t)
@@ -146,7 +147,7 @@ r = cliente(ASISTENTE).get('/admin/catedras')
 t = r.get_data(as_text=True)
 v('La lista de cátedras del asistente muestra la tarjeta «Bandeja de ponentes» con 1 pendiente',
   'Bandeja de ponentes' in t and '1 pendiente' in t and '/admin/solicitudes-ponente' in t)
-v('La barra de navegación del asistente trae el enlace «Bandeja de ponentes»', 'fa-inbox' in t)
+v('La barra del asistente ya NO trae «Bandeja de ponentes» (queda la tarjeta de la lista)', '/admin/solicitudes-ponente' not in t.split('</nav>')[0])
 r = cliente(ASISTENTE).get('/admin/solicitudes-ponente')
 t = r.get_data(as_text=True)
 v('Abre la bandeja (200) con la solicitud de Pepa', r.status_code == 200 and 'Pepa' in t)
@@ -170,7 +171,7 @@ v('Un ESTUDIANTE con sesión no entra a la bandeja (403)', cliente(['ESTUDIANTE'
 
 # ---------------------------------------------------------------- 3. lo que NO puede hacer: todo lo demás
 for ruta in ('/admin/', '/admin/usuarios', '/admin/usuarios/nuevo', '/admin/roles-usuario', '/admin/sedes', '/admin/sesiones/nueva',
-             '/admin/sesiones/1', '/admin/asistentes', '/admin/encuestas', '/admin/restricciones-programacion', '/admin/exportar'):
+             '/admin/sesiones/1', '/admin/asistentes', '/admin/encuestas', '/admin/restricciones-programacion'):
     v(f'GET {ruta} -> 403', cliente(ASISTENTE).get(ruta).status_code == 403)
 antes = len(llamadas)
 r = cliente(ASISTENTE).post('/admin/usuarios/nuevo', data={'nombres': 'X'})
